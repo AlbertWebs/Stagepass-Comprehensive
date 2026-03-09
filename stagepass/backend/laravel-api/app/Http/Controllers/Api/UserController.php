@@ -1,0 +1,121 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\User;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+
+class UserController extends Controller
+{
+    public function index(Request $request): JsonResponse
+    {
+        $query = User::query()->with('roles');
+
+        if ($request->filled('search')) {
+            $q = $request->search;
+            $query->where(function ($qry) use ($q) {
+                $qry->where('name', 'like', "%{$q}%")
+                    ->orWhere('email', 'like', "%{$q}%")
+                    ->orWhere('username', 'like', "%{$q}%");
+            });
+        }
+
+        if ($request->filled('role')) {
+            $query->whereHas('roles', fn ($q) => $q->where('name', $request->role));
+        }
+
+        $users = $query->orderBy('name')->paginate($request->input('per_page', 20));
+
+        return response()->json($users);
+    }
+
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|string|min:8',
+            'username' => 'nullable|string|max:80|unique:users,username',
+            'pin' => 'nullable|string|max:20',
+            'phone' => 'nullable|string|max:20',
+            'role_ids' => 'nullable|array',
+            'role_ids.*' => 'exists:roles,id',
+        ]);
+
+        $user = new User;
+        $user->name = $validated['name'];
+        $user->email = $validated['email'];
+        $user->password = $validated['password'];
+        if (! empty($validated['username'])) {
+            $user->username = $validated['username'];
+        }
+        if (! empty($validated['pin'])) {
+            $user->pin = $validated['pin'];
+        }
+        if (array_key_exists('phone', $validated)) {
+            $user->phone = $validated['phone'];
+        }
+        $user->save();
+
+        if (! empty($validated['role_ids'])) {
+            $user->roles()->sync($validated['role_ids']);
+        }
+
+        return response()->json($user->load('roles'), 201);
+    }
+
+    public function show(User $user): JsonResponse
+    {
+        $user->load('roles');
+        return response()->json($user);
+    }
+
+    public function update(Request $request, User $user): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => 'sometimes|string|max:255',
+            'email' => ['sometimes', 'email', Rule::unique('users', 'email')->ignore($user->id)],
+            'password' => 'nullable|string|min:8',
+            'username' => ['nullable', 'string', 'max:80', Rule::unique('users', 'username')->ignore($user->id)],
+            'pin' => 'nullable|string|max:20',
+            'phone' => 'nullable|string|max:20',
+            'role_ids' => 'nullable|array',
+            'role_ids.*' => 'exists:roles,id',
+        ]);
+
+        if (isset($validated['name'])) {
+            $user->name = $validated['name'];
+        }
+        if (isset($validated['email'])) {
+            $user->email = $validated['email'];
+        }
+        if (! empty($validated['password'])) {
+            $user->password = $validated['password'];
+        }
+        if (array_key_exists('username', $validated)) {
+            $user->username = $validated['username'] ?: null;
+        }
+        if (array_key_exists('pin', $validated)) {
+            $user->pin = $validated['pin'] ?: null;
+        }
+        if (array_key_exists('phone', $validated)) {
+            $user->phone = $validated['phone'] ?: null;
+        }
+        $user->save();
+
+        if (array_key_exists('role_ids', $validated)) {
+            $user->roles()->sync($validated['role_ids'] ?? []);
+        }
+
+        return response()->json($user->fresh()->load('roles'));
+    }
+
+    public function destroy(User $user): JsonResponse
+    {
+        $user->delete();
+        return response()->json(null, 204);
+    }
+}

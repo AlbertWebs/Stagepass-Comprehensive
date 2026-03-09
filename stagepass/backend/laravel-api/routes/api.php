@@ -1,0 +1,103 @@
+<?php
+
+use App\Http\Controllers\Api\AuditLogController;
+use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\ClientController;
+use App\Http\Controllers\Api\CommunicationController;
+use App\Http\Controllers\Api\DocsController;
+use App\Http\Controllers\Api\AttendanceController;
+use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\EquipmentController;
+use App\Http\Controllers\Api\EventController;
+use App\Http\Controllers\Api\EventCrewController;
+use App\Http\Controllers\Api\EventEquipmentController;
+use App\Http\Controllers\Api\EventChecklistController;
+use App\Http\Controllers\Api\EventNoteController;
+use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\ReportsController;
+use App\Http\Controllers\Api\RoleController;
+use App\Http\Controllers\Api\TimeOffController;
+use App\Http\Controllers\Api\VehicleController;
+use App\Http\Controllers\Api\EventTransportController;
+use App\Http\Controllers\Api\BackupController;
+use App\Http\Controllers\Api\SettingsController;
+use Illuminate\Support\Facades\Route;
+
+Route::post('/login', [AuthController::class, 'login']);
+Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
+Route::get('/me', [AuthController::class, 'me'])->middleware('auth:sanctum');
+Route::patch('/me', [AuthController::class, 'updateProfile'])->middleware('auth:sanctum');
+Route::post('/me/photo', [AuthController::class, 'uploadPhoto'])->middleware('auth:sanctum');
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('roles', [RoleController::class, 'index']);
+    Route::get('users', [UserController::class, 'index']);
+    Route::post('users', [UserController::class, 'store']);
+    Route::get('users/{user}', [UserController::class, 'show']);
+    Route::put('users/{user}', [UserController::class, 'update']);
+    Route::delete('users/{user}', [UserController::class, 'destroy']);
+    Route::get('my-event-today', [EventController::class, 'myEventToday']);
+    Route::apiResource('events', EventController::class);
+    Route::post('events/{event}/assign-user', [EventCrewController::class, 'assignUser']);
+    Route::post('events/{event}/attendance/manual-checkin/{user}', [EventCrewController::class, 'manualCheckin']);
+    Route::delete('events/{event}/crew/{user}', [EventCrewController::class, 'removeUser']);
+    Route::post('events/{event}/transfer-user', [EventCrewController::class, 'transferUser']);
+    Route::get('events/{event}/notes', [EventNoteController::class, 'index']);
+    Route::post('events/{event}/notes', [EventNoteController::class, 'store']);
+    Route::post('events/{event}/end', [EventController::class, 'end']);
+    Route::get('events/{event}/checklist', [EventChecklistController::class, 'index']);
+    Route::post('events/{event}/checklist', [EventChecklistController::class, 'store']);
+    Route::patch('events/{event}/checklist/{checklistItem}', [EventChecklistController::class, 'update']);
+
+    Route::post('attendance/checkin', [AttendanceController::class, 'checkin']);
+    Route::post('attendance/checkout', [AttendanceController::class, 'checkout']);
+
+    Route::get('clients', [ClientController::class, 'index']);
+    Route::post('clients', [ClientController::class, 'store']);
+    Route::get('clients/{client}', [ClientController::class, 'show']);
+    Route::put('clients/{client}', [ClientController::class, 'update']);
+    Route::delete('clients/{client}', [ClientController::class, 'destroy']);
+
+    Route::get('equipment', [EquipmentController::class, 'index']);
+    Route::post('equipment', [EquipmentController::class, 'store']);
+    Route::get('equipment/{equipment}', [EquipmentController::class, 'show']);
+    Route::put('equipment/{equipment}', [EquipmentController::class, 'update']);
+    Route::delete('equipment/{equipment}', [EquipmentController::class, 'destroy']);
+    Route::post('events/{event}/equipment', [EventEquipmentController::class, 'attach']);
+    Route::post('events/{event}/equipment/confirm', [EventEquipmentController::class, 'confirm']);
+
+    Route::get('vehicles', [VehicleController::class, 'index']);
+    Route::post('vehicles', [VehicleController::class, 'store']);
+    Route::get('vehicles/{vehicle}', [VehicleController::class, 'show']);
+    Route::put('vehicles/{vehicle}', [VehicleController::class, 'update']);
+    Route::delete('vehicles/{vehicle}', [VehicleController::class, 'destroy']);
+
+    Route::get('transport/assignments', [EventTransportController::class, 'index']);
+    Route::post('events/{event}/transport', [EventTransportController::class, 'store']);
+    Route::delete('transport/assignments/{eventVehicle}', [EventTransportController::class, 'destroy']);
+
+    Route::get('communications', [CommunicationController::class, 'index']);
+    Route::post('communications', [CommunicationController::class, 'store']);
+    Route::get('communications/{communication}', [CommunicationController::class, 'show']);
+    Route::delete('communications/{communication}', [CommunicationController::class, 'destroy']);
+
+    Route::get('reports', ReportsController::class);
+    Route::get('audit-logs', [AuditLogController::class, 'index']);
+    Route::get('docs/guides', [DocsController::class, 'index']);
+    Route::get('docs/guides/{name}', [DocsController::class, 'show']);
+
+    Route::get('payments', [PaymentController::class, 'index']);
+    Route::post('payments/initiate', [PaymentController::class, 'initiate']);
+    Route::post('payments/approve', [PaymentController::class, 'approve']);
+    Route::post('payments/reject', [PaymentController::class, 'reject']);
+
+    Route::get('timeoff', [TimeOffController::class, 'index']);
+    Route::post('timeoff/request', [TimeOffController::class, 'request']);
+    Route::post('timeoff/approve', [TimeOffController::class, 'approve']);
+    Route::post('timeoff/reject', [TimeOffController::class, 'reject']);
+
+    Route::get('backup', BackupController::class);
+    Route::get('settings', [SettingsController::class, 'index']);
+    Route::put('settings', [SettingsController::class, 'update']);
+});

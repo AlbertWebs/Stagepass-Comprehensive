@@ -1,0 +1,48 @@
+import { useRouter } from 'expo-router';
+import { StyleSheet } from 'react-native';
+import { StagePassButton } from '@/components/StagePassButton';
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
+import { Spacing, StagePassColors } from '@/constants/theme';
+import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+
+/** Admin dashboard placeholder – full operational visibility */
+export function AdminDashboardScreen() {
+  const router = useRouter();
+  const { colors } = useStagePassTheme();
+
+  return (
+    <ThemedView style={styles.container}>
+      <ThemedText type="title" style={[styles.title, { color: StagePassColors.themeBlue }]}>
+        Admin Dashboard
+      </ThemedText>
+      <ThemedText style={[styles.subtitle, { color: StagePassColors.themeYellow }]}>
+        Today's events · Active events · Crew & check-in · Reported issues
+      </ThemedText>
+      <StagePassButton
+        title="Events"
+        onPress={() => router.push('/(tabs)/events')}
+        variant="primary"
+        style={styles.cta}
+      />
+    </ThemedView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: Spacing.xxl,
+    paddingTop: Spacing.section,
+  },
+  title: {
+    marginBottom: Spacing.sm,
+  },
+  subtitle: {
+    fontSize: 14,
+    marginBottom: Spacing.xl,
+  },
+  cta: {
+    marginBottom: Spacing.md,
+  },
+});
