@@ -14,13 +14,14 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api, type Event } from '~/services/api';
-import { AppHeader } from '@/components/AppHeader';
+import { HomeHeader } from '@/components/HomeHeader';
 import { EventCard } from '@/components/EventCard';
 import { StagepassLoader } from '@/components/StagepassLoader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { useAppRole } from '~/hooks/useAppRole';
 
 function isUpcoming(dateStr: string): boolean {
   try {
@@ -32,26 +33,6 @@ function isUpcoming(dateStr: string): boolean {
   } catch {
     return true;
   }
-}
-
-/** True when event date is the user's local today */
-function isEventToday(dateStr: string): boolean {
-  try {
-    const d = new Date(dateStr);
-    d.setHours(0, 0, 0, 0);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return d.getTime() === today.getTime();
-  } catch {
-    return false;
-  }
-}
-
-/** Resolve today's event: API result, or from list when date is local today (fallback if API misses it) */
-function resolveTodayEvent(apiToday: Event | null, list: Event[]): Event | null {
-  if (apiToday) return apiToday;
-  const todayFromList = list.find((e) => isEventToday(e.date));
-  return todayFromList ?? null;
 }
 
 function sortByDate(a: Event, b: Event): number {
@@ -84,27 +65,27 @@ function getCheckinStatus(event: Event): 'checked_in' | 'checked_out' | 'pending
   return 'pending';
 }
 
-const TAB_BAR_HEIGHT = 56;
+const TAB_BAR_HEIGHT = 58;
 
 export default function ActivityScreen() {
   const router = useRouter();
   const { colors } = useStagePassTheme();
   const insets = useSafeAreaInsets();
+  const role = useAppRole();
   const [eventToday, setEventToday] = useState<Event | null | undefined>(undefined);
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const scrollBottomPadding = insets.bottom + TAB_BAR_HEIGHT + Spacing.lg;
+  const scrollBottomPadding = insets.bottom + TAB_BAR_HEIGHT + Spacing.sm;
 
   const load = useCallback(async () => {
     try {
       const [todayRes, listRes] = await Promise.all([
         api.events.myEventToday(),
-        api.events.list().catch(() => ({ data: [] as Event[] })),
+        api.events.list(),
       ]);
+      setEventToday(todayRes.event ?? null);
       const list = Array.isArray(listRes?.data) ? listRes.data : [];
-      const todayEvent = resolveTodayEvent(todayRes.event ?? null, list);
-      setEventToday(todayEvent);
       setEvents(list.sort(sortByDate));
     } catch {
       setEventToday(null);
@@ -116,15 +97,19 @@ export default function ActivityScreen() {
   }, []);
 
   useEffect(() => {
+    if (role === 'admin') {
+      setLoading(false);
+      return;
+    }
     load();
-  }, [load]);
+  }, [role, load]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     load();
   }, [load]);
 
-  if (loading) {
+  if (loading && role !== 'admin') {
     return <StagepassLoader message="Loading activities…" fullScreen />;
   }
 
@@ -134,11 +119,16 @@ export default function ActivityScreen() {
   const past = events.filter((e) => !isUpcoming(e.date));
   const hasAnyEvents = today || upcoming.length > 0 || past.length > 0;
 
-  const roleSubtitle = 'Your check-ins and event schedule';
+  const roleSubtitle =
+    role === 'crew'
+      ? 'Your check-ins and event schedule'
+      : role === 'team_leader'
+        ? 'Crew attendance and event activity'
+        : 'Recent activity across events';
 
   return (
     <ThemedView style={styles.container}>
-      <AppHeader />
+      <HomeHeader title="Activities" />
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollBottomPadding }]}
         showsVerticalScrollIndicator={false}
@@ -270,18 +260,6 @@ export default function ActivityScreen() {
                 <ThemedText style={[styles.quickLabel, { color: colors.text }]}>
                   {today ? 'Today’s event' : 'No event today'}
                 </ThemedText>
-              </Pressable>
-              <Pressable
-                onPress={() => router.push('/request-time-off')}
-                style={({ pressed }) => [
-                  styles.quickCard,
-                  { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.9 : 1 },
-                ]}
-              >
-                <View style={[styles.quickIconWrap, { backgroundColor: themeBlue + '18' }]}>
-                  <Ionicons name="calendar-outline" size={22} color={themeBlue} />
-                </View>
-                <ThemedText style={[styles.quickLabel, { color: colors.text }]}>Time off</ThemedText>
               </Pressable>
             </View>
           </View>

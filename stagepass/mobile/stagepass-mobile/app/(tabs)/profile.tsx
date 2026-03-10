@@ -12,12 +12,11 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
-import { AppHeader } from '@/components/AppHeader';
+import { HomeHeader } from '@/components/HomeHeader';
 import { StagePassButton } from '@/components/StagePassButton';
 import { StagePassInput } from '@/components/StagePassInput';
 import { ThemedText } from '@/components/themed-text';
@@ -50,22 +49,25 @@ function getInitial(name: string): string {
   return n.slice(0, 2).toUpperCase();
 }
 
-const TAB_BAR_HEIGHT = 56;
+const TAB_BAR_HEIGHT = 58;
 
 /** Profile tab – premium layout with hero, cards, and clear sections. Fits within safe area. */
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const dispatch = useDispatch();
-  const { colors, isDark } = useStagePassTheme();
+  const { colors } = useStagePassTheme();
   const { preference, setPreference } = useThemePreference();
   const user = useSelector((s: { auth: { user: User | null } }) => s.auth.user);
   const role = useAppRole();
 
-  const bottomPadding = Math.max(insets.bottom + TAB_BAR_HEIGHT + Spacing.lg, 32);
+  const bottomPadding = Math.max(insets.bottom + TAB_BAR_HEIGHT + Spacing.sm, 28);
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [address, setAddress] = useState('');
+  const [emergencyContact, setEmergencyContact] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [currentPin, setCurrentPin] = useState('');
@@ -80,8 +82,11 @@ export default function ProfileScreen() {
     if (user) {
       setName(user.name ?? '');
       setEmail(user.email ?? '');
+      setPhoneNumber(user.phone_number ?? '');
+      setAddress(user.address ?? '');
+      setEmergencyContact(user.emergency_contact ?? '');
     }
-  }, [user?.id, user?.name, user?.email]);
+  }, [user?.id, user?.name, user?.email, user?.phone_number, user?.address, user?.emergency_contact]);
 
   const handleSave = async () => {
     if (!user) return;
@@ -101,9 +106,20 @@ export default function ProfileScreen() {
     }
     setSaving(true);
     try {
-      const body: { name?: string; email?: string; password?: string; password_confirmation?: string } = {
+      const body: {
+        name?: string;
+        email?: string;
+        phone_number?: string;
+        address?: string;
+        emergency_contact?: string;
+        password?: string;
+        password_confirmation?: string;
+      } = {
         name: trimmedName,
         email: trimmedEmail || undefined,
+        phone_number: phoneNumber.trim() || undefined,
+        address: address.trim() || undefined,
+        emergency_contact: emergencyContact.trim() || undefined,
       };
       if (password) {
         body.password = password;
@@ -182,7 +198,8 @@ export default function ProfileScreen() {
       const data = await api.auth.uploadProfilePhoto(uri);
       const updatedUser = 'user' in data ? data.user : data;
       dispatch(setUser(updatedUser));
-      setPassportPhotoUri(null);
+      // Clear local URI only when backend returns an avatar URL so image stays visible
+      if (updatedUser?.avatar_url) setPassportPhotoUri(null);
       Alert.alert('Saved', 'Passport photo updated.');
     } catch (e) {
       Alert.alert(
@@ -208,7 +225,7 @@ export default function ProfileScreen() {
   if (!user) {
     return (
       <ThemedView style={styles.container}>
-        <AppHeader />
+        <HomeHeader title="Profile" />
         <ThemedText type="subtitle" style={{ color: colors.textSecondary, padding: Spacing.xl }}>
           Not signed in
         </ThemedText>
@@ -221,7 +238,7 @@ export default function ProfileScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <AppHeader />
+      <HomeHeader title="Profile" />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.keyboard}
@@ -237,7 +254,15 @@ export default function ProfileScreen() {
             style={styles.hero}
           >
             <View style={[styles.avatarWrap, { borderColor: themeYellow }]}>
-              <ThemedText style={styles.avatarText}>{getInitial(user.name)}</ThemedText>
+              {(passportPhotoUri || user?.avatar_url) ? (
+                <Image
+                  source={{ uri: passportPhotoUri ?? user?.avatar_url ?? '' }}
+                  style={styles.heroAvatarImage}
+                  contentFit="cover"
+                />
+              ) : (
+                <ThemedText style={styles.avatarText}>{getInitial(user.name)}</ThemedText>
+              )}
             </View>
             <ThemedText style={styles.heroName} numberOfLines={1}>
               {user.name}
@@ -249,51 +274,81 @@ export default function ProfileScreen() {
             </View>
           </LinearGradient>
 
-          {/* Appearance card */}
+          {/* Appearance card – Light / Dark / Auto */}
           <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
             <View style={styles.cardHeader}>
               <Ionicons name="moon-outline" size={20} color={themeYellow} />
               <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Appearance</ThemedText>
             </View>
-            <View style={[styles.switchRow, { borderColor: cardBorder }]}>
-              <ThemedText style={[styles.switchLabel, { color: colors.text }]}>Dark mode</ThemedText>
-              <Switch
-                value={isDark}
-                onValueChange={(value) => setPreference(value ? 'dark' : 'light')}
-                trackColor={{ false: colors.border, true: themeYellow + '99' }}
-                thumbColor={isDark ? themeBlue : colors.textSecondary}
-              />
+            <View style={styles.appearanceRow}>
+              {(['dark', 'light', 'system'] as const).map((mode) => {
+                const selected = preference === mode;
+                const label = mode === 'system' ? 'Auto' : mode === 'light' ? 'Light' : 'Dark';
+                return (
+                  <Pressable
+                    key={mode}
+                    onPress={() => setPreference(mode)}
+                    style={({ pressed }) => [
+                      styles.appearanceOption,
+                      { borderColor: cardBorder },
+                      selected && { backgroundColor: themeYellow, borderColor: themeYellow },
+                      pressed && { opacity: 0.85 },
+                    ]}
+                  >
+                    <ThemedText
+                      style={[
+                        styles.appearanceOptionText,
+                        { color: selected ? themeBlue : colors.text },
+                      ]}
+                    >
+                      {label}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
             </View>
-            <Pressable
-              style={({ pressed }) => [styles.systemOption, { opacity: pressed ? 0.7 : 1 }]}
-              onPress={() => setPreference('system')}
-            >
-              <ThemedText style={[styles.systemOptionText, { color: colors.textSecondary }]}>
-                {preference === 'system' ? '✓ ' : ''}Use system setting
-              </ThemedText>
-            </Pressable>
           </View>
 
-          {/* Request time off */}
-          <Pressable
-            onPress={() => router.push('/request-time-off')}
-            style={({ pressed }) => [
-              styles.card,
-              { backgroundColor: cardBg, borderColor: cardBorder, opacity: pressed ? 0.9 : 1 },
-            ]}
-          >
-            <View style={styles.cardHeader}>
-              <Ionicons name="calendar-outline" size={20} color={themeYellow} />
-              <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Request time off</ThemedText>
+          {/* Admin – only for admin role */}
+          {role === 'admin' && (
+            <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+              <View style={styles.cardHeader}>
+                <Ionicons name="shield-checkmark-outline" size={20} color={themeYellow} />
+                <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Admin</ThemedText>
+              </View>
+              <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>
+                Manage events, crew, and settings
+              </ThemedText>
+              <View style={styles.adminLinks}>
+                {[
+                  { label: 'Events', icon: 'calendar-outline' as const, href: '/admin/events' },
+                  { label: 'Users & Crew', icon: 'people-outline' as const, href: '/admin/users' },
+                  { label: 'Equipment', icon: 'cube-outline' as const, href: '/admin/equipment' },
+                  { label: 'Clients', icon: 'business-outline' as const, href: '/admin/clients' },
+                  { label: 'Reports', icon: 'bar-chart-outline' as const, href: '/admin/reports' },
+                  { label: 'Payments', icon: 'card-outline' as const, href: '/admin/payments' },
+                  { label: 'Time off', icon: 'time-outline' as const, href: '/admin/timeoff' },
+                  { label: 'Communication', icon: 'chatbubbles-outline' as const, href: '/admin/communications' },
+                  { label: 'Settings', icon: 'settings-outline' as const, href: '/admin/settings' },
+                  { label: 'Audit logs', icon: 'document-text-outline' as const, href: '/admin/audit' },
+                ].map((item) => (
+                  <Pressable
+                    key={item.href}
+                    onPress={() => router.push(item.href as any)}
+                    style={({ pressed }) => [
+                      styles.adminLinkRow,
+                      { borderBottomColor: cardBorder },
+                      pressed && { opacity: 0.7 },
+                    ]}
+                  >
+                    <Ionicons name={item.icon} size={20} color={themeYellow} />
+                    <ThemedText style={[styles.adminLinkLabel, { color: colors.text }]}>{item.label}</ThemedText>
+                    <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                  </Pressable>
+                ))}
+              </View>
             </View>
-            <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>
-              Submit a leave request for approval
-            </ThemedText>
-            <View style={styles.cardRow}>
-              <ThemedText style={[styles.cardCta, { color: themeBlue }]}>Open form</ThemedText>
-              <Ionicons name="chevron-forward" size={18} color={themeBlue} />
-            </View>
-          </Pressable>
+          )}
 
           {/* Passport photo card */}
           <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
@@ -350,6 +405,27 @@ export default function ProfileScreen() {
               placeholder="Email"
               keyboardType="email-address"
               autoCapitalize="none"
+              style={styles.input}
+            />
+            <StagePassInput
+              value={phoneNumber}
+              onChangeText={setPhoneNumber}
+              placeholder="Phone number"
+              keyboardType="phone-pad"
+              style={styles.input}
+            />
+            <StagePassInput
+              value={address}
+              onChangeText={setAddress}
+              placeholder="Address"
+              autoCapitalize="words"
+              style={styles.input}
+            />
+            <StagePassInput
+              value={emergencyContact}
+              onChangeText={setEmergencyContact}
+              placeholder="Emergency contact (name & number)"
+              keyboardType="default"
               style={styles.input}
             />
             {user.username ? (
@@ -421,37 +497,39 @@ export default function ProfileScreen() {
             />
           </View>
 
-          {/* Security: Password card */}
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-            <View style={styles.cardHeader}>
-              <Ionicons name="lock-closed-outline" size={20} color={themeYellow} />
-              <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Change password</ThemedText>
+          {/* Security: Password card – admin only (web login) */}
+          {role === 'admin' ? (
+            <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+              <View style={styles.cardHeader}>
+                <Ionicons name="lock-closed-outline" size={20} color={themeYellow} />
+                <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Change password</ThemedText>
+              </View>
+              <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>
+                For web admin login
+              </ThemedText>
+              <StagePassInput
+                value={password}
+                onChangeText={setPassword}
+                placeholder="New password"
+                secureTextEntry
+                style={styles.input}
+              />
+              <StagePassInput
+                value={passwordConfirmation}
+                onChangeText={setPasswordConfirmation}
+                placeholder="Confirm new password"
+                secureTextEntry
+                style={styles.input}
+              />
+              <StagePassButton
+                title={saving ? 'Updating…' : 'Update password'}
+                onPress={handleSave}
+                disabled={saving}
+                variant="outline"
+                style={styles.cardButton}
+              />
             </View>
-            <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>
-              For web admin login
-            </ThemedText>
-            <StagePassInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder="New password"
-              secureTextEntry
-              style={styles.input}
-            />
-            <StagePassInput
-              value={passwordConfirmation}
-              onChangeText={setPasswordConfirmation}
-              placeholder="Confirm new password"
-              secureTextEntry
-              style={styles.input}
-            />
-            <StagePassButton
-              title={saving ? 'Updating…' : 'Update password'}
-              onPress={handleSave}
-              disabled={saving}
-              variant="outline"
-              style={styles.cardButton}
-            />
-          </View>
+          ) : null}
 
           {/* Sign out */}
           <Pressable
@@ -497,6 +575,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: Spacing.md,
+    overflow: 'hidden',
+  },
+  heroAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
   avatarText: {
     fontSize: 28,
@@ -545,27 +628,34 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: Spacing.md,
   },
-  cardRow: {
+  appearanceRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     gap: Spacing.sm,
     marginTop: Spacing.xs,
   },
-  cardCta: {
-    fontSize: 15,
-    fontWeight: '600',
+  appearanceOption: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  switchRow: {
+  appearanceOptionText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  adminLinks: { marginTop: Spacing.xs },
+  adminLinkRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: Spacing.md,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: 0,
+    gap: Spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    marginBottom: Spacing.xs,
   },
-  switchLabel: { fontSize: 16, fontWeight: '600' },
-  systemOption: { paddingVertical: Spacing.sm },
-  systemOptionText: { fontSize: 14 },
+  adminLinkLabel: { flex: 1, fontSize: 15, fontWeight: '600' },
   input: { marginBottom: Spacing.md },
   infoRow: {
     flexDirection: 'row',

@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\VehicleController;
 use App\Http\Controllers\Api\EventTransportController;
 use App\Http\Controllers\Api\BackupController;
 use App\Http\Controllers\Api\SettingsController;
+use App\Http\Controllers\Api\TaskController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
@@ -40,6 +41,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('my-event-today', [EventController::class, 'myEventToday']);
     Route::apiResource('events', EventController::class);
     Route::post('events/{event}/assign-user', [EventCrewController::class, 'assignUser']);
+    Route::get('events/{event}/crew-status', [EventCrewController::class, 'crewStatus']);
     Route::post('events/{event}/attendance/manual-checkin/{user}', [EventCrewController::class, 'manualCheckin']);
     Route::delete('events/{event}/crew/{user}', [EventCrewController::class, 'removeUser']);
     Route::post('events/{event}/transfer-user', [EventCrewController::class, 'transferUser']);
@@ -96,6 +98,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('timeoff/request', [TimeOffController::class, 'request']);
     Route::post('timeoff/approve', [TimeOffController::class, 'approve']);
     Route::post('timeoff/reject', [TimeOffController::class, 'reject']);
+
+    Route::get('tasks', [TaskController::class, 'index']);
+    Route::post('tasks', [TaskController::class, 'store']);
+    Route::get('tasks/{task}', [TaskController::class, 'show']);
+    Route::put('tasks/{task}', [TaskController::class, 'update']);
+    Route::delete('tasks/{task}', [TaskController::class, 'destroy']);
+    Route::patch('tasks/{task}/status', [TaskController::class, 'updateStatus']);
+    Route::get('tasks/{task}/comments', [TaskController::class, 'comments']);
+    Route::post('tasks/{task}/comments', [TaskController::class, 'storeComment']);
 
     Route::get('backup', BackupController::class);
     Route::get('settings', [SettingsController::class, 'index']);

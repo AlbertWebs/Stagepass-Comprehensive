@@ -56,7 +56,7 @@ export function DateStrip({ selectedDate, onSelectDate }: DateStripProps) {
             onPress={() => onSelectDate(d)}
             style={[
               styles.dayChip,
-              { borderColor: colors.border },
+              { borderColor: colors.border, backgroundColor: isSelected ? undefined : colors.surface },
               isSelected && styles.dayChipSelected,
             ]}
           >
@@ -104,6 +104,11 @@ const styles = StyleSheet.create({
   dayChipSelected: {
     backgroundColor: themeYellow,
     borderColor: themeYellow,
+    shadowColor: themeYellow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4,
   },
   dayLabel: {
     fontSize: 12,

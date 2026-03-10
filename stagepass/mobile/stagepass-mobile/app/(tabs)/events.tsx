@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
   RefreshControl,
@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api, type Event } from '~/services/api';
-import { AppHeader } from '@/components/AppHeader';
+import { HomeHeader } from '@/components/HomeHeader';
+import { DateStrip } from '@/components/DateStrip';
 import { EventCard } from '@/components/EventCard';
 import { StagepassLoader } from '@/components/StagepassLoader';
 import { ThemedText } from '@/components/themed-text';
@@ -18,27 +19,29 @@ import { ThemedView } from '@/components/themed-view';
 import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 
-function isUpcoming(dateStr: string): boolean {
+const TAB_BAR_HEIGHT = 58;
+
+function eventMatchesDate(event: Event, date: Date): boolean {
   try {
-    const d = new Date(dateStr);
+    const d = new Date(event.date);
     d.setHours(0, 0, 0, 0);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return d.getTime() >= today.getTime();
+    const sel = new Date(date);
+    sel.setHours(0, 0, 0, 0);
+    return d.getTime() === sel.getTime();
   } catch {
-    return true;
+    return false;
   }
 }
 
-function sortByDate(a: Event, b: Event): number {
+function sortByTime(a: Event, b: Event): number {
   try {
-    return new Date(a.date).getTime() - new Date(b.date).getTime();
+    const tA = (a.start_time || '').replace(':', '');
+    const tB = (b.start_time || '').replace(':', '');
+    return tA.localeCompare(tB) || new Date(a.date).getTime() - new Date(b.date).getTime();
   } catch {
     return 0;
   }
 }
-
-const TAB_BAR_HEIGHT = 56;
 
 export default function EventsTab() {
   const router = useRouter();
@@ -47,13 +50,14 @@ export default function EventsTab() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const scrollBottomPadding = insets.bottom + TAB_BAR_HEIGHT + Spacing.lg;
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const scrollBottomPadding = insets.bottom + TAB_BAR_HEIGHT + Spacing.sm;
 
   const loadEvents = useCallback(async () => {
     try {
       const res = await api.events.list();
       const list = Array.isArray(res?.data) ? res.data : [];
-      setEvents(list.sort(sortByDate));
+      setEvents(list.sort(sortByTime));
     } catch {
       setEvents([]);
     } finally {
@@ -71,68 +75,44 @@ export default function EventsTab() {
     loadEvents();
   }, [loadEvents]);
 
+  const eventsOnSelectedDate = useMemo(
+    () => events.filter((e) => eventMatchesDate(e, selectedDate)),
+    [events, selectedDate]
+  );
+
   if (loading) {
     return <StagepassLoader message="Loading events…" fullScreen />;
   }
 
-  const upcoming = events.filter((e) => isUpcoming(e.date));
-  const past = events.filter((e) => !isUpcoming(e.date));
-
-  const renderSection = (title: string, count: number, data: Event[], isUpcoming: boolean) => {
-    if (data.length === 0) return null;
-    const useYellowBadge = isUpcoming;
-    return (
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
-            {title}
-          </ThemedText>
-          <View style={[
-            styles.countBadge,
-            { backgroundColor: useYellowBadge ? themeYellow + '22' : themeBlue + '18' },
-          ]}>
-            <ThemedText style={[styles.countText, { color: useYellowBadge ? themeBlue : themeBlue }]}>
-              {count}
-            </ThemedText>
-          </View>
-        </View>
-        {data.map((item) => (
-          <EventCard
-            key={item.id}
-            event={item}
-            onPress={() => router.push({ pathname: '/events/[id]', params: { id: String(item.id) } })}
-          />
-        ))}
-      </View>
-    );
-  };
-
-  const empty = events.length === 0;
+  const sectionTitle = (() => {
+    const d = new Date(selectedDate);
+    d.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (d.getTime() === today.getTime()) return "Today's Events";
+    return 'Events';
+  })();
 
   return (
     <ThemedView style={styles.container}>
-      <AppHeader />
-      <View style={styles.content}>
-        <View style={[styles.hero, { backgroundColor: themeBlue + '0c', borderColor: colors.border }]}>
-          <View style={[styles.heroIconWrap, { backgroundColor: themeBlue, borderColor: themeYellow }]}>
-            <Ionicons name="calendar" size={28} color="#fff" />
-          </View>
-          <View style={styles.heroTextBlock}>
-            <ThemedText style={[styles.heroTitle, { color: colors.text }]}>
-              My Events
-            </ThemedText>
-            <ThemedText style={[styles.heroSub, { color: colors.textSecondary }]}>
-              Tap an event for{' '}
-              <ThemedText style={[styles.heroSubAccent, { color: themeBlue }]}>details and check-in</ThemedText>
-            </ThemedText>
-          </View>
-          <View style={[styles.heroAccent, { backgroundColor: themeYellow }]} />
+      <HomeHeader title="My Events" />
+      <View style={[styles.content, { backgroundColor: colors.background }]}>
+        <View style={[styles.dateStripWrap, { backgroundColor: colors.surface }]}>
+          <DateStrip selectedDate={selectedDate} onSelectDate={setSelectedDate} />
         </View>
 
-        {empty ? (
+        <View style={styles.sectionHeader}>
+          <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+          <Ionicons name="calendar" size={20} color={themeYellow} style={styles.sectionIcon} />
+          <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>
+            {sectionTitle}
+          </ThemedText>
+        </View>
+
+        {events.length === 0 ? (
           <View style={styles.emptyWrap}>
             <View style={[styles.emptyIconWrap, { backgroundColor: colors.surface, borderColor: themeYellow }]}>
-              <Ionicons name="calendar-outline" size={48} color={themeBlue} />
+              <Ionicons name="calendar-outline" size={48} color={themeYellow} />
             </View>
             <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>
               No events yet
@@ -142,10 +122,25 @@ export default function EventsTab() {
             </ThemedText>
             <Pressable
               onPress={onRefresh}
-              style={({ pressed }) => [styles.emptyButton, { opacity: pressed ? 0.9 : 1 }]}
+              style={({ pressed }) => [
+                styles.emptyButton,
+                { opacity: pressed ? 0.9 : 1, backgroundColor: themeYellow },
+              ]}
             >
               <ThemedText style={styles.emptyButtonText}>Refresh events</ThemedText>
             </Pressable>
+          </View>
+        ) : eventsOnSelectedDate.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <View style={[styles.emptyIconWrapSmall, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Ionicons name="today-outline" size={32} color={colors.textSecondary} />
+            </View>
+            <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>
+              No events on this day
+            </ThemedText>
+            <ThemedText style={[styles.emptySub, { color: colors.textSecondary }]}>
+              Select another date or pull down to refresh.
+            </ThemedText>
           </View>
         ) : (
           <ScrollView
@@ -155,12 +150,25 @@ export default function EventsTab() {
               <RefreshControl
                 refreshing={refreshing}
                 onRefresh={onRefresh}
-                tintColor={themeBlue}
+                tintColor={themeYellow}
               />
             }
           >
-            {renderSection('Upcoming', upcoming.length, upcoming, true)}
-            {renderSection('Past', past.length, past, false)}
+            {eventsOnSelectedDate.map((item) => (
+              <EventCard
+                key={item.id}
+                event={{
+                  id: item.id,
+                  name: item.name,
+                  date: item.date,
+                  start_time: item.start_time,
+                  expected_end_time: item.expected_end_time,
+                  location_name: item.location_name,
+                  status: item.status,
+                }}
+                onPress={() => router.push({ pathname: '/events/[id]', params: { id: String(item.id) } })}
+              />
+            ))}
           </ScrollView>
         )}
       </View>
@@ -170,69 +178,35 @@ export default function EventsTab() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { flex: 1, paddingHorizontal: Spacing.xl },
-  hero: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: Spacing.md,
-    padding: Spacing.lg,
-    marginBottom: Spacing.lg,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    overflow: 'hidden',
-    position: 'relative',
+  content: {
+    flex: 1,
+    paddingHorizontal: Spacing.lg,
   },
-  heroIconWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  heroTextBlock: { flex: 1, minWidth: 120 },
-  heroTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-  },
-  heroSub: {
-    fontSize: 14,
-    marginTop: 2,
-  },
-  heroSubAccent: {
-    fontWeight: '600',
-  },
-  heroAccent: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-  },
-  section: {
-    marginBottom: Spacing.xl,
+  dateStripWrap: {
+    marginHorizontal: -Spacing.lg,
+    paddingBottom: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(234, 179, 8, 0.2)',
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
+    marginTop: Spacing.lg,
     marginBottom: Spacing.md,
   },
+  sectionTitleAccent: {
+    width: 4,
+    height: 22,
+    borderRadius: 2,
+    marginRight: Spacing.sm,
+  },
+  sectionIcon: {
+    marginRight: Spacing.xs,
+  },
   sectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-  },
-  countBadge: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.full,
-  },
-  countText: {
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   list: {
     paddingBottom: Spacing.xxl * 2,
@@ -244,30 +218,50 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xxl * 2,
   },
   emptyIconWrap: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    marginBottom: Spacing.lg,
+    shadowColor: themeYellow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  emptyIconWrapSmall: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 19,
+    fontWeight: '800',
     marginBottom: Spacing.sm,
+    letterSpacing: 0.2,
   },
   emptySub: {
     fontSize: 15,
     textAlign: 'center',
-    maxWidth: 260,
+    maxWidth: 280,
     marginBottom: Spacing.lg,
+    lineHeight: 22,
   },
   emptyButton: {
-    backgroundColor: themeYellow,
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.xl,
     borderRadius: BorderRadius.lg,
+    shadowColor: themeBlue,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
   },
   emptyButtonText: {
     fontSize: 16,

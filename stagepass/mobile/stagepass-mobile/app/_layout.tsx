@@ -51,14 +51,14 @@ function RootLayoutNav() {
         {isLoading && <StagepassLoader message="Checking session…" fullScreen />}
         <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="admin" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
         <Stack.Screen name="events/[id]" options={{ title: 'Event' }} />
-        <Stack.Screen name="request-time-off" options={{ title: 'Request time off' }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
         {shouldRedirectToLogin && <Redirect href="/login" />}
-        <StatusBar style="auto" />
+        <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
       </ThemeProvider>
     </SafeAreaProvider>
   );

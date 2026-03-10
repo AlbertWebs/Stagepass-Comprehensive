@@ -142,10 +142,13 @@ export const api = {
       }),
     logout: () => request<{ message: string }>('/logout', { method: 'POST' }),
     me: () => request<User>('/me'),
-    /** Update current user profile (name, email, optional password, optional PIN) */
+    /** Update current user profile (name, email, phone, address, optional password, optional PIN) */
     updateProfile: (body: {
       name?: string;
       email?: string;
+      phone_number?: string;
+      address?: string;
+      emergency_contact?: string;
       password?: string;
       password_confirmation?: string;
       current_pin?: string;
@@ -164,41 +167,34 @@ export const api = {
     },
   },
   events: {
-    /** List events. For crew: assigned only. For admin: backend may return all. */
-    list: (params?: { status?: string }) =>
+    /** List events. Backend returns only assigned for crew; admins get all. */
+    list: (params?: { status?: string; page?: number; per_page?: number }) =>
       request<{ data: Event[] }>('/events', { params: params as Record<string, string> | undefined }),
     get: (id: number) => request<Event>(`/events/${id}`),
-    /** Event assigned to current user for today (crew/leader home). Sends device local date so "today" matches user timezone. */
-    myEventToday: () => {
-      const now = new Date();
-      const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      return request<{ event: Event | null }>('/my-event-today', {
-        headers: { 'X-Local-Date': localDate },
-      });
-    },
+    /** Event assigned to current user for today (crew/leader home). Pass localDate (YYYY-MM-DD) so backend uses device date. */
+    myEventToday: (localDate?: string) =>
+      request<{ event: Event | null }>('/my-event-today', {
+        headers: localDate ? { 'X-Local-Date': localDate } : undefined,
+      } as RequestInit),
     create: (body: Partial<Event>) =>
       request<Event>('/events', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: number, body: Partial<Event>) =>
       request<Event>(`/events/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
-    delete: (id: number) =>
-      request<{ message?: string }>(`/events/${id}`, { method: 'DELETE' }),
+    /** Admin: delete event */
+    delete: (id: number) => request<unknown>(`/events/${id}`, { method: 'DELETE' }),
+    /** Admin/team leader: assign user to event crew */
+    assignUser: (eventId: number, userId: number, roleInEvent?: string) =>
+      request<unknown>(`/events/${eventId}/assign-user`, {
+        method: 'POST',
+        body: JSON.stringify({ user_id: userId, role_in_event: roleInEvent ?? null }),
+      }),
+    /** Admin/team leader: remove user from event crew */
+    removeUser: (eventId: number, userId: number) =>
+      request<unknown>(`/events/${eventId}/crew/${userId}`, { method: 'DELETE' }),
+    /** Admin/team leader: end event with comment */
+    end: (eventId: number, body: { end_comment: string }) =>
+      request<Event>(`/events/${eventId}/end`, { method: 'POST', body: JSON.stringify(body) }),
   },
-  /** Admin: list all users (crew, leaders). Backend: GET /api/users or /admin/users */
-  users: {
-    list: () => request<{ data: User[] }>('/users'),
-  },
-  /** Admin: assign crew to event. Backend: POST /events/:id/assign or PUT /events/:id/crew */
-  eventAssignCrew: (eventId: number, userIds: number[]) =>
-    request<Event>(`/events/${eventId}/assign`, {
-      method: 'POST',
-      body: JSON.stringify({ user_ids: userIds }),
-    }),
-  /** Admin/Leader: get event checklist(s) with items for operations toggles. Backend: GET /events/:id/checklists */
-  eventChecklists: (eventId: number) =>
-    request<{ data: MyChecklist[] }>(`/events/${eventId}/checklists`),
-  /** Admin/Leader: get tasks for an event. Backend: GET /events/:id/tasks */
-  eventTasks: (eventId: number) =>
-    request<{ data: MyTask[] }>(`/events/${eventId}/tasks`),
   /** Optional: two-step auth verify PIN (if backend supports POST /verify-pin) */
   authVerifyPin: (pin: string) =>
     request<{ token: string; user: User }>('/verify-pin', {
@@ -215,6 +211,11 @@ export const api = {
           longitude,
           timestamp: new Date().toISOString(),
         }),
+      }),
+    /** Admin/team leader: check in a crew member on their behalf (manual check-in) */
+    checkinOnBehalf: (eventId: number, userId: number, _latitude?: number, _longitude?: number) =>
+      request<{ checkin_time: string }>(`/events/${eventId}/attendance/manual-checkin/${userId}`, {
+        method: 'POST',
       }),
     checkout: (eventId: number) =>
       request<{ checkout_time: string; total_hours: number }>('/attendance/checkout', {
@@ -245,6 +246,14 @@ export const api = {
           }),
         }
       ),
+    list: () => request<{ data: Payment[] }>('/payments'),
+    approve: (paymentId: number) =>
+      request<Payment>('/payments/approve', { method: 'POST', body: JSON.stringify({ payment_id: paymentId }) }),
+    reject: (paymentId: number, reason?: string) =>
+      request<Payment>('/payments/reject', {
+        method: 'POST',
+        body: JSON.stringify({ payment_id: paymentId, rejection_reason: reason }),
+      }),
   },
   /** Crew: my tasks (GET /api/my-tasks) */
   myTasks: () => request<{ data: MyTask[] }>('/my-tasks'),
@@ -266,9 +275,100 @@ export const api = {
   /** Leader: send message to crew */
   eventMessage: (eventId: number, body: { target: 'all' | 'department' | 'user'; department?: string; user_id?: number; message: string }) =>
     request<unknown>(`/events/${eventId}/message`, { method: 'POST', body: JSON.stringify(body) }),
-  /** Admin: dashboard */
+  /** Admin: dashboard (optional backend endpoint; fallback: use events + users) */
   adminDashboard: () =>
-    request<AdminDashboardData>('/admin/dashboard'),
+    request<AdminDashboardData>('/admin/dashboard').catch(() => ({ today_events: 0, active_events: 0, total_crew: 0 })),
+  roles: {
+    list: () => request<{ data: { id: number; name: string }[] }>('/roles'),
+  },
+  users: {
+    list: () => request<{ data: User[] }>('/users'),
+    get: (id: number) => request<User>(`/users/${id}`),
+    create: (body: Partial<User> & { password?: string }) =>
+      request<User>('/users', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number, body: Partial<User>) =>
+      request<User>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (id: number) => request<unknown>(`/users/${id}`, { method: 'DELETE' }),
+  },
+  clients: {
+    list: () => request<{ data: Client[] }>('/clients'),
+    get: (id: number) => request<Client>(`/clients/${id}`),
+    create: (body: Partial<Client>) =>
+      request<Client>('/clients', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number, body: Partial<Client>) =>
+      request<Client>(`/clients/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (id: number) => request<unknown>(`/clients/${id}`, { method: 'DELETE' }),
+  },
+  equipment: {
+    list: () => request<{ data: Equipment[] }>('/equipment'),
+    get: (id: number) => request<Equipment>(`/equipment/${id}`),
+    create: (body: Partial<Equipment>) =>
+      request<Equipment>('/equipment', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number, body: Partial<Equipment>) =>
+      request<Equipment>(`/equipment/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (id: number) => request<unknown>(`/equipment/${id}`, { method: 'DELETE' }),
+  },
+  reports: {
+    get: (params?: { from?: string; to?: string }) =>
+      request<ReportsData>('/reports', { params: params as Record<string, string> | undefined }),
+  },
+  timeoff: {
+    list: () => request<{ data: TimeOffRequest[] }>('/timeoff'),
+    approve: (requestId: number) =>
+      request<TimeOffRequest>('/timeoff/approve', {
+        method: 'POST',
+        body: JSON.stringify({ request_id: requestId }),
+      }),
+    reject: (requestId: number) =>
+      request<TimeOffRequest>('/timeoff/reject', {
+        method: 'POST',
+        body: JSON.stringify({ request_id: requestId }),
+      }),
+  },
+  communications: {
+    list: () => request<{ data: Communication[] }>('/communications'),
+    create: (body: { title: string; body?: string; target?: string }) =>
+      request<Communication>('/communications', { method: 'POST', body: JSON.stringify(body) }),
+    delete: (id: number) => request<unknown>(`/communications/${id}`, { method: 'DELETE' }),
+  },
+  settings: {
+    get: () => request<Record<string, unknown>>('/settings'),
+    update: (body: Record<string, unknown>) =>
+      request<Record<string, unknown>>('/settings', { method: 'PUT', body: JSON.stringify(body) }),
+  },
+  auditLogs: {
+    list: (params?: { page?: number }) =>
+      request<{ data: AuditLogEntry[] }>('/audit-logs', { params: params as Record<string, string> | undefined }),
+  },
+  /** Task management: list (crew = assigned, admin = all), create/update/delete (admin), status + comments */
+  tasks: {
+    list: (params?: { event_id?: number; user_id?: number; status?: string; search?: string; per_page?: number; page?: number }) =>
+      request<PaginatedResponse<TaskItem>>('/tasks', {
+        params: params
+          ? Object.fromEntries(
+              Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)])
+            ) as Record<string, string>
+          : undefined,
+      }),
+    get: (id: number) => request<TaskItem>(`/tasks/${id}`),
+    create: (body: {
+      title: string;
+      description?: string;
+      event_id?: number;
+      priority?: string;
+      due_date?: string;
+      notes?: string;
+      assignee_ids?: number[];
+    }) => request<TaskItem>('/tasks', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number, body: Partial<CreateTaskBody>) =>
+      request<TaskItem>(`/tasks/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (id: number) => request<unknown>(`/tasks/${id}`, { method: 'DELETE' }),
+    updateStatus: (id: number, status: TaskStatus) =>
+      request<TaskItem>(`/tasks/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+    comments: (id: number) => request<{ data: TaskCommentItem[] }>(`/tasks/${id}/comments`),
+    addComment: (id: number, body: string) =>
+      request<TaskCommentItem>(`/tasks/${id}/comments`, { method: 'POST', body: JSON.stringify({ body }) }),
+  },
 };
 
 export interface MyTask {
@@ -278,6 +378,55 @@ export interface MyTask {
   deadline?: string;
   notes?: string;
   event_id?: number;
+}
+
+/** Task management (new): full task with assignees, event, comments */
+export type TaskPriority = 'low' | 'medium' | 'high';
+export type TaskStatus = 'pending' | 'in_progress' | 'completed';
+
+export interface TaskItem {
+  id: number;
+  title: string;
+  description?: string | null;
+  event_id?: number | null;
+  created_by?: number | null;
+  priority: TaskPriority;
+  due_date?: string | null;
+  status: TaskStatus;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  event?: { id: number; name: string; date?: string } | null;
+  creator?: { id: number; name: string } | null;
+  assignees?: { id: number; name: string }[];
+  comments?: TaskCommentItem[];
+}
+
+export interface TaskCommentItem {
+  id: number;
+  task_id: number;
+  user_id: number;
+  body: string;
+  created_at: string;
+  user?: { id: number; name: string };
+}
+
+export interface CreateTaskBody {
+  title: string;
+  description?: string;
+  event_id?: number;
+  priority?: TaskPriority;
+  due_date?: string;
+  notes?: string;
+  assignee_ids?: number[];
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
 }
 
 export interface MyChecklist {
@@ -319,6 +468,9 @@ export interface User {
   roles?: { id: number; name: string }[];
   /** Profile/passport photo URL (set by backend after upload) */
   avatar_url?: string;
+  phone_number?: string;
+  address?: string;
+  emergency_contact?: string;
 }
 
 /** Resolve app role from backend role names. */
@@ -358,4 +510,54 @@ export interface TimeOffRequest {
   end_date: string;
   reason?: string;
   status: string;
+}
+
+export interface Client {
+  id: number;
+  name: string;
+  email?: string;
+  phone?: string;
+  created_at?: string;
+}
+
+export interface Equipment {
+  id: number;
+  name: string;
+  description?: string;
+  quantity?: number;
+  created_at?: string;
+}
+
+export interface Payment {
+  id: number;
+  event_id: number;
+  user_id: number;
+  hours: number;
+  per_diem: number;
+  allowances: number;
+  total_amount: number;
+  status: string;
+  created_at?: string;
+}
+
+export interface Communication {
+  id: number;
+  title: string;
+  body?: string;
+  target?: string;
+  created_at?: string;
+}
+
+export interface ReportsData {
+  [key: string]: unknown;
+}
+
+export interface AuditLogEntry {
+  id: number;
+  user_id?: number;
+  action: string;
+  model_type?: string;
+  model_id?: number;
+  changes?: string;
+  created_at: string;
 }

@@ -7,6 +7,7 @@ use App\Models\Event;
 use App\Models\EventUser;
 use App\Models\ReminderLog;
 use App\Models\User;
+use Carbon\Carbon;
 use App\Notifications\CrewAddedToEventReminder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -107,6 +108,44 @@ class EventCrewController extends Controller
             'message' => 'User transferred successfully',
             'target_event_id' => $targetEvent->id,
         ]);
+    }
+
+    /**
+     * Team leader (or admin): list crew with check-in status for manage check-in screen.
+     */
+    public function crewStatus(Request $request, Event $event): JsonResponse
+    {
+        if (! $this->canManageCrew($request, $event)) {
+            return response()->json(['message' => 'You cannot view crew status for this event.'], 403);
+        }
+
+        $crew = $event->crew()->get();
+        $data = $crew->map(function (User $user) {
+            $pivot = $user->pivot;
+            $checkinTime = $pivot->checkin_time ?? null;
+            $checkoutTime = $pivot->checkout_time ?? null;
+            if ($checkoutTime) {
+                $status = 'checked_out';
+            } elseif ($checkinTime) {
+                $status = 'checked_in';
+            } else {
+                $status = 'pending';
+            }
+            $checkinFormatted = null;
+            if ($checkinTime) {
+                $checkinFormatted = $checkinTime instanceof Carbon
+                    ? $checkinTime->format('g:i A')
+                    : Carbon::parse($checkinTime)->format('g:i A');
+            }
+            return [
+                'user_id' => $user->id,
+                'name' => $user->name,
+                'status' => $status,
+                'checkin_time' => $checkinFormatted,
+            ];
+        })->values()->all();
+
+        return response()->json(['data' => $data]);
     }
 
     /**

@@ -23,7 +23,7 @@ class EventController extends Controller
         $userId = $request->user()->id;
         $event = Event::query()
             ->with(['teamLeader', 'crew'])
-            ->where('date', $today)
+            ->whereDate('date', $today)
             ->where(function ($q) use ($userId) {
                 $q->where('team_leader_id', $userId)
                     ->orWhereHas('crew', fn ($q) => $q->where('user_id', $userId));

@@ -19,6 +19,7 @@ import Placeholder from '@/pages/Placeholder';
 import Reports from '@/pages/Reports';
 import Transport from '@/pages/Transport';
 import Settings from '@/pages/Settings';
+import Tasks from '@/pages/Tasks';
 import TimeOff from '@/pages/TimeOff';
 import Users from '@/pages/Users';
 
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="events/:id" element={<EventDetail />} />
         <Route path="crew" element={<Users title="Crew" subtitle="Manage crew members. Search, create, edit or delete and assign roles." sectionLabel="Crew members" createButtonLabel="Add crew" />} />
         <Route path="event-operations" element={<EventOperations />} />
+        <Route path="tasks" element={<Tasks />} />
         <Route path="equipment" element={<Equipment />} />
         <Route path="transport" element={<Transport />} />
         <Route path="payments" element={<Payments />} />

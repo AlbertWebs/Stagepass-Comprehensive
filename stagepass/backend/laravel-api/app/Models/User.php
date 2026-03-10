@@ -51,6 +51,11 @@ class User extends Authenticatable
         return $this->roles()->where('name', $name)->exists();
     }
 
+    public function assignedTasks(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(Task::class, 'task_user')->withTimestamps();
+    }
+
     public function routeNotificationForSms(): ?string
     {
         return $this->phone;

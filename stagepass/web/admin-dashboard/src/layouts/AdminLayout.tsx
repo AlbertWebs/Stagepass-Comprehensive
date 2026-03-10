@@ -15,6 +15,7 @@ const nav: Array<
   { type: 'link', to: '/crew', label: 'Crew', icon: CrewIcon },
   { type: 'section', label: 'Event Operations' },
   { type: 'link', to: '/event-operations', label: 'Event Operations', icon: EventOperationsIcon },
+  { type: 'link', to: '/tasks', label: 'Task Management', icon: TasksIcon },
   { type: 'section', label: 'Logistics' },
   { type: 'link', to: '/equipment', label: 'Equipment', icon: EquipmentIcon },
   { type: 'link', to: '/transport', label: 'Transport & Logistics', icon: TransportIcon },
@@ -40,6 +41,7 @@ const pathToTitle: Record<string, string> = {
   '/events': 'Events',
   '/crew': 'Crew',
   '/event-operations': 'Event Operations',
+  '/tasks': 'Task Management',
   '/equipment': 'Equipment',
   '/transport': 'Transport & Logistics',
   '/payments': 'Payments',
@@ -116,6 +118,13 @@ function EventOperationsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+    </svg>
+  );
+}
+function TasksIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
     </svg>
   );
 }

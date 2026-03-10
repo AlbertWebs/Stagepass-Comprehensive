@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type Client, type Event, type Paginated, type User } from '@/services/api';
 import { FormModal } from '@/components/FormModal';
+import { LocationSearchInput } from '@/components/LocationSearchInput';
 import { PageHeader } from '@/components/PageHeader';
 import { Preloader } from '@/components/Preloader';
 import { SectionCard } from '@/components/SectionCard';
@@ -20,6 +21,8 @@ type EventFormState = {
   start_time: string;
   expected_end_time: string;
   location_name: string;
+  latitude: number | '';
+  longitude: number | '';
   geofence_radius: number;
   team_leader_id: string;
   client_id: string;
@@ -36,6 +39,8 @@ function emptyForm(): EventFormState {
     start_time: '09:00',
     expected_end_time: '',
     location_name: '',
+    latitude: '',
+    longitude: '',
     geofence_radius: 100,
     team_leader_id: '',
     client_id: '',
@@ -51,6 +56,8 @@ function eventToForm(e: Event): EventFormState {
     start_time: e.start_time?.toString().slice(0, 5) ?? '',
     expected_end_time: e.expected_end_time?.toString().slice(0, 5) ?? '',
     location_name: e.location_name ?? '',
+    latitude: e.latitude != null ? e.latitude : '',
+    longitude: e.longitude != null ? e.longitude : '',
     geofence_radius: e.geofence_radius ?? 100,
     team_leader_id: e.team_leader_id ? String(e.team_leader_id) : '',
     client_id: e.client_id != null ? String(e.client_id) : '',
@@ -143,6 +150,8 @@ export default function Events() {
         start_time: form.start_time,
         expected_end_time: form.expected_end_time || undefined,
         location_name: form.location_name?.trim() || undefined,
+        latitude: form.latitude !== '' ? Number(form.latitude) : undefined,
+        longitude: form.longitude !== '' ? Number(form.longitude) : undefined,
         geofence_radius: form.geofence_radius,
         team_leader_id: form.team_leader_id ? Number(form.team_leader_id) : undefined,
         client_id: form.client_id ? Number(form.client_id) : undefined,
@@ -172,6 +181,8 @@ export default function Events() {
         start_time: form.start_time,
         expected_end_time: form.expected_end_time || undefined,
         location_name: form.location_name || undefined,
+        latitude: form.latitude !== '' ? Number(form.latitude) : undefined,
+        longitude: form.longitude !== '' ? Number(form.longitude) : undefined,
         geofence_radius: form.geofence_radius,
         team_leader_id: form.team_leader_id ? Number(form.team_leader_id) : undefined,
         client_id: form.client_id ? Number(form.client_id) : undefined,
@@ -253,18 +264,24 @@ export default function Events() {
             />
           </div>
         </div>
-        {/* Row 3: Location & Geofence */}
+        {/* Row 3: Location (Google Places search) & Geofence */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="form-field">
             <label className="form-label form-label-optional" htmlFor="event-location">Location</label>
-            <input
+            <LocationSearchInput
               id="event-location"
-              type="text"
               value={form.location_name}
-              onChange={(e) => setForm((f) => ({ ...f, location_name: e.target.value }))}
-              className="form-input"
-              placeholder="Venue or address"
+              onChange={(location_name) => setForm((f) => ({ ...f, location_name }))}
+              onSelect={({ location_name, latitude, longitude }) =>
+                setForm((f) => ({ ...f, location_name, latitude, longitude }))
+              }
+              placeholder="Search venue or address (Google Maps)"
             />
+            {form.latitude !== '' && form.longitude !== '' && (
+              <p className="mt-1 text-xs text-slate-500">
+                Coordinates: {Number(form.latitude).toFixed(5)}, {Number(form.longitude).toFixed(5)}
+              </p>
+            )}
           </div>
           <div className="form-field">
             <label className="form-label form-label-optional" htmlFor="event-geofence">Geofence (m)</label>

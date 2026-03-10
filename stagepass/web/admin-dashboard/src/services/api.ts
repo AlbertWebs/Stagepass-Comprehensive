@@ -403,6 +403,18 @@ export const api = {
         body: JSON.stringify({ request_id: requestId }),
       }),
   },
+  tasks: {
+    list: (params?: { event_id?: number; user_id?: number; status?: string; search?: string; page?: number; per_page?: number }) =>
+      request<Paginated<TaskItem>>('/tasks', {
+        params: params as Record<string, string | number>,
+      }),
+    get: (id: number) => request<TaskItem>(`/tasks/${id}`),
+    create: (body: { title: string; description?: string; event_id?: number; priority?: TaskPriority; due_date?: string; notes?: string; assignee_ids?: number[] }) =>
+      request<TaskItem>('/tasks', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number, body: Partial<{ title: string; description?: string; event_id?: number; priority?: TaskPriority; due_date?: string; status?: TaskStatus; notes?: string; assignee_ids?: number[] }>) =>
+      request<TaskItem>(`/tasks/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (id: number) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
+  },
 };
 
 export interface AuditLogItem {
@@ -431,6 +443,26 @@ export interface TimeOffRequestItem {
   created_at: string;
   user?: User;
   processedBy?: User;
+}
+
+export type TaskPriority = 'low' | 'medium' | 'high';
+export type TaskStatus = 'pending' | 'in_progress' | 'completed';
+
+export interface TaskItem {
+  id: number;
+  title: string;
+  description: string | null;
+  event_id: number | null;
+  created_by: number | null;
+  priority: TaskPriority;
+  due_date: string | null;
+  status: TaskStatus;
+  notes: string | null;
+  created_at?: string;
+  updated_at?: string;
+  event?: { id: number; name: string; date?: string } | null;
+  creator?: { id: number; name: string } | null;
+  assignees?: { id: number; name: string }[];
 }
 
 export interface ReportsData {

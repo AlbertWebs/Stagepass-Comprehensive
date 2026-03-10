@@ -1,5 +1,5 @@
 /**
- * StagePass theme – yellow #eab308 and blue #172455 only for brand/accent.
+ * StagePass theme – yellow #eab308 and blue #0f1838 for brand/accent.
  * "Creative Solutions | Technical Excellence"
  */
 
@@ -7,8 +7,8 @@ import { Platform } from 'react-native';
 
 // Brand colors – use only these in the mobile app
 export const themeYellow = '#eab308';
-export const themeBlue = '#172455';
-export const themeBlueLight = '#e8ecf4';
+export const themeBlue = '#0f1838';
+export const themeBlueLight = '#e6e8f0';
 
 const primary = themeYellow;
 const primaryDark = '#b89107';
