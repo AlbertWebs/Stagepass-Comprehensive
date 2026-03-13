@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\DailyOfficeCheckin;
 use App\Models\Event;
 use App\Models\EventPayment;
 use App\Models\EventUser;
@@ -30,6 +31,7 @@ class ReportsController extends Controller
         return response()->json([
             'financial' => $this->financialReport($from, $to),
             'attendance' => $this->attendanceReport($from, $to),
+            'office_checkins' => $this->officeCheckinsReport($from, $to),
             'events' => $this->eventsReport($from, $to),
             'arrival' => $this->arrivalReport($from, $to),
         ]);
@@ -39,7 +41,7 @@ class ReportsController extends Controller
     {
         $payments = EventPayment::query()
             ->with('event')
-            ->whereHas('event', fn ($q) => $q->whereBetween('date', [$from->toDateString(), $to->toDateString()]))
+            ->whereHas('event', fn ($q) => $q->spansRange($from->toDateString(), $to->toDateString()))
             ->get();
 
         $byStatus = [
@@ -86,7 +88,7 @@ class ReportsController extends Controller
     {
         $assignments = EventUser::query()
             ->whereNotNull('checkin_time')
-            ->whereHas('event', fn ($q) => $q->whereBetween('date', [$from->toDateString(), $to->toDateString()]))
+            ->whereHas('event', fn ($q) => $q->spansRange($from->toDateString(), $to->toDateString()))
             ->get();
 
         $totalHours = 0;
@@ -123,10 +125,56 @@ class ReportsController extends Controller
         ];
     }
 
+    /**
+     * Monthly report: all daily office check-ins for the period (for permanent crew).
+     */
+    private function officeCheckinsReport(Carbon $from, Carbon $to): array
+    {
+        $checkins = DailyOfficeCheckin::query()
+            ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
+            ->with('user:id,name')
+            ->orderBy('date')
+            ->orderBy('checkin_time')
+            ->get();
+
+        $byUser = [];
+        $byDay = [];
+
+        foreach ($checkins as $c) {
+            $date = $c->date->format('Y-m-d');
+            $userName = $c->user?->name ?? 'User #' . $c->user_id;
+            if (! isset($byUser[$userName])) {
+                $byUser[$userName] = ['user' => $userName, 'user_id' => $c->user_id, 'days' => 0, 'checkins' => []];
+            }
+            $byUser[$userName]['days']++;
+            $byUser[$userName]['checkins'][] = [
+                'date' => $date,
+                'checkin_time' => $c->checkin_time->format('H:i'),
+            ];
+
+            $byDay[$date] = ($byDay[$date] ?? 0) + 1;
+        }
+
+        ksort($byDay);
+        $byDayList = [];
+        foreach ($byDay as $date => $count) {
+            $byDayList[] = ['date' => $date, 'count' => $count];
+        }
+
+        return [
+            'summary' => [
+                'total_office_checkins' => $checkins->count(),
+                'unique_days' => count($byDay),
+            ],
+            'by_user' => array_values($byUser),
+            'by_day' => array_values($byDayList),
+        ];
+    }
+
     private function eventsReport(Carbon $from, Carbon $to): array
     {
         $events = Event::query()
-            ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
+            ->spansRange($from->toDateString(), $to->toDateString())
             ->get();
 
         $byStatus = [];
@@ -157,8 +205,8 @@ class ReportsController extends Controller
     {
         $arrivals = EventUser::query()
             ->whereNotNull('checkin_time')
-            ->whereHas('event', fn ($q) => $q->whereBetween('date', [$from->toDateString(), $to->toDateString()]))
-            ->with(['event:id,name,date', 'user:id,name'])
+            ->whereHas('event', fn ($q) => $q->spansRange($from->toDateString(), $to->toDateString()))
+            ->with(['event:id,name,date,end_date', 'user:id,name'])
             ->get();
 
         $byDay = [];

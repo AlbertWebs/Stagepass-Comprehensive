@@ -1,17 +1,30 @@
+/**
+ * Forgot password (PIN reset) – matches login page design.
+ * Same background, logo, card, input style, button and footer as login.
+ */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '~/services/api';
-import { StagePassButton } from '@/components/StagePassButton';
-import { StagePassInput } from '@/components/StagePassInput';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { BorderRadius, Spacing, themeYellow } from '@/constants/theme';
+import { useThemePreference } from '@/context/ThemePreferenceContext';
+import { themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 
-const CARD_RADIUS = 24;
+const U = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 24, section: 32 };
+const CARD_RADIUS = 20;
+const INPUT_RADIUS = 12;
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
@@ -19,6 +32,7 @@ export default function ForgotPasswordScreen() {
   const [sent, setSent] = useState(false);
   const router = useRouter();
   const { colors, isDark } = useStagePassTheme();
+  const { setPreference } = useThemePreference();
   const insets = useSafeAreaInsets();
 
   const handleSubmit = async () => {
@@ -42,10 +56,20 @@ export default function ForgotPasswordScreen() {
     }
   };
 
-  const cardBg = isDark ? colors.surface : colors.surfaceElevated;
+  const toggleTheme = () => {
+    setPreference(isDark ? 'light' : 'dark');
+  };
+
+  const bgColor = isDark ? themeBlue : '#e8eaef';
+  const cardBg = isDark ? 'rgba(40,45,65,0.95)' : '#ffffff';
+  const inputBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
+  const inputBorder = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)';
+  const accentColor = themeYellow;
+  const titleColor = isDark ? '#fff' : colors.text;
+  const subtitleColor = isDark ? 'rgba(255,255,255,0.85)' : colors.textSecondary;
 
   return (
-    <ThemedView style={styles.container}>
+    <View style={[styles.container, { backgroundColor: bgColor }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.keyboard}
@@ -53,159 +77,221 @@ export default function ForgotPasswordScreen() {
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
-            {
-              paddingTop: insets.top + Spacing.section,
-              paddingBottom: insets.bottom + Spacing.section * 2,
-            },
+            { paddingTop: insets.top + U.lg, paddingBottom: insets.bottom + U.xxl },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Pressable
-            onPress={() => router.back()}
-            style={({ pressed }) => [styles.backButton, { opacity: pressed ? 0.6 : 1 }]}
-            accessibilityLabel="Back to login"
-            accessibilityRole="button"
-          >
-            <Ionicons name="arrow-back" size={24} color={themeYellow} />
-            <ThemedText style={[styles.backLabel, { color: themeYellow }]}>Back to login</ThemedText>
-          </Pressable>
+          {/* Back + theme toggle – same header row as login */}
+          <View style={styles.headerRow}>
+            <Pressable
+              onPress={() => router.back()}
+              style={({ pressed }) => [styles.backBtn, { opacity: pressed ? 0.7 : 1 }]}
+              accessibilityLabel="Back to login"
+              accessibilityRole="button"
+            >
+              <Ionicons name="arrow-back" size={24} color={isDark ? '#fff' : colors.text} />
+            </Pressable>
+            <Pressable onPress={toggleTheme} style={({ pressed }) => [styles.themeBtn, { opacity: pressed ? 0.7 : 1 }]}>
+              <Ionicons
+                name={isDark ? 'moon' : 'sunny'}
+                size={24}
+                color={isDark ? '#fff' : colors.text}
+              />
+            </Pressable>
+          </View>
 
-          <ThemedText style={[styles.title, { color: themeYellow }]}>Forgot password?</ThemedText>
-          <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Enter your email and we'll send you a link to reset your password.
-          </ThemedText>
+          {/* Logo + wordmark – same as login */}
+          <View style={styles.logoSection}>
+            <View style={[styles.logoBox, { backgroundColor: accentColor }]}>
+              <Ionicons name="ticket" size={32} color="#fff" />
+            </View>
+            <ThemedText style={[styles.wordmark, { color: isDark ? '#fff' : colors.text }]}>
+              StagePass
+            </ThemedText>
+          </View>
 
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: colors.border }]}>
-            <View style={[styles.cardAccent, { backgroundColor: themeYellow }]} />
+          {/* Form card – same structure as login */}
+          <View style={[styles.card, { backgroundColor: cardBg, borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)' }]}>
+            <ThemedText style={[styles.welcomeTitle, { color: titleColor }]}>
+              {sent ? 'Check your email' : 'Forgot PIN?'}
+            </ThemedText>
+            <ThemedText style={[styles.welcomeSubtitle, { color: subtitleColor }]}>
+              {sent
+                ? `If an account exists for ${email.trim()}, we've sent a reset link. Check your inbox and spam folder.`
+                : "Enter your email and we'll send you a link to reset your PIN."}
+            </ThemedText>
 
             {sent ? (
-              <View style={styles.successBlock}>
-                <View style={[styles.successIconWrap, { backgroundColor: colors.success + '20' }]}>
-                  <Ionicons name="mail-open-outline" size={40} color={colors.success} />
-                </View>
-                <ThemedText style={[styles.successTitle, { color: colors.text }]}>
-                  Check your email
-                </ThemedText>
-                <ThemedText style={[styles.successText, { color: colors.textSecondary }]}>
-                  If an account exists for {email.trim()}, we've sent a password reset link. Check your
-                  inbox and spam folder.
-                </ThemedText>
-                <StagePassButton
-                  title="Back to login"
-                  onPress={() => router.replace('/login')}
-                  style={[styles.button, { backgroundColor: themeYellow }]}
-                />
-              </View>
+              <Pressable
+                onPress={() => router.replace('/login')}
+                style={({ pressed }) => [
+                  styles.loginBtn,
+                  { backgroundColor: accentColor, opacity: pressed ? 0.9 : 1 },
+                ]}
+              >
+                <ThemedText style={styles.loginBtnText}>Back to login</ThemedText>
+                <Ionicons name="arrow-forward" size={20} color="#fff" />
+              </Pressable>
             ) : (
               <>
-                <StagePassInput
-                  placeholder="Email address"
-                  value={email}
-                  onChangeText={setEmail}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  editable={!loading}
-                  autoComplete="email"
-                  style={styles.input}
-                />
-                <StagePassButton
-                  title={loading ? 'Sending…' : 'Send reset link'}
+                <View style={styles.fieldGroup}>
+                  <ThemedText style={[styles.fieldLabel, { color: subtitleColor }]}>Email</ThemedText>
+                  <View style={[styles.inputRow, { backgroundColor: inputBg, borderColor: inputBorder }]}>
+                    <Ionicons name="mail-outline" size={20} color={accentColor} style={styles.inputIcon} />
+                    <TextInput
+                      placeholder="Enter your email"
+                      placeholderTextColor={colors.placeholder}
+                      value={email}
+                      onChangeText={setEmail}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      editable={!loading}
+                      autoComplete="email"
+                      keyboardType="email-address"
+                      style={[styles.input, { color: colors.text }]}
+                    />
+                  </View>
+                </View>
+
+                <Pressable
                   onPress={handleSubmit}
-                  loading={loading}
                   disabled={loading}
-                  style={[styles.button, { backgroundColor: themeYellow }]}
-                />
+                  style={({ pressed }) => [
+                    styles.loginBtn,
+                    { backgroundColor: accentColor, opacity: loading ? 0.7 : pressed ? 0.9 : 1 },
+                  ]}
+                >
+                  <ThemedText style={styles.loginBtnText}>
+                    {loading ? 'Sending…' : 'Send reset link'}
+                  </ThemedText>
+                  {!loading && <Ionicons name="arrow-forward" size={20} color="#fff" />}
+                </Pressable>
               </>
             )}
           </View>
+
+          {/* Footer – same as login */}
+          <View style={styles.footer}>
+            <ThemedText style={[styles.footerText, { color: subtitleColor }]}>Remember your PIN?</ThemedText>
+            <Pressable onPress={() => router.back()} hitSlop={8} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+              <ThemedText style={[styles.footerLink, { color: accentColor }]}>Back to login</ThemedText>
+            </Pressable>
+          </View>
+          <View style={styles.footerIcons}>
+            <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+              <Ionicons name="help-circle-outline" size={22} color={subtitleColor} />
+            </Pressable>
+            <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+              <Ionicons name="globe-outline" size={22} color={subtitleColor} />
+            </Pressable>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </ThemedView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  keyboard: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  keyboard: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: Spacing.xxl,
-    paddingTop: Spacing.section,
-    paddingBottom: Spacing.section * 2,
+    paddingHorizontal: U.xl,
   },
-  backButton: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: Spacing.xl,
-    gap: Spacing.sm,
+    justifyContent: 'space-between',
+    marginBottom: U.section,
   },
-  backLabel: {
-    fontSize: 16,
-    fontWeight: '600',
+  backBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    marginBottom: Spacing.sm,
-    letterSpacing: 0.3,
+  themeBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  subtitle: {
-    fontSize: 15,
-    lineHeight: 22,
-    marginBottom: Spacing.xl,
+  logoSection: {
+    alignItems: 'center',
+    marginBottom: U.section,
+  },
+  logoBox: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: U.md,
+  },
+  wordmark: {
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   card: {
     borderRadius: CARD_RADIUS,
-    borderWidth: 1,
-    padding: Spacing.xxl,
-    paddingTop: Spacing.xxl + 8,
-    position: 'relative',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 24,
-    elevation: 6,
+    padding: U.xl,
+    marginBottom: U.section,
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  cardAccent: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 4,
+  welcomeTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: U.sm,
   },
-  input: {
-    marginBottom: Spacing.xl,
+  welcomeSubtitle: {
+    fontSize: 14,
+    marginBottom: U.xl,
   },
-  button: {
-    marginTop: Spacing.sm,
-  },
-  successBlock: {
+  fieldGroup: { marginBottom: U.lg },
+  fieldLabel: { fontSize: 13, fontWeight: '600', marginBottom: U.sm },
+  inputRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: Spacing.md,
+    borderWidth: 1,
+    borderRadius: INPUT_RADIUS,
+    minHeight: 48,
   },
-  successIconWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+  inputIcon: { marginLeft: U.lg },
+  input: {
+    flex: 1,
+    fontSize: 16,
+    paddingHorizontal: U.md,
+    paddingVertical: U.md,
+  },
+  loginBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Spacing.lg,
+    gap: U.sm,
+    marginTop: U.lg,
+    minHeight: 52,
+    borderRadius: INPUT_RADIUS,
   },
-  successTitle: {
-    fontSize: 20,
+  loginBtnText: {
+    fontSize: 17,
     fontWeight: '700',
-    marginBottom: Spacing.sm,
+    color: '#fff',
   },
-  successText: {
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 21,
-    marginBottom: Spacing.xl,
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: U.sm,
+    marginBottom: U.md,
+  },
+  footerText: { fontSize: 14 },
+  footerLink: { fontSize: 14, fontWeight: '700' },
+  footerIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: U.xl,
   },
 });

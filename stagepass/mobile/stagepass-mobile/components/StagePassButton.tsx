@@ -2,7 +2,7 @@ import { ActivityIndicator, StyleSheet, TouchableOpacity, type ViewStyle } from 
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { ThemedText } from '@/components/themed-text';
 
-type Variant = 'primary' | 'secondary' | 'outline';
+type Variant = 'primary' | 'secondary' | 'outline' | 'destructive';
 
 export type StagePassButtonProps = {
   title: string;
@@ -12,6 +12,8 @@ export type StagePassButtonProps = {
   variant?: Variant;
   style?: ViewStyle;
 };
+
+const LIGHT_TEXT_VARIANTS: Variant[] = ['primary', 'secondary', 'destructive'];
 
 export function StagePassButton({
   title,
@@ -35,7 +37,14 @@ export function StagePassButton({
       borderWidth: 1,
       borderColor: colors.border,
     },
+    destructive: {
+      backgroundColor: colors.error,
+      borderWidth: 0,
+    },
   };
+
+  const textColor = LIGHT_TEXT_VARIANTS.includes(variant) ? '#FFFFFF' : colors.text;
+  const loadingColor = LIGHT_TEXT_VARIANTS.includes(variant) ? '#FFFFFF' : colors.text;
 
   return (
     <TouchableOpacity
@@ -55,12 +64,12 @@ export function StagePassButton({
       activeOpacity={0.8}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'outline' ? colors.text : '#FFFFFF'} />
+        <ActivityIndicator color={loadingColor} />
       ) : (
         <ThemedText
           style={[
             styles.text,
-            { color: variant === 'outline' ? colors.text : '#FFFFFF' },
+            { color: textColor },
           ]}
         >
           {title}

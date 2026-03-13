@@ -27,12 +27,19 @@ function RootLayoutNav() {
   const onAuthScreen = segments[0] === 'login' || segments[0] === 'forgot-password';
 
   useEffect(() => {
-    loadStoredToken().then((t) => {
+    let cancelled = false;
+    (async () => {
+      const t = await loadStoredToken();
+      if (cancelled) return;
       if (t) {
-        hydrateAuth(t, (p) => dispatch(setCredentials(p)));
+        await hydrateAuth(t, (p) => dispatch(setCredentials(p)));
       }
+      if (cancelled) return;
       dispatch(setLoading(false));
-    });
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [dispatch]);
 
   useEffect(() => {
@@ -48,16 +55,20 @@ function RootLayoutNav() {
   return (
     <SafeAreaProvider>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        {isLoading && <StagepassLoader message="Checking session…" fullScreen />}
-        <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="admin" options={{ headerShown: false }} />
-        <Stack.Screen name="login" options={{ headerShown: false }} />
-        <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
-        <Stack.Screen name="events/[id]" options={{ title: 'Event' }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-        {shouldRedirectToLogin && <Redirect href="/login" />}
+        {isLoading ? (
+          <StagepassLoader message="Checking session…" fullScreen />
+        ) : (
+          <>
+            <Stack>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="login" options={{ headerShown: false }} />
+              <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
+              <Stack.Screen name="events/[id]" options={{ title: 'Event' }} />
+              <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+            </Stack>
+            {shouldRedirectToLogin && <Redirect href="/login" />}
+          </>
+        )}
         <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
       </ThemeProvider>
     </SafeAreaProvider>

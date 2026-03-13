@@ -12,7 +12,6 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api, type TaskItem, type TaskStatus } from '~/services/api';
 import { AppHeader } from '@/components/AppHeader';
 import { ThemedText } from '@/components/themed-text';
@@ -54,12 +53,11 @@ function formatDueDate(d?: string | null): string {
 export default function TasksListScreen() {
   const router = useRouter();
   const { colors } = useStagePassTheme();
-  const insets = useSafeAreaInsets();
   const role = useAppRole();
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const scrollBottomPadding = insets.bottom + TAB_BAR_HEIGHT + Spacing.lg;
+  const scrollBottomPadding = TAB_BAR_HEIGHT;
 
   const load = useCallback(async () => {
     try {

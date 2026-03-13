@@ -20,7 +20,7 @@ export const StagePassColors = {
   primaryLight,
   themeBlue,
   themeYellow,
-  // Dark mode
+  // Dark mode – blue icons/text become yellow on dark backgrounds
   dark: {
     background: '#0F0F0F',
     surface: '#1A1A1A',
@@ -37,6 +37,8 @@ export const StagePassColors = {
     tint: themeYellow,
     tabIconDefault: '#71717A',
     tabIconSelected: themeYellow,
+    brandIcon: themeYellow,
+    brandText: themeYellow,
   },
   // Light mode
   light: {
@@ -55,6 +57,8 @@ export const StagePassColors = {
     tint: themeYellow,
     tabIconDefault: '#71717A',
     tabIconSelected: themeYellow,
+    brandIcon: themeBlue,
+    brandText: themeBlue,
   },
 } as const;
 
@@ -95,8 +99,40 @@ export const BorderRadius = {
   md: 8,
   lg: 12,
   xl: 16,
+  xxl: 20,
   full: 9999,
 } as const;
+
+/** Status colors per UX spec: Green = Checked In, Orange = Pending, Red = Missing/Critical */
+export const StatusColors = {
+  checkedIn: '#16A34A',
+  pending: '#EA580C',
+  missing: '#DC2626',
+} as const;
+
+/** Vibrant accent colors for cards, icons, and sections (standard palette for more visual variety). */
+export const VibrantColors = {
+  emerald: '#10b981',
+  violet: '#8b5cf6',
+  amber: '#f59e0b',
+  sky: '#0ea5e9',
+  rose: '#f43f5e',
+  indigo: '#6366f1',
+  teal: '#14b8a6',
+  orange: '#f97316',
+} as const;
+
+/** Ordered list for cycling (e.g. quick action cards, section accents). */
+export const VibrantColorsList = [
+  VibrantColors.sky,
+  VibrantColors.violet,
+  VibrantColors.emerald,
+  VibrantColors.amber,
+  VibrantColors.indigo,
+  VibrantColors.teal,
+  VibrantColors.rose,
+  VibrantColors.orange,
+] as const;
 
 export const Fonts = Platform.select({
   ios: {

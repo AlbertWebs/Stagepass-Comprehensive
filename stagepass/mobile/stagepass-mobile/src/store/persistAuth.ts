@@ -1,8 +1,10 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { setAuthToken } from '../services/api';
 
 const TOKEN_KEY = 'stagepass_token';
 const LOCKOUT_UNTIL_KEY = 'stagepass_login_lockout_until';
+const LAST_USERNAME_KEY = 'stagepass_last_username';
 
 export async function loadStoredToken(): Promise<string | null> {
   try {
@@ -55,4 +57,23 @@ export async function setLoginLockoutUntil(ms: number): Promise<void> {
 
 export async function clearLoginLockout(): Promise<void> {
   await SecureStore.deleteItemAsync(LOCKOUT_UNTIL_KEY);
+}
+
+/** Last successful login username – pre-fill on return so user only enters PIN. */
+export async function getLastUsername(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(LAST_USERNAME_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export async function setLastUsername(username: string): Promise<void> {
+  const trimmed = username.trim();
+  if (!trimmed) return;
+  try {
+    await AsyncStorage.setItem(LAST_USERNAME_KEY, trimmed);
+  } catch {
+    // ignore
+  }
 }

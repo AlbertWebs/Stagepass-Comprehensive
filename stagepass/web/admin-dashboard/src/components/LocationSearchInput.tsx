@@ -49,27 +49,32 @@ export function LocationSearchInput({
     const g = (window as unknown as { google?: { maps: { places: { Autocomplete: new (el: HTMLInputElement, opts: object) => { addListener: (ev: string, fn: () => void) => void; getPlace: () => GooglePlace } } } } }).google;
     if (!inputRef.current || !g?.maps?.places || autocompleteRef.current) return;
 
-    const Autocomplete = g.maps.places.Autocomplete;
-    const autocomplete = new Autocomplete(inputRef.current, {
-      types: ['establishment', 'geocode'],
-      fields: ['formatted_address', 'geometry', 'name'],
-    });
+    try {
+      const Autocomplete = g.maps.places.Autocomplete;
+      const autocomplete = new Autocomplete(inputRef.current, {
+        types: ['establishment', 'geocode'],
+        fields: ['formatted_address', 'geometry', 'name'],
+      });
 
-    autocomplete.addListener('place_changed', () => {
-      const place = autocomplete.getPlace();
-      const loc = place.geometry?.location;
-      const address = place.formatted_address || place.name || '';
-      if (address) onChange(address);
-      if (loc && address && onSelect) {
-        onSelect({
-          location_name: address,
-          latitude: typeof loc.lat === 'function' ? loc.lat() : (loc as { lat: number }).lat,
-          longitude: typeof loc.lng === 'function' ? loc.lng() : (loc as { lng: number }).lng,
-        });
-      }
-    });
+      autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        const loc = place.geometry?.location;
+        const address = place.formatted_address || place.name || '';
+        if (address) onChange(address);
+        if (loc && address && onSelect) {
+          onSelect({
+            location_name: address,
+            latitude: typeof loc.lat === 'function' ? loc.lat() : (loc as { lat: number }).lat,
+            longitude: typeof loc.lng === 'function' ? loc.lng() : (loc as { lng: number }).lng,
+          });
+        }
+      });
 
-    autocompleteRef.current = autocomplete;
+      autocompleteRef.current = autocomplete;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Places Autocomplete failed';
+      setScriptError(msg);
+    }
   }, [onChange, onSelect]);
 
   useEffect(() => {
@@ -111,7 +116,9 @@ export function LocationSearchInput({
       />
       {scriptError && (
         <p className="mt-1 text-xs text-amber-700">
-          Location search unavailable: {scriptError}. You can still type an address.
+          <span className="font-medium">Google Maps could not load.</span> {scriptError}
+          {' '}<a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="underline">Fix in Google Cloud Console</a>
+          {' '}— enable Maps JavaScript API + Places API, turn on billing, and if using key restrictions add <code className="text-[10px] bg-amber-100 px-0.5">http://localhost:3000</code>. You can still type an address below.
         </p>
       )}
     </div>

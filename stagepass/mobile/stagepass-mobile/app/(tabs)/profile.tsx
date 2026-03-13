@@ -12,9 +12,9 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Text,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { HomeHeader } from '@/components/HomeHeader';
 import { StagePassButton } from '@/components/StagePassButton';
@@ -22,8 +22,11 @@ import { StagePassInput } from '@/components/StagePassInput';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useThemePreference } from '@/context/ThemePreferenceContext';
-import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme';
+import { themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+
+const U = { xs: 6, sm: 8, md: 12, lg: 14, xl: 16, section: 24 };
+const CARD_RADIUS = 12;
 import { useAppRole } from '~/hooks/useAppRole';
 import { api } from '~/services/api';
 import { logout, setUser } from '~/store/authSlice';
@@ -53,15 +56,14 @@ const TAB_BAR_HEIGHT = 58;
 
 /** Profile tab – premium layout with hero, cards, and clear sections. Fits within safe area. */
 export default function ProfileScreen() {
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const dispatch = useDispatch();
-  const { colors } = useStagePassTheme();
+  const { colors, isDark } = useStagePassTheme();
   const { preference, setPreference } = useThemePreference();
   const user = useSelector((s: { auth: { user: User | null } }) => s.auth.user);
   const role = useAppRole();
 
-  const bottomPadding = Math.max(insets.bottom + TAB_BAR_HEIGHT + Spacing.sm, 28);
+  const bottomPadding = TAB_BAR_HEIGHT;
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -178,29 +180,15 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleUploadPassportPhoto = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Allow access to your photos to upload a passport photo.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [3, 4],
-      quality: 0.8,
-    });
-    if (result.canceled || !result.assets?.[0]?.uri) return;
-    const uri = result.assets[0].uri;
+  const uploadImageUri = async (uri: string) => {
     setPassportPhotoUri(uri);
     setUploadingPhoto(true);
     try {
       const data = await api.auth.uploadProfilePhoto(uri);
       const updatedUser = 'user' in data ? data.user : data;
       dispatch(setUser(updatedUser));
-      // Clear local URI only when backend returns an avatar URL so image stays visible
       if (updatedUser?.avatar_url) setPassportPhotoUri(null);
-      Alert.alert('Saved', 'Passport photo updated.');
+      Alert.alert('Saved', 'Your profile photo has been updated.');
     } catch (e) {
       Alert.alert(
         'Upload failed',
@@ -209,6 +197,46 @@ export default function ProfileScreen() {
     } finally {
       setUploadingPhoto(false);
     }
+  };
+
+  const handleTakePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Allow camera access to take a profile photo.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+    await uploadImageUri(result.assets[0].uri);
+  };
+
+  const handleChooseFromLibrary = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Allow access to your photos to choose an image.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+    await uploadImageUri(result.assets[0].uri);
+  };
+
+  const showPhotoPicker = () => {
+    if (uploadingPhoto) return;
+    Alert.alert('Profile photo', 'Take a new photo or choose one from your device.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Take photo', onPress: handleTakePhoto },
+      { text: 'Choose from library', onPress: handleChooseFromLibrary },
+    ]);
   };
 
   const handleLogout = async () => {
@@ -226,7 +254,7 @@ export default function ProfileScreen() {
     return (
       <ThemedView style={styles.container}>
         <HomeHeader title="Profile" />
-        <ThemedText type="subtitle" style={{ color: colors.textSecondary, padding: Spacing.xl }}>
+        <ThemedText type="subtitle" style={{ color: colors.textSecondary, padding: U.xl }}>
           Not signed in
         </ThemedText>
       </ThemedView>
@@ -234,7 +262,7 @@ export default function ProfileScreen() {
   }
 
   const cardBg = colors.surface;
-  const cardBorder = colors.border;
+  const cardBorder = isDark ? themeYellow + '44' : themeBlue + '22';
 
   return (
     <ThemedView style={styles.container}>
@@ -248,72 +276,107 @@ export default function ProfileScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Hero header */}
-          <LinearGradient
-            colors={[themeBlue, themeBlue + 'ee', themeBlue + 'cc']}
-            style={styles.hero}
-          >
-            <View style={[styles.avatarWrap, { borderColor: themeYellow }]}>
-              {(passportPhotoUri || user?.avatar_url) ? (
-                <Image
-                  source={{ uri: passportPhotoUri ?? user?.avatar_url ?? '' }}
-                  style={styles.heroAvatarImage}
-                  contentFit="cover"
-                />
-              ) : (
-                <ThemedText style={styles.avatarText}>{getInitial(user.name)}</ThemedText>
-              )}
-            </View>
-            <ThemedText style={styles.heroName} numberOfLines={1}>
-              {user.name}
-            </ThemedText>
-            <View style={[styles.roleBadge, { backgroundColor: themeYellow + '22', borderColor: themeYellow }]}>
-              <ThemedText style={[styles.roleBadgeText, { color: themeYellow }]}>
-                {roleLabel(role)}
+          {/* Name & role card – subtle tint, no solid block */}
+          <View style={[styles.heroCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.heroCardAccent, { backgroundColor: themeYellow }]} />
+            <LinearGradient
+              colors={isDark ? [themeBlue + '18', themeBlue + '08', 'transparent'] : [themeYellow + '0c', themeBlue + '06', 'transparent']}
+              locations={[0, 0.5, 1]}
+              style={StyleSheet.absoluteFill}
+              pointerEvents="none"
+            />
+            <View style={styles.heroCardInner}>
+              <Pressable
+                onPress={showPhotoPicker}
+                style={({ pressed }) => [
+                  styles.avatarWrap,
+                  { borderColor: isDark ? themeYellow + '99' : themeBlue + '99' },
+                  pressed && styles.avatarWrapPressed,
+                ]}
+                accessibilityLabel="Update profile photo"
+                accessibilityRole="button"
+              >
+                {(passportPhotoUri || user?.avatar_url) ? (
+                  <Image
+                    source={{ uri: passportPhotoUri ?? user?.avatar_url ?? '' }}
+                    style={styles.heroAvatarImage}
+                    contentFit="cover"
+                  />
+                ) : (
+                  <ThemedText style={[styles.avatarText, { color: isDark ? themeYellow : themeBlue }]}>{getInitial(user.name)}</ThemedText>
+                )}
+                <View style={[styles.avatarEditBadge, { backgroundColor: colors.surface, borderColor: isDark ? themeYellow : themeBlue }]}>
+                  <Ionicons name="camera" size={10} color={isDark ? themeYellow : themeBlue} />
+                </View>
+              </Pressable>
+              <ThemedText style={[styles.heroName, { color: colors.text }]} numberOfLines={2}>
+                {user.name}
+              </ThemedText>
+              <View style={[styles.roleBadge, { backgroundColor: (isDark ? themeYellow : themeBlue) + '18', borderColor: (isDark ? themeYellow : themeBlue) + '55' }]}>
+                <ThemedText style={[styles.roleBadgeText, { color: isDark ? themeYellow : themeBlue }]}>
+                  {roleLabel(role)}
+                </ThemedText>
+              </View>
+              <ThemedText style={[styles.heroPhotoHint, { color: colors.textSecondary }]}>
+                Tap photo to update
               </ThemedText>
             </View>
-          </LinearGradient>
+          </View>
 
-          {/* Appearance card – Light / Dark / Auto */}
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-            <View style={styles.cardHeader}>
-              <Ionicons name="moon-outline" size={20} color={themeYellow} />
+          {/* PREFERENCES: Appearance – colored cards for Light / Dark / Auto */}
+          <ThemedText style={[styles.sectionHeading, { color: colors.textSecondary }]}>PREFERENCES</ThemedText>
+          <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <View style={[styles.cardAccent, { backgroundColor: themeYellow }]} />
+            <View style={styles.preferenceCardHeader}>
+              <View style={[styles.cardIconWrap, { backgroundColor: themeYellow + '22', borderColor: themeYellow + '66' }]}>
+                <Ionicons name="color-palette-outline" size={18} color={themeYellow} />
+              </View>
               <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Appearance</ThemedText>
             </View>
+            <ThemedText style={[styles.cardSub, { color: colors.textSecondary, marginBottom: U.sm }]}>
+              Choose how the app looks. Dark uses a dark background.
+            </ThemedText>
             <View style={styles.appearanceRow}>
-              {(['dark', 'light', 'system'] as const).map((mode) => {
+              {([
+                { mode: 'light' as const, label: 'Light', icon: 'sunny-outline' as const, bg: '#f4f4f5', fg: '#18181b' },
+                { mode: 'dark' as const, label: 'Dark', icon: 'moon-outline' as const, bg: '#1a1a1a', fg: '#fafafa' },
+                { mode: 'system' as const, label: 'Auto', icon: 'phone-portrait-outline' as const, bg: '#d4d4d8', fg: '#52525b' },
+              ]).map(({ mode, label, icon, bg, fg }) => {
                 const selected = preference === mode;
-                const label = mode === 'system' ? 'Auto' : mode === 'light' ? 'Light' : 'Dark';
                 return (
                   <Pressable
                     key={mode}
                     onPress={() => setPreference(mode)}
                     style={({ pressed }) => [
                       styles.appearanceOption,
-                      { borderColor: cardBorder },
-                      selected && { backgroundColor: themeYellow, borderColor: themeYellow },
-                      pressed && { opacity: 0.85 },
+                      { backgroundColor: selected ? themeYellow : bg, borderColor: selected ? themeYellow : (mode === 'dark' ? '#2d2d2d' : themeBlue + '44'), borderWidth: selected ? 2.5 : 2 },
+                      selected && styles.appearanceOptionSelected,
+                      pressed && { opacity: 0.9 },
                     ]}
                   >
-                    <ThemedText
-                      style={[
-                        styles.appearanceOptionText,
-                        { color: selected ? themeBlue : colors.text },
-                      ]}
-                    >
+                    <View style={[styles.appearanceOptionSwatch, { backgroundColor: selected ? themeBlue + '22' : (mode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.06)') }]}>
+                      <Ionicons name={icon} size={20} color={selected ? themeBlue : fg} />
+                    </View>
+                    <Text style={[styles.appearanceOptionText, { color: selected ? themeBlue : fg }]}>
                       {label}
-                    </ThemedText>
+                    </Text>
                   </Pressable>
                 );
               })}
             </View>
           </View>
 
+          {/* ACCOUNT DETAILS */}
+          <ThemedText style={[styles.sectionHeading, { color: colors.textSecondary }]}>ACCOUNT DETAILS</ThemedText>
+
           {/* Admin – only for admin role */}
           {role === 'admin' && (
-            <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+              <View style={[styles.cardAccent, { backgroundColor: isDark ? themeYellow : themeBlue }]} />
               <View style={styles.cardHeader}>
-                <Ionicons name="shield-checkmark-outline" size={20} color={themeYellow} />
+                <View style={[styles.cardIconWrap, { backgroundColor: (isDark ? themeYellow : themeBlue) + '18', borderColor: (isDark ? themeYellow : themeBlue) + '44' }]}>
+                  <Ionicons name="shield-checkmark-outline" size={18} color={colors.brandIcon} />
+                </View>
                 <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Admin</ThemedText>
               </View>
               <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>
@@ -322,15 +385,11 @@ export default function ProfileScreen() {
               <View style={styles.adminLinks}>
                 {[
                   { label: 'Events', icon: 'calendar-outline' as const, href: '/admin/events' },
-                  { label: 'Users & Crew', icon: 'people-outline' as const, href: '/admin/users' },
+                  { label: 'User & crew', icon: 'people-outline' as const, href: '/admin/users' },
                   { label: 'Equipment', icon: 'cube-outline' as const, href: '/admin/equipment' },
-                  { label: 'Clients', icon: 'business-outline' as const, href: '/admin/clients' },
-                  { label: 'Reports', icon: 'bar-chart-outline' as const, href: '/admin/reports' },
-                  { label: 'Payments', icon: 'card-outline' as const, href: '/admin/payments' },
-                  { label: 'Time off', icon: 'time-outline' as const, href: '/admin/timeoff' },
                   { label: 'Communication', icon: 'chatbubbles-outline' as const, href: '/admin/communications' },
+                  { label: 'Time off', icon: 'time-outline' as const, href: '/admin/timeoff' },
                   { label: 'Settings', icon: 'settings-outline' as const, href: '/admin/settings' },
-                  { label: 'Audit logs', icon: 'document-text-outline' as const, href: '/admin/audit' },
                 ].map((item) => (
                   <Pressable
                     key={item.href}
@@ -341,26 +400,40 @@ export default function ProfileScreen() {
                       pressed && { opacity: 0.7 },
                     ]}
                   >
-                    <Ionicons name={item.icon} size={20} color={themeYellow} />
+                    <View style={[styles.adminLinkIconWrap, { backgroundColor: themeYellow + '22', borderColor: themeYellow + '55' }]}>
+                      <Ionicons name={item.icon} size={18} color={themeYellow} />
+                    </View>
                     <ThemedText style={[styles.adminLinkLabel, { color: colors.text }]}>{item.label}</ThemedText>
-                    <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                    <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
                   </Pressable>
                 ))}
               </View>
             </View>
           )}
 
-          {/* Passport photo card */}
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+          {/* Profile photo card */}
+          <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <View style={[styles.cardAccent, { backgroundColor: themeYellow }]} />
             <View style={styles.cardHeader}>
-              <Ionicons name="id-card-outline" size={20} color={themeYellow} />
-              <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Passport photo</ThemedText>
+              <View style={[styles.cardIconWrap, { backgroundColor: themeYellow + '22', borderColor: themeYellow + '66' }]}>
+                <Ionicons name="person-circle-outline" size={18} color={themeYellow} />
+              </View>
+              <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Profile photo</ThemedText>
             </View>
             <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>
-              Upload a clear photo of your passport or ID for verification
+              Take a photo or choose an image from your device. This will be your profile picture.
             </ThemedText>
             <View style={styles.passportPhotoRow}>
-              <View style={[styles.passportPhotoWrap, { borderColor: cardBorder, backgroundColor: colors.surface }]}>
+              <Pressable
+                onPress={showPhotoPicker}
+                disabled={uploadingPhoto}
+                style={({ pressed }) => [
+                  styles.passportPhotoWrap,
+                  styles.passportPhotoWrapVibrant,
+                  { borderColor: themeYellow + '66', backgroundColor: colors.surface },
+                  pressed && !uploadingPhoto && { opacity: 0.85 },
+                ]}
+              >
                 {(passportPhotoUri || user?.avatar_url) ? (
                   <Image
                     source={{ uri: passportPhotoUri ?? user?.avatar_url ?? '' }}
@@ -369,16 +442,16 @@ export default function ProfileScreen() {
                   />
                 ) : (
                   <View style={styles.passportPhotoPlaceholder}>
-                    <Ionicons name="camera-outline" size={40} color={colors.textSecondary} />
+                    <Ionicons name="camera-outline" size={32} color={colors.textSecondary} />
                     <ThemedText style={[styles.passportPhotoPlaceholderText, { color: colors.textSecondary }]}>
-                      No photo
+                      Tap to add photo
                     </ThemedText>
                   </View>
                 )}
-              </View>
+              </Pressable>
               <StagePassButton
-                title={uploadingPhoto ? 'Uploading…' : 'Upload photo'}
-                onPress={handleUploadPassportPhoto}
+                title={uploadingPhoto ? 'Uploading…' : 'Change photo'}
+                onPress={showPhotoPicker}
                 disabled={uploadingPhoto}
                 variant="outline"
                 style={styles.passportUploadBtn}
@@ -387,9 +460,12 @@ export default function ProfileScreen() {
           </View>
 
           {/* Personal info card */}
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+          <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <View style={[styles.cardAccent, { backgroundColor: isDark ? themeYellow : themeBlue }]} />
             <View style={styles.cardHeader}>
-              <Ionicons name="person-outline" size={20} color={themeYellow} />
+              <View style={[styles.cardIconWrap, { backgroundColor: (isDark ? themeYellow : themeBlue) + '18', borderColor: (isDark ? themeYellow : themeBlue) + '44' }]}>
+                <Ionicons name="person-outline" size={18} color={colors.brandIcon} />
+              </View>
               <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Personal info</ThemedText>
             </View>
             <StagePassInput
@@ -453,9 +529,12 @@ export default function ProfileScreen() {
           </View>
 
           {/* Security: PIN card */}
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+          <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <View style={[styles.cardAccent, { backgroundColor: themeYellow }]} />
             <View style={styles.cardHeader}>
-              <Ionicons name="keypad-outline" size={20} color={themeYellow} />
+                <View style={[styles.cardIconWrap, { backgroundColor: themeYellow + '22', borderColor: themeYellow + '66' }]}>
+                <Ionicons name="keypad-outline" size={18} color={themeYellow} />
+              </View>
               <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Change PIN</ThemedText>
             </View>
             <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>
@@ -499,9 +578,12 @@ export default function ProfileScreen() {
 
           {/* Security: Password card – admin only (web login) */}
           {role === 'admin' ? (
-            <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+              <View style={[styles.cardAccent, { backgroundColor: isDark ? themeYellow : themeBlue }]} />
               <View style={styles.cardHeader}>
-                <Ionicons name="lock-closed-outline" size={20} color={themeYellow} />
+                <View style={[styles.cardIconWrap, { backgroundColor: (isDark ? themeYellow : themeBlue) + '18', borderColor: (isDark ? themeYellow : themeBlue) + '44' }]}>
+                  <Ionicons name="lock-closed-outline" size={18} color={colors.brandIcon} />
+                </View>
                 <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Change password</ThemedText>
               </View>
               <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>
@@ -532,16 +614,20 @@ export default function ProfileScreen() {
           ) : null}
 
           {/* Sign out */}
-          <Pressable
-            style={({ pressed }) => [
-              styles.logoutWrap,
-              { opacity: pressed ? 0.8 : 1 },
-            ]}
-            onPress={handleLogout}
-          >
-            <Ionicons name="log-out-outline" size={20} color={colors.error} />
-            <ThemedText style={[styles.logoutText, { color: colors.error }]}>Sign out</ThemedText>
-          </Pressable>
+          <View style={[styles.logoutCard, { backgroundColor: cardBg, borderColor: colors.error + '44' }]}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.logoutWrap,
+                { opacity: pressed ? 0.8 : 1 },
+              ]}
+              onPress={handleLogout}
+            >
+              <View style={[styles.logoutIconWrap, { backgroundColor: colors.error + '18', borderColor: colors.error + '55' }]}>
+                <Ionicons name="log-out-outline" size={18} color={colors.error} />
+              </View>
+              <ThemedText style={[styles.logoutText, { color: colors.error }]}>Sign out</ThemedText>
+            </Pressable>
+          </View>
 
         </ScrollView>
       </KeyboardAvoidingView>
@@ -553,133 +639,245 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   keyboard: { flex: 1 },
   scrollContent: {
-    paddingHorizontal: Spacing.xl,
-    paddingTop: 0,
+    paddingHorizontal: U.xl,
+    paddingTop: U.lg,
   },
-  hero: {
-    paddingTop: Spacing.section,
-    paddingBottom: Spacing.xxl,
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.lg,
-    alignItems: 'center',
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    overflow: 'hidden',
-  },
-  avatarWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 3,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-    overflow: 'hidden',
-  },
-  heroAvatarImage: {
-    width: '100%',
-    height: '100%',
-  },
-  avatarText: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#fff',
-    letterSpacing: 0.5,
-  },
-  heroName: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#fff',
-    marginBottom: Spacing.xs,
-  },
-  roleBadge: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
+  heroCard: {
+    marginBottom: U.lg,
+    borderRadius: CARD_RADIUS + 2,
     borderWidth: 1,
-  },
-  roleBadgeText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  card: {
-    borderRadius: BorderRadius.xl + 4,
-    borderWidth: 1,
-    padding: Spacing.lg,
-    marginBottom: Spacing.lg,
+    overflow: 'hidden',
+    position: 'relative',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 3,
   },
+  heroCardAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: CARD_RADIUS + 2,
+    borderBottomLeftRadius: CARD_RADIUS + 2,
+  },
+  heroCardInner: {
+    paddingTop: U.lg,
+    paddingBottom: U.md,
+    paddingHorizontal: U.xl,
+    alignItems: 'center',
+  },
+  avatarWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 2,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: U.md,
+    overflow: 'hidden',
+  },
+  avatarWrapPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.98 }],
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+  },
+  heroAvatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarText: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  heroName: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: U.xs,
+    textAlign: 'center',
+    letterSpacing: 0.2,
+    paddingHorizontal: U.md,
+  },
+  roleBadge: {
+    paddingHorizontal: U.md,
+    paddingVertical: 4,
+    borderRadius: 9999,
+    borderWidth: 1,
+  },
+  roleBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  heroPhotoHint: {
+    fontSize: 10,
+    fontWeight: '500',
+    marginTop: U.xs,
+  },
+  card: {
+    borderRadius: CARD_RADIUS + 2,
+    borderWidth: 1,
+    padding: U.lg,
+    marginBottom: U.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  cardVibrant: {
+    position: 'relative',
+    overflow: 'hidden',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  cardAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: CARD_RADIUS + 2,
+    borderBottomLeftRadius: CARD_RADIUS + 2,
+  },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
-    marginBottom: Spacing.sm,
+    gap: U.sm,
+    marginBottom: U.sm,
+  },
+  cardIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: CARD_RADIUS,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   cardTitle: {
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: '700',
   },
   cardSub: {
-    fontSize: 13,
-    marginBottom: Spacing.md,
+    fontSize: 12,
+    marginBottom: U.md,
+  },
+  sectionHeading: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    marginBottom: U.sm,
+    marginTop: U.lg,
+  },
+  preferenceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: U.sm,
+  },
+  preferenceCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: U.sm,
+    marginBottom: U.xs,
   },
   appearanceRow: {
     flexDirection: 'row',
-    gap: Spacing.sm,
-    marginTop: Spacing.xs,
+    gap: U.sm,
+    marginTop: U.sm,
   },
   appearanceOption: {
     flex: 1,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.sm,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 2,
+    flexDirection: 'column',
+    paddingVertical: U.md,
+    paddingHorizontal: U.sm,
+    borderRadius: CARD_RADIUS,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: U.sm,
+  },
+  appearanceOptionSwatch: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   appearanceOptionText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
   },
-  adminLinks: { marginTop: Spacing.xs },
+  appearanceOptionSelected: {
+    shadowColor: themeYellow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  adminLinks: { marginTop: U.xs },
   adminLinkRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: Spacing.sm,
+    paddingVertical: U.sm,
     paddingHorizontal: 0,
-    gap: Spacing.sm,
+    gap: U.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  adminLinkLabel: { flex: 1, fontSize: 15, fontWeight: '600' },
-  input: { marginBottom: Spacing.md },
+  adminLinkIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  adminLinkLabel: { flex: 1, fontSize: 14, fontWeight: '600' },
+  input: { marginBottom: U.md },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: Spacing.sm,
+    paddingVertical: U.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    marginBottom: Spacing.xs,
+    marginBottom: U.xs,
   },
-  infoLabel: { fontSize: 14 },
-  infoValue: { fontSize: 15, fontWeight: '600' },
-  cardButton: { marginTop: Spacing.sm },
+  infoLabel: { fontSize: 13 },
+  infoValue: { fontSize: 14, fontWeight: '600' },
+  cardButton: { marginTop: U.sm },
   passportPhotoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.lg,
-    marginTop: Spacing.sm,
+    gap: U.lg,
+    marginTop: U.sm,
   },
   passportPhotoWrap: {
-    width: 100,
-    height: 130,
-    borderRadius: BorderRadius.lg,
+    width: 88,
+    height: 114,
+    borderRadius: CARD_RADIUS,
     borderWidth: 1,
     overflow: 'hidden',
+  },
+  passportPhotoWrapVibrant: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
   },
   passportPhoto: {
     width: '100%',
@@ -693,16 +891,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   passportPhotoPlaceholderText: {
-    fontSize: 12,
-    marginTop: Spacing.xs,
+    fontSize: 11,
+    marginTop: U.xs,
   },
   passportUploadBtn: { flex: 1 },
+  logoutCard: {
+    borderRadius: CARD_RADIUS,
+    borderWidth: 1,
+    marginBottom: U.lg,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
   logoutWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.sm,
-    paddingVertical: Spacing.lg,
+    gap: U.sm,
+    paddingVertical: U.lg,
   },
-  logoutText: { fontSize: 16, fontWeight: '600' },
+  logoutIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoutText: { fontSize: 14, fontWeight: '600' },
 });

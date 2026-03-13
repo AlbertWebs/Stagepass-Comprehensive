@@ -14,10 +14,25 @@ const STATUS_OPTIONS = [
   { value: 'closed', label: 'Closed' },
 ];
 
+/** Format date string (ISO or YYYY-MM-DD) to e.g. "12 Mar 2026" */
+function formatDate(d: string | null | undefined): string {
+  if (!d) return '–';
+  const dateOnly = typeof d === 'string' && d.includes('T') ? d.slice(0, 10) : String(d).slice(0, 10);
+  const parts = dateOnly.split('-');
+  if (parts.length !== 3) return d;
+  try {
+    const date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  } catch {
+    return dateOnly;
+  }
+}
+
 type EventFormState = {
   name: string;
   description: string;
   date: string;
+  end_date: string;
   start_time: string;
   expected_end_time: string;
   location_name: string;
@@ -36,6 +51,7 @@ function emptyForm(): EventFormState {
     name: '',
     description: '',
     date,
+    end_date: '',
     start_time: '09:00',
     expected_end_time: '',
     location_name: '',
@@ -53,6 +69,7 @@ function eventToForm(e: Event): EventFormState {
     name: e.name,
     description: e.description ?? '',
     date: e.date?.toString().slice(0, 10) ?? '',
+    end_date: e.end_date?.toString().slice(0, 10) ?? '',
     start_time: e.start_time?.toString().slice(0, 5) ?? '',
     expected_end_time: e.expected_end_time?.toString().slice(0, 5) ?? '',
     location_name: e.location_name ?? '',
@@ -147,6 +164,7 @@ export default function Events() {
         name: form.name.trim(),
         description: form.description?.trim() || undefined,
         date: form.date,
+        end_date: form.end_date?.trim() || undefined,
         start_time: form.start_time,
         expected_end_time: form.expected_end_time || undefined,
         location_name: form.location_name?.trim() || undefined,
@@ -178,6 +196,7 @@ export default function Events() {
         name: form.name,
         description: form.description || undefined,
         date: form.date,
+        end_date: form.end_date?.trim() || null,
         start_time: form.start_time,
         expected_end_time: form.expected_end_time || undefined,
         location_name: form.location_name || undefined,
@@ -229,10 +248,10 @@ export default function Events() {
             placeholder="Event name"
           />
         </div>
-        {/* Row 2: Date, Start, End */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {/* Row 2: Start date, End date (optional), Start time, End time */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="form-field">
-            <label className="form-label" htmlFor="event-date">Date *</label>
+            <label className="form-label" htmlFor="event-date">Start date *</label>
             <input
               id="event-date"
               type="date"
@@ -243,7 +262,20 @@ export default function Events() {
             />
           </div>
           <div className="form-field">
-            <label className="form-label" htmlFor="event-start-time">Start *</label>
+            <label className="form-label form-label-optional" htmlFor="event-end-date">End date</label>
+            <input
+              id="event-end-date"
+              type="date"
+              min={form.date}
+              value={form.end_date}
+              onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))}
+              className="form-input"
+              placeholder="Multi-day"
+            />
+            <p className="mt-1 text-xs text-slate-500">Leave empty for single-day events</p>
+          </div>
+          <div className="form-field">
+            <label className="form-label" htmlFor="event-start-time">Start time *</label>
             <input
               id="event-start-time"
               type="time"
@@ -254,7 +286,7 @@ export default function Events() {
             />
           </div>
           <div className="form-field">
-            <label className="form-label form-label-optional" htmlFor="event-end-time">End</label>
+            <label className="form-label form-label-optional" htmlFor="event-end-time">End time</label>
             <input
               id="event-end-time"
               type="time"
@@ -421,7 +453,11 @@ export default function Events() {
                   {events.map((e) => (
                     <tr key={e.id} className="border-b border-slate-100 transition hover:bg-slate-50/60">
                       <td className="px-6 py-4 font-medium text-slate-900">{e.name}</td>
-                      <td className="px-6 py-4 text-slate-600">{e.date}</td>
+                      <td className="px-6 py-4 text-slate-600">
+                        {e.end_date && String(e.end_date).slice(0, 10) !== String(e.date).slice(0, 10)
+                          ? `${formatDate(e.date)} – ${formatDate(e.end_date)}`
+                          : formatDate(e.date)}
+                      </td>
                       <td className="px-6 py-4 text-slate-600">{e.location_name ?? '–'}</td>
                       <td className="px-6 py-4 text-slate-600">{e.client ? e.client.name : '–'}</td>
                       <td className="px-6 py-4">

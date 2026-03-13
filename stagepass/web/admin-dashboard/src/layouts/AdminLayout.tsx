@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import type { ComponentType } from 'react';
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 
-/** Sidebar: section headers (label only) or links (to, label, icon) */
+/** Sidebar: section headers only when multiple links follow; single-link sections are just links. */
 const nav: Array<
   | { type: 'section'; label: string }
   | { type: 'link'; to: string; label: string; icon: ComponentType<{ className?: string }> }
@@ -11,21 +11,18 @@ const nav: Array<
   { type: 'link', to: '/dashboard', label: 'Dashboard', icon: DashboardIcon },
   { type: 'section', label: 'Event Management' },
   { type: 'link', to: '/events', label: 'Events', icon: EventsIcon },
-  { type: 'section', label: 'Crew Management' },
-  { type: 'link', to: '/crew', label: 'Crew', icon: CrewIcon },
-  { type: 'section', label: 'Event Operations' },
   { type: 'link', to: '/event-operations', label: 'Event Operations', icon: EventOperationsIcon },
-  { type: 'link', to: '/tasks', label: 'Task Management', icon: TasksIcon },
+  { type: 'link', to: '/tasks', label: 'Task manager', icon: TasksIcon },
+  { type: 'link', to: '/crew', label: 'Crew Management', icon: CrewIcon },
   { type: 'section', label: 'Logistics' },
   { type: 'link', to: '/equipment', label: 'Equipment', icon: EquipmentIcon },
   { type: 'link', to: '/transport', label: 'Transport & Logistics', icon: TransportIcon },
-  { type: 'section', label: 'Financials' },
   { type: 'link', to: '/payments', label: 'Payments', icon: PaymentsIcon },
-  { type: 'section', label: 'Clients' },
   { type: 'link', to: '/clients', label: 'Clients', icon: ClientsIcon },
   { type: 'section', label: 'Reports & Analytics' },
   { type: 'link', to: '/reports', label: 'Reports', icon: ReportsIcon },
-  { type: 'section', label: 'Communication' },
+  { type: 'link', to: '/checkins', label: 'Daily check-ins', icon: CheckinsIcon },
+  { type: 'link', to: '/time-off', label: 'Time off', icon: TimeOffIcon },
   { type: 'link', to: '/communication', label: 'Communication', icon: CommunicationIcon },
   { type: 'section', label: 'System Control' },
   { type: 'link', to: '/approvals', label: 'Approvals', icon: ApprovalsIcon },
@@ -41,12 +38,13 @@ const pathToTitle: Record<string, string> = {
   '/events': 'Events',
   '/crew': 'Crew',
   '/event-operations': 'Event Operations',
-  '/tasks': 'Task Management',
+  '/tasks': 'Task manager',
   '/equipment': 'Equipment',
   '/transport': 'Transport & Logistics',
   '/payments': 'Payments',
   '/clients': 'Clients',
   '/reports': 'Reports',
+  '/checkins': 'Daily check-ins',
   '/communication': 'Communication',
   '/approvals': 'Approvals',
   '/users': 'Users & Permissions',
@@ -57,11 +55,13 @@ const pathToTitle: Record<string, string> = {
   '/help': 'Help & Documentation',
   '/time-off': 'Time off',
   '/more': 'More',
+  '/danger-zone': 'Danger Zone',
 };
 
 function getPageTitle(pathname: string): string {
   if (pathToTitle[pathname]) return pathToTitle[pathname];
   if (pathname.startsWith('/events/')) return 'Event details';
+  if (pathname.startsWith('/time-off/crew/')) return 'Crew off dates';
   return 'Stagepass Admin';
 }
 
@@ -104,6 +104,14 @@ function ReportsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+    </svg>
+  );
+}
+function CheckinsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
     </svg>
   );
 }
@@ -206,6 +214,13 @@ function MoreIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+function AlertTriangleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    </svg>
+  );
+}
 function LogoutIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -265,7 +280,7 @@ export default function AdminLayout() {
             if (item.type === 'section') {
               const linksInSection = nav.slice(idx + 1).findIndex((i) => i.type === 'section');
               const count = linksInSection === -1 ? nav.length - idx - 1 : linksInSection;
-              if (count <= 1) return null;
+              if (count < 2) return null;
               return (
                 <div
                   key={`section-${idx}`}
@@ -276,21 +291,20 @@ export default function AdminLayout() {
               );
             }
             const { to, label, icon: Icon } = item;
-            const isActive =
-              location.pathname === to || (to !== '/dashboard' && location.pathname.startsWith(to));
             return (
-              <Link
+              <NavLink
                 key={to}
                 to={to}
-                className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 ${
-                  isActive
-                    ? 'bg-[#ca8a04] text-white shadow-inner'
-                    : 'text-[#b3c1e1] hover:bg-white/10 hover:text-white'
-                }`}
+                end={to !== '/dashboard' && !to.startsWith('/events')}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 ${
+                    isActive ? 'bg-[#ca8a04] text-white shadow-inner' : 'text-[#b3c1e1] hover:bg-white/10 hover:text-white'
+                  }`
+                }
               >
                 <Icon className="h-5 w-5 flex-shrink-0 opacity-90" />
                 {label}
-              </Link>
+              </NavLink>
             );
           })}
         </nav>
@@ -320,8 +334,8 @@ export default function AdminLayout() {
         </div>
       </aside>
 
-      {/* Main content */}
-      <div className="ml-64 flex min-h-screen flex-1 flex-col">
+      {/* Main content – entrance animation when layout mounts (e.g. after login) */}
+      <div className="ml-64 flex min-h-screen flex-1 flex-col animate-[page-enter_0.45s_ease-out_forwards]">
         {/* Header */}
         <header className="sticky top-0 z-20 flex h-16 flex-shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/95 px-8 backdrop-blur-sm shadow-header">
           <h1 className="text-xl font-semibold tracking-tight text-slate-900">{pageTitle}</h1>
@@ -385,6 +399,17 @@ export default function AdminLayout() {
                 >
                   <MoreIcon className="h-4 w-4 text-slate-400" />
                   More
+                </Link>
+                <div className="my-1 border-t border-slate-100" />
+                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-red-600">Danger Zone</div>
+                <Link
+                  to="/danger-zone"
+                  role="menuitem"
+                  onClick={() => setUserMenuOpen(false)}
+                  className="flex items-center gap-2 px-4 py-2.5 text-sm text-red-600 transition hover:bg-red-50"
+                >
+                  <AlertTriangleIcon className="h-4 w-4 text-red-500" />
+                  Wipe non-user data
                 </Link>
                 <div className="my-1 border-t border-slate-100" />
                 <button

@@ -14,7 +14,7 @@ class SendCheckInNotificationToTeamLeader implements ShouldQueue
         $eventModel = $eventUser->event;
         $teamLeader = $eventModel->teamLeader;
 
-        if ($teamLeader && $teamLeader->fcm_token) {
+        if ($teamLeader) {
             $teamLeader->notify(new CrewCheckedInNotification($eventUser));
         }
     }

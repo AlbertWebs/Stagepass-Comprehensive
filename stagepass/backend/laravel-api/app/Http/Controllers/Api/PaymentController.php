@@ -50,9 +50,11 @@ class PaymentController extends Controller
             'event_id' => 'required|exists:events,id',
             'user_id' => 'required|exists:users,id',
             'purpose' => 'nullable|string|max:50',
-            'hours' => 'required|numeric|min:0',
+            'payment_date' => 'nullable|date',
+            'hours' => 'nullable|numeric|min:0',
             'per_diem' => 'nullable|numeric|min:0',
             'allowances' => 'nullable|numeric|min:0',
+            'amount' => 'nullable|numeric|min:0',
         ]);
 
         $event = Event::findOrFail($request->event_id);
@@ -74,9 +76,18 @@ class PaymentController extends Controller
             }
         }
 
+        $hours = (float) ($request->hours ?? 0);
         $perDiem = (float) ($request->per_diem ?? 0);
         $allowances = (float) ($request->allowances ?? 0);
+        if ($request->filled('amount')) {
+            $amount = (float) $request->amount;
+            $perDiem = $amount;
+            $allowances = 0;
+        }
         $total = $perDiem + $allowances;
+        $paymentDate = $request->filled('payment_date')
+            ? $request->date('payment_date')
+            : now()->toDateString();
 
         $payment = EventPayment::updateOrCreate(
             [
@@ -85,7 +96,8 @@ class PaymentController extends Controller
             ],
             [
                 'purpose' => $request->filled('purpose') ? $request->purpose : null,
-                'hours' => $request->hours,
+                'payment_date' => $paymentDate,
+                'hours' => $hours,
                 'per_diem' => $perDiem,
                 'allowances' => $allowances,
                 'total_amount' => $total,

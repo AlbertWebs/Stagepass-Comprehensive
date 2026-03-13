@@ -23,7 +23,7 @@ class EventController extends Controller
         $userId = $request->user()->id;
         $event = Event::query()
             ->with(['teamLeader', 'crew'])
-            ->whereDate('date', $today)
+            ->spansDate($today)
             ->where(function ($q) use ($userId) {
                 $q->where('team_leader_id', $userId)
                     ->orWhereHas('crew', fn ($q) => $q->where('user_id', $userId));
@@ -74,6 +74,7 @@ class EventController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'date' => 'required|date',
+            'end_date' => 'nullable|date|after_or_equal:date',
             'start_time' => 'required|date_format:H:i',
             'expected_end_time' => 'nullable|date_format:H:i',
             'location_name' => 'nullable|string|max:255',
@@ -135,6 +136,7 @@ class EventController extends Controller
             'name' => 'sometimes|string|max:255',
             'description' => 'nullable|string',
             'date' => 'sometimes|date',
+            'end_date' => 'nullable|date|after_or_equal:date',
             'start_time' => 'sometimes|date_format:H:i',
             'expected_end_time' => 'nullable|date_format:H:i',
             'location_name' => 'nullable|string|max:255',

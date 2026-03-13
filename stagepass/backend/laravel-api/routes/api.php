@@ -20,11 +20,14 @@ use App\Http\Controllers\Api\TimeOffController;
 use App\Http\Controllers\Api\VehicleController;
 use App\Http\Controllers\Api\EventTransportController;
 use App\Http\Controllers\Api\BackupController;
+use App\Http\Controllers\Api\CheckinsController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\TaskController;
+use App\Http\Controllers\Api\DangerZoneController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
+Route::get('/login-display-name', [AuthController::class, 'loginDisplayName']);
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
 Route::get('/me', [AuthController::class, 'me'])->middleware('auth:sanctum');
@@ -48,11 +51,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('events/{event}/notes', [EventNoteController::class, 'index']);
     Route::post('events/{event}/notes', [EventNoteController::class, 'store']);
     Route::post('events/{event}/end', [EventController::class, 'end']);
+    Route::get('my-checklists', [EventChecklistController::class, 'myChecklists']);
     Route::get('events/{event}/checklist', [EventChecklistController::class, 'index']);
+    Route::get('events/{event}/checklist-progress', [EventChecklistController::class, 'progress']);
     Route::post('events/{event}/checklist', [EventChecklistController::class, 'store']);
     Route::patch('events/{event}/checklist/{checklistItem}', [EventChecklistController::class, 'update']);
 
+    Route::get('attendance/stats', [AttendanceController::class, 'stats']);
     Route::post('attendance/checkin', [AttendanceController::class, 'checkin']);
+    Route::post('attendance/office-checkin', [AttendanceController::class, 'officeCheckin']);
+    Route::post('attendance/office-checkout', [AttendanceController::class, 'officeCheckout']);
     Route::post('attendance/checkout', [AttendanceController::class, 'checkout']);
 
     Route::get('clients', [ClientController::class, 'index']);
@@ -85,6 +93,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('communications/{communication}', [CommunicationController::class, 'destroy']);
 
     Route::get('reports', ReportsController::class);
+    Route::get('checkins/server-date', [CheckinsController::class, 'serverDate']);
+    Route::get('checkins', [CheckinsController::class, 'index']);
+    Route::get('checkins/daily-status', [CheckinsController::class, 'dailyEmployeeStatus']);
+    Route::post('checkins/set-employee-off', [CheckinsController::class, 'setEmployeeOff']);
+    Route::post('checkins/send-push', [CheckinsController::class, 'sendPush']);
     Route::get('audit-logs', [AuditLogController::class, 'index']);
     Route::get('docs/guides', [DocsController::class, 'index']);
     Route::get('docs/guides/{name}', [DocsController::class, 'show']);
@@ -95,7 +108,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('payments/reject', [PaymentController::class, 'reject']);
 
     Route::get('timeoff', [TimeOffController::class, 'index']);
+    Route::post('timeoff', [TimeOffController::class, 'store']);
+    Route::put('timeoff/{id}', [TimeOffController::class, 'update']);
     Route::post('timeoff/request', [TimeOffController::class, 'request']);
+    Route::post('timeoff/request/{id}/attachments', [TimeOffController::class, 'uploadAttachments']);
     Route::post('timeoff/approve', [TimeOffController::class, 'approve']);
     Route::post('timeoff/reject', [TimeOffController::class, 'reject']);
 
@@ -109,6 +125,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('tasks/{task}/comments', [TaskController::class, 'storeComment']);
 
     Route::get('backup', BackupController::class);
+    Route::post('danger-zone/wipe-non-user-data', [DangerZoneController::class, 'wipeNonUserData']);
+    Route::get('settings/office-checkin-config', [SettingsController::class, 'officeCheckinConfig']);
     Route::get('settings', [SettingsController::class, 'index']);
     Route::put('settings', [SettingsController::class, 'update']);
+    Route::post('settings', [SettingsController::class, 'update']);
 });

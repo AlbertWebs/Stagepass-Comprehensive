@@ -33,21 +33,30 @@ export default function Login() {
     return <Preloader message="Checking session…" />;
   }
 
-  if (signingIn) {
-    return <Preloader message="Signing in…" />;
-  }
-
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-brand-50/30 p-4">
       <div className="w-full max-w-md">
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-accent shadow-glow">
-            <span className="text-2xl font-bold text-white">S</span>
+        <div className="mb-8 flex flex-col items-center text-center">
+          <div className="relative mb-4 flex h-16 w-16 items-center justify-center" aria-hidden>
+            <div
+              className="absolute inset-0 rounded-2xl border-2 border-transparent"
+              style={{
+                borderTopColor: '#ca8a04',
+                borderRightColor: '#1e2d5c',
+                animation: 'preloader-spin 0.9s linear infinite',
+              }}
+            />
+            <div
+              className="flex h-12 w-12 items-center justify-center rounded-xl text-xl font-bold text-white"
+              style={{ backgroundColor: '#ca8a04', boxShadow: '0 4px 14px rgba(202, 138, 4, 0.35)' }}
+            >
+              S
+            </div>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Stagepass</h1>
-          <p className="mt-1 text-sm text-slate-500">Sign in to the admin panel</p>
+          <p className="mb-1 text-lg font-semibold tracking-wide text-slate-800">Stagepass</p>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Welcome back</h1>
         </div>
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-8 shadow-card">
+        <div className={`rounded-2xl border border-slate-200/80 bg-white p-8 shadow-card transition-opacity duration-200 ${signingIn ? 'opacity-90' : ''}`}>
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-slate-700">
@@ -59,7 +68,8 @@ export default function Login() {
                 type="email"
                 autoComplete="email"
                 required
-                className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-slate-900 placeholder-slate-400 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20"
+                disabled={signingIn}
+                className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-slate-900 placeholder-slate-400 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 disabled:cursor-not-allowed disabled:opacity-70"
                 placeholder="you@example.com"
               />
             </div>
@@ -73,14 +83,26 @@ export default function Login() {
                 type="password"
                 autoComplete="current-password"
                 required
-                className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-slate-900 placeholder-slate-400 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20"
+                disabled={signingIn}
+                className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-slate-900 placeholder-slate-400 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 disabled:cursor-not-allowed disabled:opacity-70"
               />
             </div>
             <button
               type="submit"
-              className="btn-brand w-full py-3"
+              disabled={signingIn}
+              className="btn-brand w-full py-3 disabled:cursor-not-allowed disabled:opacity-80"
             >
-              Sign in
+              {signingIn ? (
+                <span className="inline-flex items-center gap-2">
+                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" aria-hidden>
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Loading…
+                </span>
+              ) : (
+                'Sign in'
+              )}
             </button>
           </form>
         </div>

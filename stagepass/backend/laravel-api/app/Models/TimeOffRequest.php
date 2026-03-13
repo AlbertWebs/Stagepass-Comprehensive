@@ -12,7 +12,7 @@ class TimeOffRequest extends Model
     public const STATUS_REJECTED = 'rejected';
 
     protected $fillable = [
-        'user_id', 'start_date', 'end_date', 'reason',
+        'user_id', 'start_date', 'end_date', 'reason', 'notes',
         'status', 'processed_by', 'processed_at',
     ];
 
@@ -33,5 +33,10 @@ class TimeOffRequest extends Model
     public function processedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'processed_by');
+    }
+
+    public function attachments(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(TimeOffRequestAttachment::class);
     }
 }

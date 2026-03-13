@@ -12,16 +12,19 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api, type Event } from '~/services/api';
 import { HomeHeader } from '@/components/HomeHeader';
 import { EventCard } from '@/components/EventCard';
 import { StagepassLoader } from '@/components/StagepassLoader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme';
+import { themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { useAppRole } from '~/hooks/useAppRole';
+
+const U = { xs: 6, sm: 8, md: 12, lg: 14, xl: 16, section: 24 };
+const CARD_RADIUS = 12;
+const TAB_BAR_HEIGHT = 58;
 
 function isUpcoming(dateStr: string): boolean {
   try {
@@ -65,18 +68,15 @@ function getCheckinStatus(event: Event): 'checked_in' | 'checked_out' | 'pending
   return 'pending';
 }
 
-const TAB_BAR_HEIGHT = 58;
-
 export default function ActivityScreen() {
   const router = useRouter();
-  const { colors } = useStagePassTheme();
-  const insets = useSafeAreaInsets();
+  const { colors, isDark } = useStagePassTheme();
   const role = useAppRole();
   const [eventToday, setEventToday] = useState<Event | null | undefined>(undefined);
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const scrollBottomPadding = insets.bottom + TAB_BAR_HEIGHT + Spacing.sm;
+  const scrollBottomPadding = TAB_BAR_HEIGHT;
 
   const load = useCallback(async () => {
     try {
@@ -133,14 +133,14 @@ export default function ActivityScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollBottomPadding }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={themeBlue} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? themeYellow : themeBlue} />
         }
       >
         <View style={styles.content}>
           {/* Hero */}
           <View style={[styles.hero, { backgroundColor: themeBlue + '14', borderColor: colors.border }]}>
             <View style={[styles.heroIconWrap, { backgroundColor: themeBlue }]}>
-              <Ionicons name="time" size={28} color="#fff" />
+              <Ionicons name="time" size={22} color="#fff" />
             </View>
             <View style={styles.heroTextWrap}>
               <ThemedText style={[styles.heroTitle, { color: colors.text }]}>
@@ -181,7 +181,7 @@ export default function ActivityScreen() {
                     <View style={styles.todayMeta}>
                       {today.location_name ? (
                         <View style={styles.todayMetaRow}>
-                          <Ionicons name="location" size={14} color={colors.textSecondary} />
+                          <Ionicons name="location" size={12} color={colors.textSecondary} />
                           <ThemedText style={[styles.todayMetaText, { color: colors.textSecondary }]} numberOfLines={1}>
                             {today.location_name}
                           </ThemedText>
@@ -189,7 +189,7 @@ export default function ActivityScreen() {
                       ) : null}
                       {today.start_time ? (
                         <View style={styles.todayMetaRow}>
-                          <Ionicons name="time" size={14} color={colors.textSecondary} />
+                          <Ionicons name="time" size={12} color={colors.textSecondary} />
                           <ThemedText style={[styles.todayMetaText, { color: colors.textSecondary }]}>
                             {formatTime(today.start_time)}
                           </ThemedText>
@@ -200,7 +200,7 @@ export default function ActivityScreen() {
                   <View style={styles.todayFooter}>
                     {checkinStatus === 'checked_in' && (
                       <View style={[styles.badge, { backgroundColor: colors.success + '22' }]}>
-                        <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                        <Ionicons name="checkmark-circle" size={12} color={colors.success} />
                         <ThemedText style={[styles.badgeText, { color: colors.success }]}>
                           Checked in
                         </ThemedText>
@@ -215,12 +215,12 @@ export default function ActivityScreen() {
                     )}
                     {checkinStatus === 'pending' && (
                       <View style={[styles.badge, { backgroundColor: themeYellow + '22' }]}>
-                        <ThemedText style={[styles.badgeText, { color: themeBlue }]}>
+                        <ThemedText style={[styles.badgeText, { color: colors.brandText }]}>
                           Tap to check in
                         </ThemedText>
                       </View>
                     )}
-                    <ThemedText style={[styles.todayCta, { color: themeBlue }]}>
+                    <ThemedText style={[styles.todayCta, { color: colors.brandText }]}>
                       View details →
                     </ThemedText>
                   </View>
@@ -242,8 +242,8 @@ export default function ActivityScreen() {
                   { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.9 : 1 },
                 ]}
               >
-                <View style={[styles.quickIconWrap, { backgroundColor: themeBlue + '18' }]}>
-                  <Ionicons name="calendar" size={22} color={themeBlue} />
+                <View style={[styles.quickIconWrap, { backgroundColor: (isDark ? themeYellow : themeBlue) + '18' }]}>
+                  <Ionicons name="calendar" size={18} color={colors.brandIcon} />
                 </View>
                 <ThemedText style={[styles.quickLabel, { color: colors.text }]}>My Events</ThemedText>
               </Pressable>
@@ -255,7 +255,7 @@ export default function ActivityScreen() {
                 ]}
               >
                 <View style={[styles.quickIconWrap, { backgroundColor: themeYellow + '22' }]}>
-                  <Ionicons name="location" size={22} color={themeYellow} />
+                  <Ionicons name="location" size={18} color={themeYellow} />
                 </View>
                 <ThemedText style={[styles.quickLabel, { color: colors.text }]}>
                   {today ? 'Today’s event' : 'No event today'}
@@ -291,7 +291,7 @@ export default function ActivityScreen() {
           {!hasAnyEvents && (
             <View style={styles.emptyWrap}>
               <View style={[styles.emptyIconWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Ionicons name="time-outline" size={44} color={colors.textSecondary} />
+                <Ionicons name="time-outline" size={34} color={colors.textSecondary} />
               </View>
               <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>
                 No activity yet
@@ -320,112 +320,112 @@ export default function ActivityScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContent: { flexGrow: 1 },
-  content: { paddingHorizontal: Spacing.xl, paddingTop: Spacing.sm },
+  content: { paddingHorizontal: U.lg, paddingTop: U.sm },
   hero: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.lg,
-    padding: Spacing.lg,
-    marginBottom: Spacing.xl,
-    borderRadius: BorderRadius.lg,
+    gap: U.lg,
+    padding: U.lg,
+    marginBottom: U.xl,
+    borderRadius: CARD_RADIUS,
     borderWidth: 1,
   },
   heroIconWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: BorderRadius.lg,
+    width: 40,
+    height: 40,
+    borderRadius: CARD_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
   },
   heroTextWrap: { flex: 1, minWidth: 0 },
-  heroTitle: { fontSize: 22, fontWeight: '800', marginBottom: 2 },
-  heroSub: { fontSize: 14 },
-  section: { marginBottom: Spacing.xl },
+  heroTitle: { fontSize: 18, fontWeight: '800', marginBottom: 2 },
+  heroSub: { fontSize: 13 },
+  section: { marginBottom: U.xl },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
-    marginBottom: Spacing.md,
+    gap: U.sm,
+    marginBottom: U.md,
   },
   sectionTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.4,
     textTransform: 'uppercase',
   },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusDot: { width: 5, height: 5, borderRadius: 3 },
   todayCard: {
     flexDirection: 'row',
-    borderRadius: BorderRadius.lg,
+    borderRadius: CARD_RADIUS,
     borderWidth: 1,
     overflow: 'hidden',
-    minHeight: 100,
+    minHeight: 80,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   todayAccent: { width: 4 },
-  todayBody: { flex: 1, padding: Spacing.lg, paddingLeft: Spacing.md },
-  todayName: { fontSize: 18, fontWeight: '700', marginBottom: Spacing.xs },
-  todayMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md, marginBottom: Spacing.sm },
+  todayBody: { flex: 1, padding: U.lg, paddingLeft: U.md },
+  todayName: { fontSize: 16, fontWeight: '700', marginBottom: U.xs },
+  todayMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: U.md, marginBottom: U.sm },
   todayMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  todayMetaText: { fontSize: 13 },
+  todayMetaText: { fontSize: 12 },
   todayFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     flexWrap: 'wrap',
-    gap: Spacing.sm,
+    gap: U.sm,
   },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.full,
+    paddingHorizontal: U.sm,
+    paddingVertical: 3,
+    borderRadius: 9999,
   },
-  badgeText: { fontSize: 12, fontWeight: '700' },
-  todayCta: { fontSize: 14, fontWeight: '600' },
-  quickRow: { flexDirection: 'row', gap: Spacing.md },
+  badgeText: { fontSize: 11, fontWeight: '700' },
+  todayCta: { fontSize: 13, fontWeight: '600' },
+  quickRow: { flexDirection: 'row', gap: U.md },
   quickCard: {
     flex: 1,
-    padding: Spacing.lg,
-    borderRadius: BorderRadius.lg,
+    padding: U.lg,
+    borderRadius: CARD_RADIUS,
     borderWidth: 1,
     alignItems: 'center',
   },
   quickIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: BorderRadius.lg,
+    width: 36,
+    height: 36,
+    borderRadius: CARD_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: Spacing.sm,
+    marginBottom: U.sm,
   },
-  quickLabel: { fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  quickLabel: { fontSize: 12, fontWeight: '600', textAlign: 'center' },
   emptyWrap: {
     alignItems: 'center',
-    paddingVertical: Spacing.xxl * 2,
+    paddingVertical: U.section * 2,
   },
   emptyIconWrap: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    marginBottom: Spacing.lg,
+    marginBottom: U.lg,
   },
-  emptyTitle: { fontSize: 18, fontWeight: '700', marginBottom: Spacing.sm },
-  emptySub: { fontSize: 15, textAlign: 'center', marginBottom: Spacing.lg, maxWidth: 280 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', marginBottom: U.sm },
+  emptySub: { fontSize: 13, textAlign: 'center', marginBottom: U.lg, maxWidth: 260 },
   emptyButton: {
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl,
-    borderRadius: BorderRadius.lg,
+    paddingVertical: U.md,
+    paddingHorizontal: U.xl,
+    borderRadius: CARD_RADIUS,
   },
-  emptyButtonText: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  bottomSpacer: { height: Spacing.xl },
+  emptyButtonText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  bottomSpacer: { height: U.xl },
 });

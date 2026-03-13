@@ -1,20 +1,26 @@
 /**
- * Stagepass API client – REST API consumed by the mobile app.
+ * StagePass API client – REST API consumed by the mobile app.
  * Uses Laravel Sanctum token for auth.
  *
- * Set EXPO_PUBLIC_API_URL in .env or app config:
- * - iOS simulator / web: http://localhost:8000
- * - Android emulator:    http://10.0.2.2:8000
- * - Physical device:    http://<your-pc-ip>:8000  (e.g. http://192.168.1.5:8000)
+ * Architecture: API codebase is at C:\projects\Stapepass-mobile-app-api.
+ * Set EXPO_PUBLIC_API_URL in .env to the base URL where the API is served (no trailing slash):
+ * - Production: https://api.yourdomain.com
+ * - Local:      http://0.0.0.0:8000
+ * - Android emulator: http://10.0.2.2:8000
+ * - Physical device:  http://<your-pc-ip>:8000
  */
 
 import { Platform } from 'react-native';
 
 function getDefaultApiBase(): string {
-  if (typeof process !== 'undefined' && process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL;
+  const fromEnv =
+    typeof process !== 'undefined' && process.env.EXPO_PUBLIC_API_URL
+      ? process.env.EXPO_PUBLIC_API_URL.trim()
+      : '';
+  if (fromEnv && !fromEnv.includes('winenot')) {
+    return fromEnv.replace(/\/+$/, '');
   }
-  // Android emulator: localhost is the emulator; 10.0.2.2 is the host machine
+  // Default: Laravel local. Android emulator use EXPO_PUBLIC_API_URL=http://10.0.2.2:8000
   if (Platform.OS === 'android') {
     return 'http://10.0.2.2:8000';
   }
@@ -135,6 +141,17 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ username: username.trim(), pin, fcm_token: fcmToken }),
       }),
+    /** Fetch display name for login screen (by username or staff_id). Returns null if not found. */
+    getLoginDisplayName: async (username: string): Promise<string | null> => {
+      const trimmed = username.trim();
+      if (!trimmed) return null;
+      try {
+        const data = await request<{ name: string }>('/login-display-name', { params: { username: trimmed } });
+        return data?.name ?? null;
+      } catch {
+        return null;
+      }
+    },
     forgotPassword: (email: string) =>
       request<{ message: string }>('/forgot-password', {
         method: 'POST',
@@ -154,6 +171,7 @@ export const api = {
       current_pin?: string;
       new_pin?: string;
       new_pin_confirmation?: string;
+      fcm_token?: string | null;
     }) => request<User>('/me', { method: 'PATCH', body: JSON.stringify(body) }),
     /** Upload passport/profile photo. Backend: POST /me/photo with multipart file "photo". Returns updated user. */
     uploadProfilePhoto: (imageUri: string) => {
@@ -194,6 +212,18 @@ export const api = {
     /** Admin/team leader: end event with comment */
     end: (eventId: number, body: { end_comment: string }) =>
       request<Event>(`/events/${eventId}/end`, { method: 'POST', body: JSON.stringify(body) }),
+    /** Admin/team leader: crew status for event */
+    eventCrewStatus: (eventId: number) =>
+      request<{ data: CrewStatusItem[] }>(`/events/${eventId}/crew-status`),
+    /** Admin/team leader: checklist progress */
+    eventChecklistProgress: (eventId: number) =>
+      request<{ data: ChecklistProgressItem[] }>(`/events/${eventId}/checklist-progress`),
+    /** Admin/team leader: report issue */
+    eventReportIssue: (eventId: number, body: { title: string; description?: string; severity?: string; photo_url?: string }) =>
+      request<unknown>(`/events/${eventId}/report-issue`, { method: 'POST', body: JSON.stringify(body) }),
+    /** Admin/team leader: send message to crew */
+    eventMessage: (eventId: number, body: { target: 'all' | 'department' | 'user'; department?: string; user_id?: number; message: string }) =>
+      request<unknown>(`/events/${eventId}/message`, { method: 'POST', body: JSON.stringify(body) }),
   },
   /** Optional: two-step auth verify PIN (if backend supports POST /verify-pin) */
   authVerifyPin: (pin: string) =>
@@ -202,6 +232,16 @@ export const api = {
       body: JSON.stringify({ pin }),
     }),
   attendance: {
+    /** Combined stats: events + office check-ins (last 30d). pull_up_percentage = combined pull-up rate. */
+    stats: () =>
+      request<{
+        total_assigned: number;
+        checked_in: number;
+        missed: number;
+        attendance_percentage: number;
+        office_checkins_last_30: number;
+        pull_up_percentage: number;
+      }>('/attendance/stats'),
     checkin: (eventId: number, latitude: number, longitude: number) =>
       request<{ checkin_time: string }>('/attendance/checkin', {
         method: 'POST',
@@ -222,13 +262,34 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ event_id: eventId }),
       }),
+    /** Daily office check-in at configured location (e.g. 30m radius). Backend must implement POST /attendance/office-checkin. */
+    officeCheckin: (latitude: number, longitude: number) =>
+      request<{ checkin_time: string }>('/attendance/office-checkin', {
+        method: 'POST',
+        body: JSON.stringify({ latitude, longitude, timestamp: new Date().toISOString() }),
+      }),
+    /** Daily office check-out. Backend must implement POST /attendance/office-checkout. */
+    officeCheckout: () =>
+      request<{ checkout_time: string }>('/attendance/office-checkout', { method: 'POST' }),
   },
   timeOff: {
-    request: (startDate: string, endDate: string, reason?: string) =>
+    request: (startDate: string, endDate: string, reason?: string, notes?: string) =>
       request<TimeOffRequest>('/timeoff/request', {
         method: 'POST',
-        body: JSON.stringify({ start_date: startDate, end_date: endDate, reason }),
+        body: JSON.stringify({ start_date: startDate, end_date: endDate, reason, notes: notes || undefined }),
       }),
+    /** Upload files for a time off request (pending only). files: { uri, name?, mimeType? } from document picker. */
+    uploadAttachments: async (requestId: number, files: { uri: string; name?: string; mimeType?: string }[]) => {
+      const formData = new FormData();
+      files.forEach((f, i) => {
+        formData.append('attachments[]', {
+          uri: f.uri,
+          name: f.name ?? `file_${i}`,
+          type: f.mimeType ?? 'application/octet-stream',
+        } as unknown as Blob);
+      });
+      return requestMultipart<TimeOffRequest>(`/timeoff/request/${requestId}/attachments`, formData);
+    },
   },
   payments: {
     /** Request payment for an event (crew: use own user id; team leader: can use crew member id). */
@@ -246,7 +307,16 @@ export const api = {
           }),
         }
       ),
-    list: () => request<{ data: Payment[] }>('/payments'),
+    list: (params?: { status?: string; event_id?: number; per_page?: number; page?: number }) =>
+      request<{ data: Payment[]; total?: number }>('/payments', {
+        params: params
+          ? (Object.fromEntries(
+              Object.entries(params)
+                .filter(([, v]) => v !== undefined && v !== '')
+                .map(([k, v]) => [k, String(v)])
+            ) as Record<string, string>)
+          : undefined,
+      }),
     approve: (paymentId: number) =>
       request<Payment>('/payments/approve', { method: 'POST', body: JSON.stringify({ payment_id: paymentId }) }),
     reject: (paymentId: number, reason?: string) =>
@@ -263,18 +333,6 @@ export const api = {
   myChecklists: () => request<{ data: MyChecklist[] }>('/my-checklists'),
   checklistUpdate: (itemId: number, body: { is_checked: boolean; note?: string; photo_url?: string }) =>
     request<unknown>('/checklist/update', { method: 'POST', body: JSON.stringify({ checklist_item_id: itemId, ...body }) }),
-  /** Leader: crew status for event */
-  eventCrewStatus: (eventId: number) =>
-    request<{ data: CrewStatusItem[] }>(`/events/${eventId}/crew-status`),
-  /** Leader: checklist progress */
-  eventChecklistProgress: (eventId: number) =>
-    request<{ data: ChecklistProgressItem[] }>(`/events/${eventId}/checklist-progress`),
-  /** Leader: report issue */
-  eventReportIssue: (eventId: number, body: { title: string; description?: string; severity?: string; photo_url?: string }) =>
-    request<unknown>(`/events/${eventId}/report-issue`, { method: 'POST', body: JSON.stringify(body) }),
-  /** Leader: send message to crew */
-  eventMessage: (eventId: number, body: { target: 'all' | 'department' | 'user'; department?: string; user_id?: number; message: string }) =>
-    request<unknown>(`/events/${eventId}/message`, { method: 'POST', body: JSON.stringify(body) }),
   /** Admin: dashboard (optional backend endpoint; fallback: use events + users) */
   adminDashboard: () =>
     request<AdminDashboardData>('/admin/dashboard').catch(() => ({ today_events: 0, active_events: 0, total_crew: 0 })),
@@ -331,10 +389,23 @@ export const api = {
       request<Communication>('/communications', { method: 'POST', body: JSON.stringify(body) }),
     delete: (id: number) => request<unknown>(`/communications/${id}`, { method: 'DELETE' }),
   },
+  backup: {
+    get: () =>
+      request<{ exported_at: string; users: unknown[]; events: unknown[]; equipment: unknown[] }>('/backup'),
+  },
   settings: {
     get: () => request<Record<string, unknown>>('/settings'),
-    update: (body: Record<string, unknown>) =>
-      request<Record<string, unknown>>('/settings', { method: 'PUT', body: JSON.stringify(body) }),
+    /** Office check-in location + time window; available to all authenticated users (crew see admin-configured office). */
+    getOfficeCheckinConfig: () =>
+      request<{
+        office_latitude: number | null;
+        office_longitude: number | null;
+        office_radius_m: number;
+        office_checkin_start_time: string;
+        office_checkin_end_time: string;
+      }>('/settings/office-checkin-config'),
+    update: (settings: Record<string, unknown>) =>
+      request<Record<string, unknown>>('/settings', { method: 'POST', body: JSON.stringify({ settings }) }),
   },
   auditLogs: {
     list: (params?: { page?: number }) =>
@@ -471,6 +542,15 @@ export interface User {
   phone_number?: string;
   address?: string;
   emergency_contact?: string;
+  /** Permanent employees must daily office check-in 9–10 AM */
+  is_permanent_employee?: boolean;
+  /** Set by backend when user has done office check-in today */
+  office_checked_in_today?: boolean;
+  office_checkin_time?: string;
+  office_checked_out_today?: boolean;
+  office_checkout_time?: string;
+  /** Set by backend when user has approved time off that includes today */
+  has_approved_time_off_today?: boolean;
 }
 
 /** Resolve app role from backend role names. */
@@ -490,6 +570,7 @@ export interface Event {
   name: string;
   description?: string;
   date: string;
+  end_date?: string | null;
   start_time: string;
   expected_end_time?: string;
   location_name?: string;
@@ -503,13 +584,23 @@ export interface Event {
   crew?: { id: number; name: string; pivot?: { checkin_time?: string; checkout_time?: string } }[];
 }
 
+export interface TimeOffRequestAttachment {
+  id: number;
+  time_off_request_id: number;
+  path: string;
+  original_name?: string;
+  url?: string;
+}
+
 export interface TimeOffRequest {
   id: number;
   user_id: number;
   start_date: string;
   end_date: string;
   reason?: string;
+  notes?: string;
   status: string;
+  attachments?: TimeOffRequestAttachment[];
 }
 
 export interface Client {
@@ -532,12 +623,16 @@ export interface Payment {
   id: number;
   event_id: number;
   user_id: number;
-  hours: number;
-  per_diem: number;
-  allowances: number;
+  hours?: number;
+  per_diem?: number;
+  allowances?: number;
   total_amount: number;
   status: string;
+  purpose?: string | null;
+  payment_date?: string | null;
   created_at?: string;
+  event?: { id: number; name: string } | null;
+  user?: { id: number; name: string } | null;
 }
 
 export interface Communication {

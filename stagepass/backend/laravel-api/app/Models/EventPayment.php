@@ -12,13 +12,14 @@ class EventPayment extends Model
     public const STATUS_REJECTED = 'rejected';
 
     protected $fillable = [
-        'event_id', 'user_id', 'purpose', 'hours', 'per_diem', 'allowances',
+        'event_id', 'user_id', 'payment_date', 'purpose', 'hours', 'per_diem', 'allowances',
         'total_amount', 'status', 'approved_by', 'approved_at', 'rejection_reason',
     ];
 
     protected function casts(): array
     {
         return [
+            'payment_date' => 'date',
             'hours' => 'decimal:2',
             'per_diem' => 'decimal:2',
             'allowances' => 'decimal:2',

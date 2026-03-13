@@ -112,7 +112,22 @@ return [
 
     'from' => [
         'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
-        'name' => env('MAIL_FROM_NAME', 'Example'),
+        'name' => env('MAIL_FROM_NAME', 'Stagepass'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Markdown Mail Theme
+    |--------------------------------------------------------------------------
+    | Stagepass brand: yellow #eab308, blue #0f1838. All notification emails
+    | (password reset, crew added, check-in reminders, etc.) use this theme.
+    */
+
+    'markdown' => [
+        'theme' => env('MAIL_MARKDOWN_THEME', 'stagepass'),
+        'paths' => [
+            resource_path('views/vendor/mail'),
+        ],
     ],
 
 ];

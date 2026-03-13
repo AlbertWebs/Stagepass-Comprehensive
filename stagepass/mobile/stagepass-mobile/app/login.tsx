@@ -1,51 +1,36 @@
 /**
- * Login (landing) screen – proportional, elegant, trustworthy.
- * Uses a consistent scale and restrained palette for credibility.
+ * Login screen – modern UX: in-button loading, smooth transition to home.
+ * Logo, Welcome Back, username + 4-digit PIN, Sign In button (Loading… + spinner when submitting).
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
 } from 'react-native';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useDispatch } from 'react-redux';
 import { api, getApiBase, setAuthToken } from '~/services/api';
 import { setCredentials } from '~/store/authSlice';
-import { getLoginLockoutUntil, saveToken, setLoginLockoutUntil } from '~/store/persistAuth';
-import { AnimatedGradientLogo } from '@/components/AnimatedGradientLogo';
-import { StagepassLoader } from '@/components/StagepassLoader';
-import { StagePassButton } from '@/components/StagePassButton';
-import { StagePassInput } from '@/components/StagePassInput';
+import { getDevicePushTokenAsync } from '~/utils/pushToken';
+import { getLastUsername, getLoginLockoutUntil, saveToken, setLastUsername, setLoginLockoutUntil } from '~/store/persistAuth';
 import { ThemedText } from '@/components/themed-text';
-import { BorderRadius, Spacing, themeBlue, themeBlueLight, themeYellow } from '@/constants/theme';
+import { useThemePreference } from '@/context/ThemePreferenceContext';
+import { BorderRadius, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 
-/* Proportional scale: base 4 → 8, 12, 16, 20, 24, 32, 40, 48, 56 */
-const U = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 20,
-  xxl: 24,
-  section: 32,
-  hero: 40,
-  cardPad: 28,
-  inputH: 52,
-  btnH: 52,
-};
-const CARD_RADIUS = 20;
-const BORDER_WIDTH = 1;
-
+const U = { xs: 6, sm: 8, md: 12, lg: 14, xl: 16, section: 24 };
+const CARD_RADIUS = 12;
+const INPUT_RADIUS = 10;
 const PIN_LENGTH = 4;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
@@ -56,9 +41,13 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
   const [failedAttempts, setFailedAttempts] = useState(0);
+  const [isExiting, setIsExiting] = useState(false);
   const dispatch = useDispatch();
   const router = useRouter();
+  const exitOpacity = useSharedValue(1);
+  const exitTranslateY = useSharedValue(0);
   const { colors, isDark } = useStagePassTheme();
+  const { setPreference } = useThemePreference();
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -66,7 +55,26 @@ export default function LoginScreen() {
       if (until && until > Date.now()) setLockoutUntil(until);
       else setLockoutUntil(null);
     });
+    getLastUsername().then((u) => {
+      if (u) setUsername(u);
+    });
   }, []);
+
+  const navigateToHome = () => router.replace('/(tabs)');
+
+  useEffect(() => {
+    if (!isExiting) return;
+    const duration = 380;
+    exitOpacity.value = withTiming(0, { duration }, (finished) => {
+      if (finished) runOnJS(navigateToHome)();
+    });
+    exitTranslateY.value = withTiming(-12, { duration });
+  }, [isExiting, exitOpacity, exitTranslateY]);
+
+  const exitAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: exitOpacity.value,
+    transform: [{ translateY: exitTranslateY.value }],
+  }));
 
   const isLocked = lockoutUntil != null && lockoutUntil > Date.now();
   const lockoutMinsLeft =
@@ -88,19 +96,20 @@ export default function LoginScreen() {
       console.warn('[Login] Sending request to', getApiBase(), '...');
     }
     try {
-      const res = await api.auth.login(trimmedUser, pin);
-      if (__DEV__) {
-        console.warn('[Login] Success, token received');
-      }
+      const fcmToken = await getDevicePushTokenAsync();
+      const res = await api.auth.login(trimmedUser, pin, fcmToken ?? undefined);
+      if (__DEV__) console.warn('[Login] Success, token received');
       setAuthToken(res.token);
       await saveToken(res.token);
-      dispatch(setCredentials({ user: res.user, token: res.token }));
+      await setLastUsername(trimmedUser);
+      const me = await api.auth.me();
+      dispatch(setCredentials({ user: me, token: res.token }));
       setFailedAttempts(0);
-      router.replace('/(tabs)');
+      setIsExiting(true);
+      return;
     } catch (e: unknown) {
-      if (__DEV__) {
-        console.warn('[Login] Error', e);
-      }
+      setLoading(false);
+      if (__DEV__) console.warn('[Login] Error', e);
       const message = e instanceof Error ? e.message : 'Invalid username or PIN.';
       const isNetworkError =
         message === 'Network request failed' ||
@@ -108,16 +117,18 @@ export default function LoginScreen() {
         (e instanceof TypeError && (e.message === 'Network request failed' || e.message.includes('fetch')));
       if (isNetworkError) {
         const base = getApiBase();
+        const isLocalhost = /localhost|127\.0\.0\.1/.test(base);
+        const deviceHint = isLocalhost
+          ? "On a phone or tablet, localhost doesn't work. In the app's .env set EXPO_PUBLIC_API_URL=http://YOUR_PC_IP:8000, then restart Expo (npx expo start -c).\n\n"
+          : '';
         Alert.alert(
           'Connection failed',
           `Cannot reach: ${base}\n\n` +
+            deviceHint +
             '1. Start the API: cd backend/laravel-api && php artisan serve --host=0.0.0.0\n' +
-            '2. Ensure your phone and PC are on the same network (or use the PC IP that matches your Wi‑Fi).\n' +
-            '3. Tap Retry after the server is running.',
-          [
-            { text: 'OK' },
-            { text: 'Retry', onPress: () => handleLogin() },
-          ]
+            '2. Phone and PC must be on the same Wi‑Fi. Use your PC IP in .env if on device.\n' +
+            '3. Tap Retry after the server is reachable.',
+          [{ text: 'OK' }, { text: 'Retry', onPress: () => handleLogin() }]
         );
       } else {
         const next = failedAttempts + 1;
@@ -126,35 +137,29 @@ export default function LoginScreen() {
           const until = Date.now() + LOCKOUT_MINUTES * 60 * 1000;
           await setLoginLockoutUntil(until);
           setLockoutUntil(until);
-          Alert.alert(
-            'Account locked',
-            `Too many failed attempts. Try again in ${LOCKOUT_MINUTES} minutes.`
-          );
+          Alert.alert('Account locked', `Too many failed attempts. Try again in ${LOCKOUT_MINUTES} minutes.`);
         } else {
           Alert.alert('Login failed', message);
         }
       }
-    } finally {
-      setLoading(false);
     }
   };
 
-  const cardBg = isDark ? colors.surface : '#FFFFFF';
-  const inputBg = colors.inputBackground;
-  const inputBorder = colors.inputBorder;
-  const placeholderColor = colors.placeholder;
-  const bgStart = isDark ? themeBlue + '12' : themeBlueLight;
-  const bgEnd = colors.background;
+  const toggleTheme = () => {
+    setPreference(isDark ? 'light' : 'dark');
+  };
+
+  const bgColor = isDark ? themeBlue : '#e8eaef';
+  const cardBg = isDark ? 'rgba(40,45,65,0.95)' : '#ffffff';
+  const inputBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
+  const inputBorder = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)';
+  const accentColor = themeYellow;
+  const titleColor = isDark ? '#fff' : colors.text;
+  const subtitleColor = isDark ? 'rgba(255,255,255,0.85)' : colors.textSecondary;
 
   return (
-    <View style={styles.container}>
-      {loading && <StagepassLoader message="Signing in…" fullScreen />}
-      <LinearGradient
-        colors={[bgStart, bgEnd]}
-        locations={[0, 0.5]}
-        style={StyleSheet.absoluteFill}
-      />
-
+    <View style={[styles.container, { backgroundColor: bgColor }]}>
+      <Animated.View style={[styles.keyboardWrap, exitAnimatedStyle]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.keyboard}
@@ -162,220 +167,244 @@ export default function LoginScreen() {
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
-            {
-              paddingTop: insets.top + U.section,
-              paddingBottom: insets.bottom + U.xxl,
-            },
+            { paddingTop: insets.top + U.lg, paddingBottom: insets.bottom + U.xxl },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Hero: logo – proportional spacing */}
-          <Animated.View entering={FadeIn.duration(500)} style={styles.hero}>
-            <View style={styles.logoWrap}>
-              <AnimatedGradientLogo innerBackgroundColor={cardBg} />
+          {/* Theme toggle – top right */}
+          <View style={styles.headerRow}>
+            <View style={styles.headerSpacer} />
+            <Pressable onPress={toggleTheme} style={({ pressed }) => [styles.themeBtn, { opacity: pressed ? 0.7 : 1 }]}>
+              <Ionicons
+                name={isDark ? 'moon' : 'sunny'}
+                size={24}
+                color={isDark ? '#fff' : colors.text}
+              />
+            </Pressable>
+          </View>
+
+          {/* Logo + wordmark */}
+          <View style={styles.logoSection}>
+            <View style={[styles.logoBox, { backgroundColor: accentColor }]}>
+              <Ionicons name="ticket" size={32} color="#fff" />
             </View>
-          </Animated.View>
+            <ThemedText style={[styles.wordmark, { color: isDark ? '#fff' : colors.text }]}>
+              StagePass
+            </ThemedText>
+          </View>
 
-          {/* Card: sign-in form */}
-          <Animated.View
-            entering={FadeInDown.delay(120).duration(450).springify().damping(16)}
-            style={[styles.cardWrap, { borderColor: colors.border, backgroundColor: cardBg }]}
-          >
-            <View style={styles.card}>
-              <ThemedText style={[styles.cardTitle, { color: colors.text }]}>
-                Sign in
-              </ThemedText>
-              <View style={[styles.titleUnderline, { backgroundColor: themeYellow }]} />
-              <ThemedText style={[styles.cardSubtitle, { color: colors.textSecondary }]}>
-                Use your username or Staff ID and PIN
-              </ThemedText>
+          {/* Form card */}
+          <View style={[styles.card, { backgroundColor: cardBg, borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)' }]}>
+            <ThemedText style={[styles.welcomeTitle, { color: titleColor }]}>Welcome Back</ThemedText>
+            <ThemedText style={[styles.welcomeSubtitle, { color: subtitleColor }]}>
+              Log in to manage your events and tickets
+            </ThemedText>
 
-              <View style={styles.fieldGroup}>
-                <ThemedText style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-                  Username or Staff ID
-                </ThemedText>
-                <StagePassInput
-                  placeholder="Enter username or Staff ID"
+            <View style={styles.fieldGroup}>
+              <ThemedText style={[styles.fieldLabel, { color: subtitleColor }]}>Username</ThemedText>
+              <View style={[styles.inputRow, { backgroundColor: inputBg, borderColor: inputBorder }]}>
+                <Ionicons name="person-outline" size={20} color={accentColor} style={styles.inputIcon} />
+                <TextInput
+                  placeholder="Enter your username"
+                  placeholderTextColor={colors.placeholder}
                   value={username}
                   onChangeText={setUsername}
                   autoCapitalize="none"
                   autoCorrect={false}
                   editable={!loading && !isLocked}
                   autoComplete="username"
-                  style={[styles.input, { borderColor: inputBorder, borderWidth: BORDER_WIDTH, minHeight: U.inputH }]}
+                  style={[styles.input, { color: colors.text }]}
                 />
-              </View>
-
-              <View style={styles.fieldGroup}>
-                <ThemedText style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-                  PIN
-                </ThemedText>
-                <View style={[styles.pinWrap, { backgroundColor: inputBg, borderColor: inputBorder }]}>
-                  <TextInput
-                    style={[styles.pinInput, { color: colors.text }]}
-                    placeholder={`${PIN_LENGTH}-digit PIN`}
-                    placeholderTextColor={placeholderColor}
-                    value={pin}
-                    onChangeText={(text) => setPin(text.replace(/\D/g, '').slice(0, PIN_LENGTH))}
-                    secureTextEntry
-                    editable={!loading && !isLocked}
-                    keyboardType="number-pad"
-                    maxLength={PIN_LENGTH}
-                  />
-                  <View style={styles.pinIcon}>
-                    <Ionicons name="keypad-outline" size={20} color={themeYellow} />
-                  </View>
-                </View>
-              </View>
-
-              {isLocked ? (
-                <View style={styles.lockoutWrap}>
-                  <Ionicons name="lock-closed" size={16} color={colors.error} />
-                  <ThemedText style={[styles.lockoutText, { color: colors.error }]}>
-                    Try again in {lockoutMinsLeft} minute{lockoutMinsLeft !== 1 ? 's' : ''}
-                  </ThemedText>
-                </View>
-              ) : (
-                <StagePassButton
-                  title={loading ? 'Signing in…' : 'Sign in'}
-                  onPress={handleLogin}
-                  loading={loading}
-                  disabled={loading}
-                  style={styles.submitButton}
-                />
-              )}
-
-              <View style={styles.secureRow}>
-                <Ionicons name="shield-checkmark" size={14} color={colors.textSecondary} />
-                <ThemedText style={[styles.secureText, { color: colors.textSecondary }]}>
-                  Secure sign in
-                </ThemedText>
               </View>
             </View>
-          </Animated.View>
+
+            <View style={styles.fieldGroup}>
+              <View style={styles.pinLabelRow}>
+                <ThemedText style={[styles.fieldLabel, { color: subtitleColor }]}>4-Digit PIN</ThemedText>
+                <Pressable onPress={() => router.push('/forgot-password')} hitSlop={8} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+                  <ThemedText style={[styles.forgotLink, { color: accentColor }]}>Forgot PIN?</ThemedText>
+                </Pressable>
+              </View>
+              <View style={[styles.inputRow, { backgroundColor: inputBg, borderColor: inputBorder }]}>
+                <Ionicons name="lock-closed-outline" size={20} color={accentColor} style={styles.inputIcon} />
+                <TextInput
+                  placeholder="••••"
+                  placeholderTextColor={colors.placeholder}
+                  value={pin}
+                  onChangeText={(text) => setPin(text.replace(/\D/g, '').slice(0, PIN_LENGTH))}
+                  secureTextEntry
+                  editable={!loading && !isLocked}
+                  keyboardType="number-pad"
+                  maxLength={PIN_LENGTH}
+                  style={[styles.input, styles.pinInput, { color: colors.text }]}
+                />
+              </View>
+            </View>
+
+            {isLocked ? (
+              <ThemedText style={[styles.lockoutText, { color: colors.error }]}>
+                Try again in {lockoutMinsLeft} minute{lockoutMinsLeft !== 1 ? 's' : ''}
+              </ThemedText>
+            ) : (
+              <Pressable
+                onPress={handleLogin}
+                disabled={loading}
+                style={({ pressed }) => [
+                  styles.loginBtn,
+                  { backgroundColor: accentColor, opacity: loading ? 1 : pressed ? 0.9 : 1 },
+                ]}
+              >
+                {loading ? (
+                  <>
+                    <ActivityIndicator size="small" color="#fff" style={styles.loginSpinner} />
+                    <ThemedText style={styles.loginBtnText}>Loading…</ThemedText>
+                  </>
+                ) : (
+                  <>
+                    <ThemedText style={styles.loginBtnText}>Sign In</ThemedText>
+                    <Ionicons name="arrow-forward" size={20} color="#fff" />
+                  </>
+                )}
+              </Pressable>
+            )}
+          </View>
+
+          {/* Footer */}
+          <View style={styles.footer}>
+            <ThemedText style={[styles.footerText, { color: subtitleColor }]}>New to StagePass?</ThemedText>
+            <Pressable onPress={() => router.push('/forgot-password')} hitSlop={8} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+              <ThemedText style={[styles.footerLink, { color: accentColor }]}>Request Access</ThemedText>
+            </Pressable>
+          </View>
+          <View style={styles.footerIcons}>
+            <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+              <Ionicons name="help-circle-outline" size={22} color={subtitleColor} />
+            </Pressable>
+            <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+              <Ionicons name="globe-outline" size={22} color={subtitleColor} />
+            </Pressable>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      </Animated.View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  keyboard: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  keyboardWrap: { flex: 1 },
+  keyboard: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
     paddingHorizontal: U.xl,
-    paddingVertical: U.section,
-    paddingBottom: U.section * 2,
   },
-  hero: {
-    alignItems: 'center',
-    marginBottom: U.hero,
-  },
-  logoWrap: {
-    shadowColor: themeBlue,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  cardWrap: {
-    borderRadius: CARD_RADIUS,
-    borderWidth: BORDER_WIDTH,
-    overflow: 'hidden',
-    shadowColor: themeBlue,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 24,
-    elevation: 6,
-  },
-  card: {
-    padding: U.cardPad,
-    borderRadius: CARD_RADIUS,
-  },
-  cardTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-    marginBottom: U.sm,
-  },
-  titleUnderline: {
-    width: 40,
-    height: 3,
-    borderRadius: 2,
-    marginBottom: U.lg,
-  },
-  cardSubtitle: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: U.xxl,
-    opacity: 0.9,
-  },
-  fieldGroup: {
-    marginBottom: U.xl,
-  },
-  fieldLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: U.sm,
-  },
-  input: {
-    borderRadius: BorderRadius.lg,
-    fontSize: 16,
-  },
-  pinWrap: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: BORDER_WIDTH,
-    borderRadius: BorderRadius.lg,
-    minHeight: U.inputH,
+    justifyContent: 'space-between',
+    marginBottom: U.section,
   },
-  pinInput: {
+  headerSpacer: { width: 40 },
+  themeBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoSection: {
+    alignItems: 'center',
+    marginBottom: U.section,
+  },
+  logoBox: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: U.md,
+  },
+  wordmark: {
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  card: {
+    borderRadius: CARD_RADIUS,
+    padding: U.xl,
+    marginBottom: U.section,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  welcomeTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: U.sm,
+  },
+  welcomeSubtitle: {
+    fontSize: 14,
+    marginBottom: U.xl,
+  },
+  fieldGroup: { marginBottom: U.lg },
+  fieldLabel: { fontSize: 13, fontWeight: '600', marginBottom: U.sm },
+  pinLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: U.sm,
+  },
+  forgotLink: { fontSize: 14, fontWeight: '600' },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: INPUT_RADIUS,
+    minHeight: 48,
+  },
+  inputIcon: { marginLeft: U.lg },
+  input: {
     flex: 1,
     fontSize: 16,
-    letterSpacing: 8,
-    paddingHorizontal: U.lg,
+    paddingHorizontal: U.md,
     paddingVertical: U.md,
   },
-  pinIcon: {
-    padding: U.lg,
+  pinInput: { letterSpacing: 4 },
+  lockoutText: {
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: U.lg,
   },
-  submitButton: {
-    marginTop: U.md,
-    backgroundColor: themeYellow,
-    paddingVertical: U.lg,
-    minHeight: U.btnH,
-    borderRadius: BorderRadius.lg,
-    borderWidth: BORDER_WIDTH,
-    borderColor: themeBlue,
-  },
-  lockoutWrap: {
+  loginBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: U.sm,
     marginTop: U.lg,
-    paddingVertical: U.md,
+    minHeight: 52,
+    borderRadius: INPUT_RADIUS,
   },
-  lockoutText: {
-    fontSize: 14,
-    fontWeight: '600',
+  loginBtnText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#fff',
   },
-  secureRow: {
+  loginSpinner: {
+    marginRight: U.sm,
+  },
+  footer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: U.sm,
-    marginTop: U.xl,
+    marginBottom: U.md,
   },
-  secureText: {
-    fontSize: 12,
-    fontWeight: '500',
+  footerText: { fontSize: 14 },
+  footerLink: { fontSize: 14, fontWeight: '700' },
+  footerIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: U.xl,
   },
 });

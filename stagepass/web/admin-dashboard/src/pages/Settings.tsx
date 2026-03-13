@@ -3,6 +3,8 @@ import { api } from '@/services/api';
 import { PageHeader } from '@/components/PageHeader';
 import { Preloader } from '@/components/Preloader';
 import { SectionCard } from '@/components/SectionCard';
+import { LocationSearchInput } from '@/components/LocationSearchInput';
+import { OfficeMap } from '@/components/OfficeMap';
 import { useAuth } from '@/contexts/AuthContext';
 
 export type AppSettings = Record<string, string | number | boolean | null>;
@@ -44,6 +46,8 @@ const DEFAULTS: AppSettings = {
   app_name: 'Stagepass',
   company_name: 'Stagepass',
   app_support_email: '',
+  support_phone: '',
+  support_whatsapp_phone: '',
   timezone: 'Africa/Nairobi',
   date_format: 'd/m/Y',
   time_format: 'H:i',
@@ -61,6 +65,12 @@ const DEFAULTS: AppSettings = {
   require_geofence_for_checkin: true,
   payment_currency: 'KES',
   allow_time_off_requests: true,
+  office_location_name: '',
+  office_latitude: '',
+  office_longitude: '',
+  office_radius_m: 30,
+  office_checkin_start_time: '09:00',
+  office_checkin_end_time: '10:00',
 };
 
 function getBool(v: unknown): boolean {
@@ -80,6 +90,12 @@ function getNum(v: unknown): number {
   return Number.isNaN(n) ? 0 : n;
 }
 
+function parseCoord(v: unknown): number | null {
+  if (v == null || v === '') return null;
+  const n = parseFloat(String(v).trim());
+  return Number.isFinite(n) ? n : null;
+}
+
 export default function Settings() {
   const { user, refreshUser } = useAuth();
   const [pageReady, setPageReady] = useState(false);
@@ -96,6 +112,7 @@ export default function Settings() {
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsSuccess, setSettingsSuccess] = useState(false);
   const [canEditSettings, setCanEditSettings] = useState(false);
 
   useEffect(() => {
@@ -103,9 +120,9 @@ export default function Settings() {
       setPageReady(true);
       setName(user.name ?? '');
       setEmail(user.email ?? '');
-      const isAdmin = user.roles?.some((r) => r.name === 'super_admin' || r.name === 'director');
-      setCanEditSettings(!!isAdmin);
-      if (isAdmin) {
+      const canEdit = user.roles?.some((r) => r.name === 'super_admin' || r.name === 'director' || r.name === 'admin');
+      setCanEditSettings(!!canEdit);
+      if (canEdit) {
         api.settings
           .get()
           .then((data) => setAppSettings((prev) => ({ ...DEFAULTS, ...prev, ...data })))
@@ -168,10 +185,19 @@ export default function Settings() {
     e.preventDefault();
     if (!canEditSettings) return;
     setSettingsError(null);
+    setSettingsSuccess(false);
     setSettingsSaving(true);
     try {
-      const updated = await api.settings.update(appSettings);
-      setAppSettings((prev) => ({ ...prev, ...updated }));
+      // Send full payload: merge DEFAULTS with current state so every key is always sent (no undefined)
+      const payload: Record<string, string | number | boolean | null> = {};
+      for (const key of Object.keys(DEFAULTS)) {
+        const v = appSettings[key];
+        payload[key] = v === undefined ? (DEFAULTS[key] ?? null) : v;
+      }
+      const updated = await api.settings.update(payload);
+      setAppSettings((prev) => ({ ...DEFAULTS, ...prev, ...updated }));
+      setSettingsSuccess(true);
+      setTimeout(() => setSettingsSuccess(false), 4000);
     } catch (err) {
       setSettingsError(err instanceof Error ? err.message : 'Failed to save settings');
     } finally {
@@ -183,13 +209,19 @@ export default function Settings() {
     setAppSettings((prev) => ({ ...prev, [key]: value }));
   };
 
+  const officeLat = parseCoord(appSettings.office_latitude);
+  const officeLon = parseCoord(appSettings.office_longitude);
+  const officeRadius = getNum(appSettings.office_radius_m) || 30;
+  const hasOfficeCoords = officeLat != null && officeLon != null;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <PageHeader
         title="Settings"
-        subtitle="Profile, application and system options, and backup."
+        subtitle="Profile, office location, application options, and backup."
       />
 
+      {/* Profile */}
       <SectionCard sectionLabel="Profile">
         <div className="px-6 py-5">
           {profileError && (
@@ -261,6 +293,7 @@ export default function Settings() {
         </div>
       </SectionCard>
 
+      {/* Application & system options */}
       <SectionCard sectionLabel="Application & system options">
         <div className="px-6 py-5">
           {settingsLoading ? (
@@ -268,16 +301,22 @@ export default function Settings() {
           ) : (
             <>
               {!canEditSettings && (
-                <p className="mb-4 text-sm text-amber-700">
+                <p className="mb-4 rounded-lg bg-amber-50 px-4 py-2 text-sm text-amber-800">
                   Only Admin and Director can view and edit system settings.
                 </p>
               )}
               {settingsError && (
                 <div className="form-error-banner mb-5">{settingsError}</div>
               )}
-              <form onSubmit={handleSaveSettings} className="space-y-8 max-w-3xl">
-                <div>
-                  <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500">
+              {settingsSuccess && (
+                <div className="mb-5 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                  Settings saved to the database successfully.
+                </div>
+              )}
+              <form onSubmit={handleSaveSettings} className="space-y-10">
+                {/* Application – branding & support */}
+                <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-5">
+                  <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-600">
                     Application
                   </h3>
                   <div className="grid gap-4 sm:grid-cols-2">
@@ -314,6 +353,34 @@ export default function Settings() {
                         onChange={(e) => updateSetting('app_support_email', e.target.value)}
                         className="form-input"
                         placeholder="support@example.com"
+                        disabled={!canEditSettings}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label className="form-label form-label-optional" htmlFor="support_phone">
+                        Support phone number
+                      </label>
+                      <input
+                        id="support_phone"
+                        type="tel"
+                        value={getStr(appSettings.support_phone)}
+                        onChange={(e) => updateSetting('support_phone', e.target.value)}
+                        className="form-input"
+                        placeholder="+254 700 000 000"
+                        disabled={!canEditSettings}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label className="form-label form-label-optional" htmlFor="support_whatsapp_phone">
+                        WhatsApp support number
+                      </label>
+                      <input
+                        id="support_whatsapp_phone"
+                        type="tel"
+                        value={getStr(appSettings.support_whatsapp_phone)}
+                        onChange={(e) => updateSetting('support_whatsapp_phone', e.target.value)}
+                        className="form-input"
+                        placeholder="+254 700 000 000"
                         disabled={!canEditSettings}
                       />
                     </div>
@@ -387,14 +454,129 @@ export default function Settings() {
                   </div>
                 </div>
 
-                <div>
-                  <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500">
+                {/* Office location – Places search (same as Events), map when coords set, then form */}
+                <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-5">
+                  <h3 className="mb-1 text-sm font-semibold uppercase tracking-wider text-slate-600">
+                    Office location
+                  </h3>
+                  <p className="mb-4 text-sm text-slate-600">
+                    Search for your office address to set the geofence centre. Permanent crew can &quot;Check in office&quot; from the app when within the radius.
+                  </p>
+                  <div className="mb-4">
+                    <label className="form-label form-label-optional" htmlFor="office-location-search">
+                      Search address or venue
+                    </label>
+                    <LocationSearchInput
+                      id="office-location-search"
+                      value={getStr(appSettings.office_location_name)}
+                      onChange={(value) => updateSetting('office_location_name', value)}
+                      onSelect={({ location_name, latitude, longitude }) => {
+                        updateSetting('office_location_name', location_name);
+                        updateSetting('office_latitude', String(latitude));
+                        updateSetting('office_longitude', String(longitude));
+                      }}
+                      placeholder="Search for office address (Google Places)"
+                      disabled={!canEditSettings}
+                    />
+                    {hasOfficeCoords && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Coordinates: {Number(officeLat).toFixed(5)}, {Number(officeLon).toFixed(5)}
+                      </p>
+                    )}
+                  </div>
+                  {hasOfficeCoords && (
+                    <div className="mb-5">
+                      <OfficeMap
+                        latitude={officeLat}
+                        longitude={officeLon}
+                        radiusM={officeRadius}
+                      />
+                    </div>
+                  )}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="form-field">
+                      <label className="form-label form-label-optional" htmlFor="office_latitude">
+                        Latitude
+                      </label>
+                      <input
+                        id="office_latitude"
+                        type="text"
+                        inputMode="decimal"
+                        value={getStr(appSettings.office_latitude)}
+                        onChange={(e) => updateSetting('office_latitude', e.target.value.trim())}
+                        className="form-input"
+                        placeholder="e.g. -1.292066"
+                        disabled={!canEditSettings}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label className="form-label form-label-optional" htmlFor="office_longitude">
+                        Longitude
+                      </label>
+                      <input
+                        id="office_longitude"
+                        type="text"
+                        inputMode="decimal"
+                        value={getStr(appSettings.office_longitude)}
+                        onChange={(e) => updateSetting('office_longitude', e.target.value.trim())}
+                        className="form-input"
+                        placeholder="e.g. 36.821946"
+                        disabled={!canEditSettings}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label className="form-label" htmlFor="office_radius_m">
+                        Geofence radius (m)
+                      </label>
+                      <input
+                        id="office_radius_m"
+                        type="number"
+                        min={10}
+                        max={500}
+                        value={getNum(appSettings.office_radius_m) || 30}
+                        onChange={(e) => updateSetting('office_radius_m', parseInt(e.target.value, 10) || 30)}
+                        className="form-input"
+                        disabled={!canEditSettings}
+                      />
+                      <p className="mt-1 text-xs text-slate-500">Crew must be within this distance to check in (default 30 m).</p>
+                    </div>
+                    <div className="form-field sm:col-span-2">
+                      <label className="form-label form-label-optional" htmlFor="office_checkin_start_time">
+                        Check-in window
+                      </label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          id="office_checkin_start_time"
+                          type="time"
+                          value={getStr(appSettings.office_checkin_start_time).slice(0, 5)}
+                          onChange={(e) => updateSetting('office_checkin_start_time', e.target.value)}
+                          className="form-input max-w-[8rem]"
+                          disabled={!canEditSettings}
+                        />
+                        <span className="text-slate-500">to</span>
+                        <input
+                          id="office_checkin_end_time"
+                          type="time"
+                          value={getStr(appSettings.office_checkin_end_time).slice(0, 5)}
+                          onChange={(e) => updateSetting('office_checkin_end_time', e.target.value)}
+                          className="form-input max-w-[8rem]"
+                          disabled={!canEditSettings}
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">Permanent crew can office check-in only in this time window.</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Events & check-in */}
+                <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-5">
+                  <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-600">
                     Events & check-in
                   </h3>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="form-field">
                       <label className="form-label" htmlFor="default_geofence_radius_m">
-                        Default geofence radius (m)
+                        Default geofence radius (m) for events
                       </label>
                       <input
                         id="default_geofence_radius_m"
@@ -493,8 +675,9 @@ export default function Settings() {
                   </div>
                 </div>
 
-                <div>
-                  <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500">
+                {/* Notifications */}
+                <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-5">
+                  <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-600">
                     Notifications
                   </h3>
                   <div className="grid gap-4 sm:grid-cols-2">
@@ -542,8 +725,9 @@ export default function Settings() {
                   </div>
                 </div>
 
-                <div>
-                  <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500">
+                {/* Defaults & features */}
+                <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-5">
+                  <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-600">
                     Defaults & features
                   </h3>
                   <div className="grid gap-4 sm:grid-cols-2">
@@ -580,11 +764,11 @@ export default function Settings() {
                 </div>
 
                 {canEditSettings && (
-                  <div className="form-actions border-t border-slate-200 pt-5">
+                  <div className="border-t border-slate-200 pt-6">
                     <button
                       type="submit"
                       disabled={settingsSaving}
-                      className="btn-brand disabled:opacity-50"
+                      className="btn-brand min-w-[12rem] disabled:opacity-50"
                     >
                       {settingsSaving ? 'Saving…' : 'Save application settings'}
                     </button>
@@ -601,7 +785,7 @@ export default function Settings() {
           {backupError && (
             <div className="form-error-banner mb-5">{backupError}</div>
           )}
-          <p className="text-sm text-slate-600 mb-4">
+          <p className="mb-4 text-sm text-slate-600">
             Download a JSON backup of users, events, and equipment. Available to Admin and Director roles only.
           </p>
           <button

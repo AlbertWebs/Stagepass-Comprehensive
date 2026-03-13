@@ -5,7 +5,7 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
-import { BorderRadius, Spacing, themeYellow } from '@/constants/theme';
+import { themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -83,20 +83,23 @@ export function DateStrip({ selectedDate, onSelectDate }: DateStripProps) {
   );
 }
 
+const U = { sm: 8, md: 12, lg: 14 };
+const CHIP_RADIUS = 12;
+
 const styles = StyleSheet.create({
-  scroll: { marginHorizontal: -Spacing.lg },
+  scroll: { marginHorizontal: -U.lg },
   scrollContent: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
+    paddingHorizontal: U.lg,
+    paddingVertical: U.sm,
     flexDirection: 'row',
     alignItems: 'center',
   },
   dayChip: {
-    minWidth: 56,
-    marginRight: Spacing.sm,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.sm,
-    borderRadius: BorderRadius.lg,
+    minWidth: 48,
+    marginRight: U.sm,
+    paddingVertical: U.sm,
+    paddingHorizontal: U.sm,
+    borderRadius: CHIP_RADIUS,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -106,16 +109,16 @@ const styles = StyleSheet.create({
     borderColor: themeYellow,
     shadowColor: themeYellow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 4,
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   dayLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
   dayNum: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '800',
     marginTop: 2,
   },

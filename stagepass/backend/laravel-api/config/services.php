@@ -42,4 +42,8 @@ return [
         'twilio_from' => env('TWILIO_FROM'),
     ],
 
+    'firebase' => [
+        'credentials' => env('FIREBASE_CREDENTIALS'),
+    ],
+
 ];

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Notifications\CustomResetPasswordNotification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -27,6 +28,7 @@ class User extends Authenticatable
         'phone',
         'fcm_token',
         'avatar_url',
+        'is_permanent_employee',
     ];
 
     /**
@@ -62,16 +64,37 @@ class User extends Authenticatable
     }
 
     /**
+     * FCM token(s) for push notifications. Return array for multiple devices.
+     *
+     * @return string|array<int, string>|null
+     */
+    public function routeNotificationForFcm(): string|array|null
+    {
+        return $this->fcm_token ? [$this->fcm_token] : null;
+    }
+
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new CustomResetPasswordNotification($token));
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
      */
+    public function dailyOfficeCheckins(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(DailyOfficeCheckin::class);
+    }
+
     protected function casts(): array
     {
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'pin' => 'hashed',
+            'is_permanent_employee' => 'boolean',
         ];
     }
 }

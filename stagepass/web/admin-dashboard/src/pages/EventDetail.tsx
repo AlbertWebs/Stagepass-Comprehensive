@@ -14,8 +14,10 @@ type CrewMember = User & {
   };
 };
 
-function formatDate(d: string) {
-  const [y, m, day] = d.split('-');
+function formatDate(d: string | null | undefined): string {
+  if (!d) return '–';
+  const dateOnly = typeof d === 'string' && d.includes('T') ? d.slice(0, 10) : String(d).slice(0, 10);
+  const [y, m, day] = dateOnly.split('-');
   const date = new Date(Number(y), Number(m) - 1, Number(day));
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
@@ -36,9 +38,8 @@ export default function EventDetail() {
   const [allocatePayOpen, setAllocatePayOpen] = useState(false);
   const [payUserId, setPayUserId] = useState('');
   const [payPurpose, setPayPurpose] = useState<string>('fair');
-  const [payHours, setPayHours] = useState('');
-  const [payPerDiem, setPayPerDiem] = useState('0');
-  const [payAllowances, setPayAllowances] = useState('0');
+  const [payDate, setPayDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [payAmount, setPayAmount] = useState('');
   const [paymentSaving, setPaymentSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [teamLeaderSaving, setTeamLeaderSaving] = useState(false);
@@ -285,9 +286,8 @@ export default function EventDetail() {
   const openAllocatePay = () => {
     setPayUserId('');
     setPayPurpose('fair');
-    setPayHours('');
-    setPayPerDiem('0');
-    setPayAllowances('0');
+    setPayDate(new Date().toISOString().slice(0, 10));
+    setPayAmount('');
     setError(null);
     setAllocatePayOpen(true);
   };
@@ -295,7 +295,7 @@ export default function EventDetail() {
   const handleAllocatePay = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!event || !payUserId) return;
-    const hours = Number(payHours) || 0;
+    const amount = Number(payAmount) || 0;
     setPaymentSaving(true);
     setError(null);
     try {
@@ -303,9 +303,8 @@ export default function EventDetail() {
         event_id: event.id,
         user_id: Number(payUserId),
         purpose: payPurpose || undefined,
-        hours,
-        per_diem: Number(payPerDiem) || 0,
-        allowances: Number(payAllowances) || 0,
+        payment_date: payDate || undefined,
+        amount,
       });
       setAllocatePayOpen(false);
       fetchEventPayments();
@@ -332,8 +331,14 @@ export default function EventDetail() {
     );
   }
 
+  const startDateOnly = event.date ? String(event.date).slice(0, 10) : '';
+  const endDateOnly = event.end_date ? String(event.end_date).slice(0, 10) : '';
+  const dateRange =
+    endDateOnly && endDateOnly !== startDateOnly
+      ? `${formatDate(event.date)} – ${formatDate(event.end_date)}`
+      : formatDate(event.date);
   const subtitle = [
-    formatDate(event.date),
+    dateRange,
     event.location_name || 'No location',
     event.start_time,
     event.status,
@@ -800,8 +805,6 @@ export default function EventDetail() {
                   <tr>
                     <th>Member</th>
                     <th>Purpose</th>
-                    <th>Hours</th>
-                    <th>Per diem</th>
                     <th>Allowances</th>
                     <th>Total</th>
                     <th>Status</th>
@@ -817,8 +820,6 @@ export default function EventDetail() {
                       <td className="px-6 py-4">
                         <span className="capitalize text-slate-700">{p.purpose ?? '–'}</span>
                       </td>
-                      <td className="px-6 py-4 text-slate-700">{Number(p.hours)}</td>
-                      <td className="px-6 py-4 text-slate-700">{Number(p.per_diem).toFixed(2)}</td>
                       <td className="px-6 py-4 text-slate-700">{Number(p.allowances).toFixed(2)}</td>
                       <td className="px-6 py-4 font-medium text-slate-900">{Number(p.total_amount).toFixed(2)}</td>
                       <td className="px-6 py-4">
@@ -1013,7 +1014,7 @@ export default function EventDetail() {
             {error && <div className="form-error-banner mb-4">{error}</div>}
             <form onSubmit={handleAllocatePay} className="space-y-4">
               <div className="form-field">
-                <label className="form-label" htmlFor="alloc-user">Crew member *</label>
+                <label className="form-label" htmlFor="alloc-user">Select member *</label>
                 <select
                   id="alloc-user"
                   required
@@ -1045,44 +1046,30 @@ export default function EventDetail() {
                   ))}
                 </select>
               </div>
-              <div className="form-row">
-                <div className="form-field">
-                  <label className="form-label" htmlFor="alloc-hours">Hours *</label>
-                  <input
-                    id="alloc-hours"
-                    type="number"
-                    min={0}
-                    step={0.5}
-                    required
-                    value={payHours}
-                    onChange={(e) => setPayHours(e.target.value)}
-                    className="form-input"
-                  />
-                </div>
-                <div className="form-field">
-                  <label className="form-label form-label-optional" htmlFor="alloc-perdiem">Per diem</label>
-                  <input
-                    id="alloc-perdiem"
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={payPerDiem}
-                    onChange={(e) => setPayPerDiem(e.target.value)}
-                    className="form-input"
-                  />
-                </div>
-                <div className="form-field">
-                  <label className="form-label form-label-optional" htmlFor="alloc-allowances">Allowances</label>
-                  <input
-                    id="alloc-allowances"
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={payAllowances}
-                    onChange={(e) => setPayAllowances(e.target.value)}
-                    className="form-input"
-                  />
-                </div>
+              <div className="form-field">
+                <label className="form-label" htmlFor="alloc-date">Date</label>
+                <input
+                  id="alloc-date"
+                  type="date"
+                  required
+                  value={payDate}
+                  onChange={(e) => setPayDate(e.target.value)}
+                  className="form-input"
+                />
+              </div>
+              <div className="form-field">
+                <label className="form-label" htmlFor="alloc-amount">Amount *</label>
+                <input
+                  id="alloc-amount"
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  required
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  className="form-input"
+                  placeholder="0"
+                />
               </div>
               <div className="form-actions">
                 <button type="button" onClick={() => setAllocatePayOpen(false)} className="btn-secondary">

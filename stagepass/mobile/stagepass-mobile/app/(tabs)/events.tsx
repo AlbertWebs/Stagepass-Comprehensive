@@ -2,24 +2,28 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSelector } from 'react-redux';
 import { api, type Event } from '~/services/api';
 import { HomeHeader } from '@/components/HomeHeader';
 import { DateStrip } from '@/components/DateStrip';
-import { EventCard } from '@/components/EventCard';
+import { EventCard, type EventDisplayStatus } from '@/components/EventCard';
 import { StagepassLoader } from '@/components/StagepassLoader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme';
+import { StatusColors, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { useAppRole } from '~/hooks/useAppRole';
 
 const TAB_BAR_HEIGHT = 58;
+const U = { xs: 6, sm: 8, md: 12, lg: 14, xl: 16, section: 24 };
+const CARD_RADIUS = 12;
 
 function eventMatchesDate(event: Event, date: Date): boolean {
   try {
@@ -43,15 +47,39 @@ function sortByTime(a: Event, b: Event): number {
   }
 }
 
+/** My Events: show Created | Checked in | Checked out | Completed from event status + current user's crew pivot */
+function getEventDisplayStatus(event: Event, userId: number | undefined): EventDisplayStatus {
+  if (event.status === 'completed' || event.status === 'closed') return 'completed';
+  if (userId == null || !event.crew?.length) return 'created';
+  const me = event.crew.find((c) => c.id === userId);
+  if (!me?.pivot) return 'created';
+  if (me.pivot.checkout_time) return 'checked_out';
+  if (me.pivot.checkin_time) return 'checked_in';
+  return 'created';
+}
+
 export default function EventsTab() {
   const router = useRouter();
   const { colors } = useStagePassTheme();
-  const insets = useSafeAreaInsets();
+  const role = useAppRole();
+  const userId = useSelector((s: { auth: { user: { id: number } | null } }) => s.auth.user?.id);
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
-  const scrollBottomPadding = insets.bottom + TAB_BAR_HEIGHT + Spacing.sm;
+  const [eventFilter, setEventFilter] = useState<'all' | 'upcoming' | 'completed'>('upcoming');
+  const [dailyAllowance, setDailyAllowance] = useState<string | number | null>(null);
+  const scrollBottomPadding = TAB_BAR_HEIGHT;
+  const isCrewOrTeamLeader = role === 'crew' || role === 'team_leader';
+  const canAccessSettings = role === 'super_admin' || role === 'director' || role === 'admin';
+
+  useEffect(() => {
+    if (!canAccessSettings) return;
+    api.settings.get().then((s) => {
+      const v = s?.daily_allowance ?? s?.default_daily_allowance;
+      setDailyAllowance(v != null ? (typeof v === 'number' ? v : Number(v) || v) : null);
+    }).catch(() => {});
+  }, [canAccessSettings]);
 
   const loadEvents = useCallback(async () => {
     try {
@@ -75,10 +103,15 @@ export default function EventsTab() {
     loadEvents();
   }, [loadEvents]);
 
-  const eventsOnSelectedDate = useMemo(
-    () => events.filter((e) => eventMatchesDate(e, selectedDate)),
-    [events, selectedDate]
-  );
+  const eventsOnSelectedDate = useMemo(() => {
+    let list = events.filter((e) => eventMatchesDate(e, selectedDate));
+    if (eventFilter === 'upcoming') {
+      list = list.filter((e) => e.status !== 'completed' && e.status !== 'closed');
+    } else if (eventFilter === 'completed') {
+      list = list.filter((e) => e.status === 'completed' || e.status === 'closed');
+    }
+    return list;
+  }, [events, selectedDate, eventFilter]);
 
   if (loading) {
     return <StagepassLoader message="Loading events…" fullScreen />;
@@ -101,9 +134,51 @@ export default function EventsTab() {
           <DateStrip selectedDate={selectedDate} onSelectDate={setSelectedDate} />
         </View>
 
+        <View style={styles.filterRow}>
+          {(['upcoming', 'all', 'completed'] as const).map((filter) => {
+            const isActive = eventFilter === filter;
+            return (
+              <Pressable
+                key={filter}
+                onPress={() => setEventFilter(filter)}
+                style={[
+                  styles.filterTab,
+                  { borderColor: isActive ? themeYellow : colors.border },
+                  isActive && { backgroundColor: themeYellow + '1c', borderWidth: 1.5 },
+                ]}
+              >
+                <ThemedText
+                  style={[
+                    styles.filterTabText,
+                    { color: isActive ? colors.text : colors.textSecondary },
+                  ]}
+                >
+                  {filter === 'all' ? 'All Events' : filter === 'upcoming' ? 'Upcoming' : 'Completed'}
+                </ThemedText>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {isCrewOrTeamLeader && (
+          <View style={[styles.allowanceCard, { backgroundColor: colors.surface, borderColor: colors.border, borderLeftColor: StatusColors.checkedIn }]}>
+            <View style={[styles.allowanceIconWrap, { backgroundColor: StatusColors.checkedIn + '18', borderColor: StatusColors.checkedIn + '35' }]}>
+              <Ionicons name="wallet-outline" size={18} color={StatusColors.checkedIn} />
+            </View>
+            <View style={styles.allowanceTextWrap}>
+              <ThemedText style={[styles.allowanceValue, { color: colors.text }]}>
+                {dailyAllowance != null
+                  ? (typeof dailyAllowance === 'number' ? `KES ${dailyAllowance}` : String(dailyAllowance))
+                  : '0.00 KES'}
+              </ThemedText>
+              <ThemedText style={[styles.allowanceLabel, { color: colors.textSecondary }]}>DAILY ALLOWANCE</ThemedText>
+            </View>
+          </View>
+        )}
+
         <View style={styles.sectionHeader}>
           <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
-          <Ionicons name="calendar" size={20} color={themeYellow} style={styles.sectionIcon} />
+          <Ionicons name="calendar" size={18} color={themeYellow} style={styles.sectionIcon} />
           <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>
             {sectionTitle}
           </ThemedText>
@@ -112,7 +187,7 @@ export default function EventsTab() {
         {events.length === 0 ? (
           <View style={styles.emptyWrap}>
             <View style={[styles.emptyIconWrap, { backgroundColor: colors.surface, borderColor: themeYellow }]}>
-              <Ionicons name="calendar-outline" size={48} color={themeYellow} />
+              <Ionicons name="calendar-outline" size={36} color={themeYellow} />
             </View>
             <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>
               No events yet
@@ -122,18 +197,26 @@ export default function EventsTab() {
             </ThemedText>
             <Pressable
               onPress={onRefresh}
+              disabled={refreshing}
               style={({ pressed }) => [
                 styles.emptyButton,
-                { opacity: pressed ? 0.9 : 1, backgroundColor: themeYellow },
+                { opacity: refreshing ? 0.85 : pressed ? 0.9 : 1, backgroundColor: themeYellow },
               ]}
             >
-              <ThemedText style={styles.emptyButtonText}>Refresh events</ThemedText>
+              {refreshing ? (
+                <View style={styles.emptyButtonContent}>
+                  <ActivityIndicator size="small" color={themeBlue} />
+                  <ThemedText style={styles.emptyButtonText}>Refreshing…</ThemedText>
+                </View>
+              ) : (
+                <ThemedText style={styles.emptyButtonText}>Refresh events</ThemedText>
+              )}
             </Pressable>
           </View>
         ) : eventsOnSelectedDate.length === 0 ? (
           <View style={styles.emptyWrap}>
             <View style={[styles.emptyIconWrapSmall, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Ionicons name="today-outline" size={32} color={colors.textSecondary} />
+              <Ionicons name="today-outline" size={26} color={colors.textSecondary} />
             </View>
             <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>
               No events on this day
@@ -166,6 +249,7 @@ export default function EventsTab() {
                   location_name: item.location_name,
                   status: item.status,
                 }}
+                displayStatus={getEventDisplayStatus(item, userId)}
                 onPress={() => router.push({ pathname: '/events/[id]', params: { id: String(item.id) } })}
               />
             ))}
@@ -180,91 +264,148 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   content: {
     flex: 1,
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: U.lg,
   },
   dateStripWrap: {
-    marginHorizontal: -Spacing.lg,
-    paddingBottom: Spacing.sm,
+    marginHorizontal: -U.lg,
+    paddingBottom: U.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(234, 179, 8, 0.2)',
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: U.sm,
+    marginTop: U.md,
+    marginBottom: U.sm,
+  },
+  filterTab: {
+    flex: 1,
+    paddingVertical: U.sm,
+    paddingHorizontal: U.xs,
+    borderRadius: CARD_RADIUS,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  filterTabText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  allowanceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: U.md,
+    padding: U.lg,
+    borderRadius: CARD_RADIUS,
+    borderWidth: 1,
+    borderLeftWidth: 4,
+    marginTop: U.md,
+    marginBottom: U.lg,
+  },
+  allowanceIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  allowanceTextWrap: {
+    flex: 1,
+  },
+  allowanceValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  allowanceLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginTop: 2,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: Spacing.lg,
-    marginBottom: Spacing.md,
+    marginTop: U.lg,
+    marginBottom: U.md,
   },
   sectionTitleAccent: {
-    width: 4,
-    height: 22,
+    width: 3,
+    height: 16,
     borderRadius: 2,
-    marginRight: Spacing.sm,
+    marginRight: U.sm,
   },
   sectionIcon: {
-    marginRight: Spacing.xs,
+    marginRight: U.xs,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '800',
     letterSpacing: 0.3,
   },
   list: {
-    paddingBottom: Spacing.xxl * 2,
+    paddingBottom: 0,
   },
   emptyWrap: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: Spacing.xxl * 2,
+    paddingVertical: U.section * 2,
   },
   emptyIconWrap: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    marginBottom: Spacing.lg,
+    marginBottom: U.lg,
     shadowColor: themeYellow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   emptyIconWrapSmall: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    marginBottom: Spacing.md,
+    marginBottom: U.md,
   },
   emptyTitle: {
-    fontSize: 19,
+    fontSize: 17,
     fontWeight: '800',
-    marginBottom: Spacing.sm,
+    marginBottom: U.sm,
     letterSpacing: 0.2,
   },
   emptySub: {
-    fontSize: 15,
+    fontSize: 13,
     textAlign: 'center',
-    maxWidth: 280,
-    marginBottom: Spacing.lg,
-    lineHeight: 22,
+    maxWidth: 260,
+    marginBottom: U.lg,
+    lineHeight: 20,
   },
   emptyButton: {
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl,
-    borderRadius: BorderRadius.lg,
+    paddingVertical: U.md,
+    paddingHorizontal: U.xl,
+    borderRadius: CARD_RADIUS,
     shadowColor: themeBlue,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
-    shadowRadius: 6,
+    shadowRadius: 4,
     elevation: 3,
   },
+  emptyButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: U.sm,
+  },
   emptyButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
     color: themeBlue,
   },

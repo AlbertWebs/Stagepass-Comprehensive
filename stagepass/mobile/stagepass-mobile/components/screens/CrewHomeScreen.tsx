@@ -92,7 +92,7 @@ export function CrewHomeScreen({ event, onRefresh }: Props) {
   return (
     <ThemedView style={styles.container}>
       {actionLoading && <StagepassLoader message="Checking in…" fullScreen />}
-      <ThemedText style={[styles.eventName, { color: StagePassColors.themeBlue }]}>{event.name}</ThemedText>
+      <ThemedText style={[styles.eventName, { color: colors.brandText }]}>{event.name}</ThemedText>
       <ThemedText style={[styles.meta, { color: StagePassColors.themeYellow }]}>
         Call time {event.start_time} · {event.location_name ?? 'No location'}
       </ThemedText>

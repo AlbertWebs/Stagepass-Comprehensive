@@ -6,8 +6,10 @@
  * Elegant, proportional, one-hand friendly, with clear active state and tap feedback.
  */
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import { useRouter, usePathname } from 'expo-router';
 import { IconSymbol, type IconSymbolName } from '@/components/ui/icon-symbol';
 import { themeBlue, themeYellow } from '@/constants/theme';
+import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { useAppRole } from '~/hooks/useAppRole';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
@@ -21,46 +23,61 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const ICON_SIZE = 22;
-const ICON_SIZE_ACTIVE = 24;
-const CREATE_FAB_SIZE = 56;
-const CREATE_ICON_SIZE = 28;
-const LABEL_FONT_SIZE = 10;
-const MIN_BOTTOM = Platform.OS === 'android' ? 16 : 8;
-/** How much the Create Event button overshoots above the bar (negative = upward) */
-const CREATE_OVERSHOOT = 20;
+const ICON_SIZE = 18;
+const ICON_SIZE_ACTIVE = 20;
+const LABEL_FONT_SIZE = 9;
+const MIN_BOTTOM = Platform.OS === 'android' ? 12 : 6;
+const INACTIVE_COLOR_LIGHT = '#6B7280';
+const INACTIVE_COLOR_DARK = '#A1A1AA';
 
 type TabItemConfig =
   | { name: string; route: string; label: string; iconName: IconSymbolName }
   | { name: string; route: string; label: string; iconIonicons: keyof typeof Ionicons.glyphMap };
 
+/** Crew: Home, My Events, Activities, Profile (logout in Profile/header) */
 const USER_TABS: TabItemConfig[] = [
   { name: 'index', route: 'index', label: 'Home', iconName: 'house.fill' },
   { name: 'events', route: 'events', label: 'My Events', iconName: 'calendar' },
-  { name: 'activity', route: 'activity', label: 'Activities', iconName: 'clock.fill' },
-  { name: 'tasks', route: 'tasks', label: 'Tasks', iconIonicons: 'checkbox' },
+  { name: 'activity', route: 'activity', label: 'Activities', iconIonicons: 'notifications-outline' },
   { name: 'profile', route: 'profile', label: 'Profile', iconName: 'person.fill' },
 ];
 
+/** Team Leader / Admin: Dashboard, Events, Crew, Reports, Profile */
 const ADMIN_TABS: TabItemConfig[] = [
-  { name: 'index', route: 'index', label: 'Home', iconName: 'house.fill' },
-  { name: 'events', route: 'events', label: 'My Events', iconName: 'calendar' },
-  { name: 'createEvent', route: 'createEvent', label: 'Create Event', iconIonicons: 'add-circle' },
-  { name: 'tasks', route: 'tasks', label: 'Tasks', iconIonicons: 'checkbox' },
+  { name: 'index', route: 'index', label: 'Dashboard', iconName: 'house.fill' },
+  { name: 'events', route: 'events', label: 'Events', iconName: 'calendar' },
+  { name: 'admin', route: 'admin', label: 'Crew', iconIonicons: 'people' },
+  { name: 'adminReports', route: 'adminReports', label: 'Reports', iconIonicons: 'document-text' },
   { name: 'profile', route: 'profile', label: 'Profile', iconName: 'person.fill' },
 ];
 
 export function RoleBasedTabBar({ state, navigation, descriptors }: BottomTabBarProps) {
   const role = useAppRole();
+  const router = useRouter();
+  const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const bottom = Math.max(insets.bottom, MIN_BOTTOM);
-  const isAdmin = role === 'admin';
-  const tabs = isAdmin ? ADMIN_TABS : USER_TABS;
+  const { colors, isDark } = useStagePassTheme();
+  const bottomInset = Math.max(insets.bottom, MIN_BOTTOM);
+  const isTeamLeaderOrAdmin = role === 'admin' || role === 'team_leader';
+  const tabs = isTeamLeaderOrAdmin ? ADMIN_TABS : USER_TABS;
   const activeRouteName = state.routes[state.index]?.name;
+
+  const barBg = colors.surface;
+  const barBorder = colors.border;
+  const activeColor = isDark ? themeYellow : themeBlue;
+  const inactiveColor = isDark ? INACTIVE_COLOR_DARK : INACTIVE_COLOR_LIGHT;
 
   const onTabPress = (routeName: string) => {
     if (Platform.OS === 'ios') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    if (routeName === 'admin') {
+      router.push('/(tabs)/admin/manage-checkin');
+      return;
+    }
+    if (routeName === 'adminReports') {
+      router.push('/(tabs)/admin/reports');
+      return;
     }
     const event = navigation.emit({
       type: 'tabPress',
@@ -73,34 +90,18 @@ export function RoleBasedTabBar({ state, navigation, descriptors }: BottomTabBar
   };
 
   return (
-    <View style={[styles.bar, { paddingBottom: bottom }]}>
+    <View style={[styles.bar, { paddingBottom: bottomInset, backgroundColor: barBg, borderTopColor: barBorder, shadowColor: isDark ? 'transparent' : '#000' }]}>
       {tabs.map((tab) => {
-        const isActive = activeRouteName === tab.name;
-        const isCreateEvent = tab.name === 'createEvent';
-        const color = isActive ? themeYellow : 'rgba(255,255,255,0.55)';
-
-        if (isCreateEvent) {
-          return (
-            <View key={tab.name} style={styles.createEventSlot}>
-              <Pressable
-                onPress={() => onTabPress(tab.route)}
-                style={({ pressed }) => [
-                  styles.createEventFab,
-                  pressed && styles.pressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={tab.label}
-              >
-                <Ionicons name="add-circle" size={CREATE_ICON_SIZE} color={themeBlue} />
-              </Pressable>
-              <Text style={styles.createEventLabel} numberOfLines={1}>
-                {tab.label}
-              </Text>
-            </View>
-          );
-        }
+        const isAdminRoute = tab.name === 'admin' || tab.name === 'adminReports';
+        const isActive = isAdminRoute
+          ? (pathname?.includes('/admin/manage-checkin') && tab.name === 'admin') ||
+            (pathname?.includes('/admin/reports') && tab.name === 'adminReports')
+          : activeRouteName === tab.name;
+        const color = isActive ? activeColor : inactiveColor;
 
         const iconSize = isActive ? ICON_SIZE_ACTIVE : ICON_SIZE;
+        const label = tab.label.toUpperCase();
+
         const content = (
           <>
             {'iconIonicons' in tab ? (
@@ -108,8 +109,8 @@ export function RoleBasedTabBar({ state, navigation, descriptors }: BottomTabBar
             ) : (
               <IconSymbol name={tab.iconName} size={iconSize} color={color} />
             )}
-            <Text style={[styles.label, { color }]} numberOfLines={1}>
-              {tab.label}
+            <Text style={[styles.label, { color }, isActive && styles.labelActive]} numberOfLines={1}>
+              {label}
             </Text>
           </>
         );
@@ -118,12 +119,15 @@ export function RoleBasedTabBar({ state, navigation, descriptors }: BottomTabBar
           <Pressable
             key={tab.name}
             onPress={() => onTabPress(tab.route)}
-            style={({ pressed }) => [styles.tabItem, pressed && styles.pressed]}
+            style={({ pressed }) => [
+              styles.tabItem,
+              isActive && { backgroundColor: activeColor + '14' },
+              pressed && styles.pressed,
+            ]}
             accessibilityRole="button"
             accessibilityLabel={tab.label}
             accessibilityState={{ selected: isActive }}
           >
-            {isActive && <View style={styles.activeDot} />}
             {content}
           </Pressable>
         );
@@ -135,73 +139,38 @@ export function RoleBasedTabBar({ state, navigation, descriptors }: BottomTabBar
 const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 8,
-    paddingHorizontal: 4,
-    minHeight: 52,
-    backgroundColor: themeBlue,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    paddingTop: 6,
+    paddingHorizontal: 2,
+    paddingBottom: 4,
+    minHeight: 48,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.12)',
-    elevation: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
+    elevation: 6,
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
   },
   tabItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
     minWidth: 0,
-  },
-  activeDot: {
-    position: 'absolute',
-    top: 6,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: themeYellow,
-  },
-  createEventSlot: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingBottom: 4,
-    minWidth: 0,
-  },
-  createEventFab: {
-    width: CREATE_FAB_SIZE,
-    height: CREATE_FAB_SIZE,
-    borderRadius: CREATE_FAB_SIZE / 2,
-    backgroundColor: themeYellow,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: -CREATE_OVERSHOOT,
-    borderWidth: 3,
-    borderColor: themeBlue,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  createEventLabel: {
-    fontSize: 9,
-    fontWeight: '700',
-    marginTop: 2,
-    color: 'rgba(255,255,255,0.9)',
+    borderRadius: 10,
+    marginHorizontal: 2,
   },
   label: {
     fontSize: LABEL_FONT_SIZE,
     fontWeight: '600',
     marginTop: 2,
+    letterSpacing: 0.4,
+  },
+  labelActive: {
+    fontWeight: '700',
   },
   pressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.96 }],
+    opacity: 0.75,
   },
 });

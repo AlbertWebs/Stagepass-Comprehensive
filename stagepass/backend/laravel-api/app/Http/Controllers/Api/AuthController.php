@@ -62,6 +62,24 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * Return display name for login screen personalization (unauthenticated).
+     * Query by username. Returns 404 if not found.
+     */
+    public function loginDisplayName(Request $request): JsonResponse
+    {
+        $identifier = $request->input('username');
+        if (empty($identifier) || ! is_string($identifier)) {
+            return response()->json(['message' => 'Username required'], 422);
+        }
+        $identifier = trim($identifier);
+        $user = User::where('username', $identifier)->first();
+        if (! $user) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
+        return response()->json(['name' => $user->name]);
+    }
+
     public function logout(Request $request): JsonResponse
     {
         $request->user()->currentAccessToken()->delete();
@@ -71,7 +89,30 @@ class AuthController extends Controller
 
     public function me(Request $request): JsonResponse
     {
-        return response()->json($request->user()->load('roles'));
+        $user = $request->user()->load('roles');
+        $today = now(config('app.timezone', 'Africa/Nairobi'))->toDateString();
+        $officeCheckin = \App\Models\DailyOfficeCheckin::where('user_id', $user->id)
+            ->where('date', $today)
+            ->first();
+        $officeCheckedInToday = $officeCheckin !== null;
+        $officeCheckinTime = $officeCheckin?->checkin_time?->toIso8601String();
+        $officeCheckedOutToday = $officeCheckin?->checkout_time !== null;
+        $officeCheckoutTime = $officeCheckin?->checkout_time?->toIso8601String();
+
+        $hasApprovedTimeOffToday = \App\Models\TimeOffRequest::where('user_id', $user->id)
+            ->where('status', \App\Models\TimeOffRequest::STATUS_APPROVED)
+            ->whereDate('start_date', '<=', $today)
+            ->whereDate('end_date', '>=', $today)
+            ->exists();
+
+        $payload = $user->toArray();
+        $payload['office_checked_in_today'] = $officeCheckedInToday;
+        $payload['office_checkin_time'] = $officeCheckinTime;
+        $payload['office_checked_out_today'] = $officeCheckedOutToday;
+        $payload['office_checkout_time'] = $officeCheckoutTime;
+        $payload['has_approved_time_off_today'] = $hasApprovedTimeOffToday;
+
+        return response()->json($payload);
     }
 
     public function updateProfile(Request $request): JsonResponse
@@ -83,6 +124,7 @@ class AuthController extends Controller
             'password' => 'nullable|string|min:8|confirmed',
             'current_pin' => 'required_with:new_pin|nullable|string|max:20',
             'new_pin' => 'nullable|string|min:4|max:20|confirmed',
+            'fcm_token' => 'nullable|string|max:500',
         ];
         $validated = $request->validate($rules);
         if (! empty($validated['name'])) {
@@ -93,6 +135,9 @@ class AuthController extends Controller
         }
         if (! empty($validated['password'])) {
             $user->password = $validated['password'];
+        }
+        if (array_key_exists('fcm_token', $validated)) {
+            $user->fcm_token = $validated['fcm_token'] ?: null;
         }
         if (! empty($validated['new_pin'])) {
             if (empty($user->pin)) {

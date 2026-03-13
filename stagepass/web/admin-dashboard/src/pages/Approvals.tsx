@@ -5,13 +5,18 @@ import { PageHeader } from '@/components/PageHeader';
 import { Preloader } from '@/components/Preloader';
 import { SectionCard } from '@/components/SectionCard';
 
-function formatDate(d: string) {
+/** Format date string (YYYY-MM-DD or ISO) to e.g. "12 Mar 2025" */
+function formatDate(d: string | null | undefined): string {
+  if (!d) return '—';
+  const dateOnly = typeof d === 'string' && d.length >= 10 ? d.slice(0, 10) : String(d).slice(0, 10);
+  const parts = dateOnly.split('-');
+  if (parts.length !== 3) return d;
   try {
-    const [y, m, day] = d.split('-');
-    const date = new Date(Number(y), Number(m) - 1, Number(day));
+    const date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    if (Number.isNaN(date.getTime())) return d;
     return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   } catch {
-    return d;
+    return dateOnly;
   }
 }
 

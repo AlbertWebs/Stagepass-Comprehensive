@@ -9,8 +9,12 @@ class GeofenceService
      */
     private const EARTH_RADIUS_METERS = 6371000;
 
+    /** Extra meters allowed to account for GPS inaccuracy (e.g. indoors). */
+    private const GPS_TOLERANCE_METERS = 20;
+
     /**
      * Check if user coordinates are within the event geofence.
+     * Uses a small tolerance so "at the office" still passes when GPS is slightly off.
      */
     public function isWithinRadius(
         float $userLat,
@@ -20,12 +24,13 @@ class GeofenceService
         int $radiusMeters
     ): bool {
         $distance = $this->haversineDistance($userLat, $userLon, $eventLat, $eventLon);
+        $effectiveRadius = max(0, $radiusMeters) + self::GPS_TOLERANCE_METERS;
 
-        return $distance <= $radiusMeters;
+        return $distance <= $effectiveRadius;
     }
 
     /**
-     * Haversine distance in meters between two points.
+     * Haversine distance in meters between two points. Public for error messages.
      */
     public function haversineDistance(
         float $lat1,

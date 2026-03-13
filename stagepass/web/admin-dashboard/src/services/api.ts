@@ -81,6 +81,7 @@ export interface Event {
   name: string;
   description?: string;
   date: string;
+  end_date?: string | null;
   start_time: string;
   expected_end_time?: string;
   location_name?: string;
@@ -214,11 +215,19 @@ export const api = {
   backup: {
     get: () => request<{ exported_at: string; users: unknown[]; events: unknown[]; equipment: unknown[] }>('/backup'),
   },
+  dangerZone: {
+    /** Wipe all tables except users and user-related (roles, permissions, sessions, etc.). Admin only. */
+    wipeNonUserData: () =>
+      request<{ message: string; wiped_tables: string[] }>('/danger-zone/wipe-non-user-data', { method: 'POST' }),
+  },
   settings: {
-    get: () => request<Record<string, string | number | boolean | null>>('/settings'),
+    get: () =>
+      request<Record<string, string | number | boolean | null>>('/settings', {
+        params: { _: String(Date.now()) },
+      }),
     update: (settings: Record<string, string | number | boolean | null>) =>
       request<Record<string, string | number | boolean | null>>('/settings', {
-        method: 'PUT',
+        method: 'POST',
         body: JSON.stringify({ settings }),
       }),
   },
@@ -226,8 +235,8 @@ export const api = {
     list: () => request<Role[]>('/roles'),
   },
   users: {
-    list: (params?: { search?: string; role?: string; page?: number }) =>
-      request<Paginated<User>>('/users', { params: params as Record<string, string> }),
+    list: (params?: { search?: string; role?: string; page?: number; per_page?: number }) =>
+      request<Paginated<User>>('/users', { params: params as Record<string, string | number> }),
     get: (id: number) => request<User>(`/users/${id}`),
     create: (body: { name: string; email: string; password: string; username?: string; pin?: string; phone?: string; role_ids?: number[] }) =>
       request<User>('/users', { method: 'POST', body: JSON.stringify(body) }),
@@ -333,7 +342,7 @@ export const api = {
       request<Paginated<PaymentItem>>('/payments', {
         params: params as Record<string, string | number>,
       }),
-    initiate: (body: { event_id: number; user_id: number; purpose?: string | null; hours: number; per_diem?: number; allowances?: number }) =>
+    initiate: (body: { event_id: number; user_id: number; purpose?: string | null; payment_date?: string; amount?: number; hours?: number; per_diem?: number; allowances?: number }) =>
       request<PaymentItem>('/payments/initiate', { method: 'POST', body: JSON.stringify(body) }),
     approve: (paymentId: number) =>
       request<PaymentItem>('/payments/approve', {
@@ -349,6 +358,24 @@ export const api = {
   reports: {
     get: (from: string, to: string) =>
       request<ReportsData>('/reports', { params: { from, to } }),
+  },
+  checkins: {
+    serverDate: () =>
+      request<{ date: string; timezone: string }>('/checkins/server-date'),
+    list: (params: { from?: string; to?: string; date?: string }) =>
+      request<CheckinsResponse>('/checkins', { params: params as Record<string, string> }),
+    dailyStatus: (date: string) =>
+      request<DailyStatusResponse>('/checkins/daily-status', { params: { date } }),
+    setEmployeeOff: (userId: number, date: string, off: boolean) =>
+      request<{ message: string; ok?: boolean }>('/checkins/set-employee-off', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: userId, date, off }),
+      }),
+    sendPush: (userId: number, title?: string, body?: string) =>
+      request<{ message: string; ok?: boolean }>('/checkins/send-push', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: userId, title: title ?? undefined, body: body ?? undefined }),
+      }),
   },
   communications: {
     list: (params?: { page?: number; per_page?: number }) =>
@@ -388,10 +415,14 @@ export const api = {
       }),
   },
   timeoff: {
-    list: (params?: { status?: string; page?: number }) =>
+    list: (params?: { status?: string; page?: number; per_page?: number; user_id?: number }) =>
       request<Paginated<TimeOffRequestItem>>('/timeoff', {
         params: params as Record<string, string | number>,
       }),
+    create: (body: { user_id: number; start_date: string; end_date: string; reason?: string | null; notes?: string | null; status?: 'pending' | 'approved' | 'rejected' }) =>
+      request<TimeOffRequestItem>('/timeoff', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number, body: { start_date?: string; end_date?: string; reason?: string | null; notes?: string | null; status?: 'pending' | 'approved' | 'rejected' }) =>
+      request<TimeOffRequestItem>(`/timeoff/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     approve: (requestId: number) =>
       request<TimeOffRequestItem>('/timeoff/approve', {
         method: 'POST',
@@ -437,6 +468,7 @@ export interface TimeOffRequestItem {
   start_date: string;
   end_date: string;
   reason: string | null;
+  notes?: string | null;
   status: 'pending' | 'approved' | 'rejected';
   processed_by: number | null;
   processed_at: string | null;
@@ -463,6 +495,47 @@ export interface TaskItem {
   event?: { id: number; name: string; date?: string } | null;
   creator?: { id: number; name: string } | null;
   assignees?: { id: number; name: string }[];
+}
+
+export interface CheckinItem {
+  type: 'office' | 'event';
+  id: string;
+  date: string;
+  checkin_time: string;
+  checkin_time_iso?: string;
+  user_id: number;
+  user_name: string;
+  user_email?: string | null;
+  event_id?: number | null;
+  event_name?: string | null;
+  location: string;
+}
+
+export interface CheckinsResponse {
+  summary: {
+    total: number;
+    office: number;
+    event: number;
+    from: string;
+    to: string;
+  };
+  checkins: CheckinItem[];
+}
+
+export interface DailyEmployeeStatusItem {
+  user_id: number;
+  user_name: string;
+  user_email: string | null;
+  checked_in: boolean;
+  checkin_time: string | null;
+  checkin_time_iso: string | null;
+  is_off: boolean;
+  expected_to_report: boolean;
+}
+
+export interface DailyStatusResponse {
+  date: string;
+  employees: DailyEmployeeStatusItem[];
 }
 
 export interface ReportsData {

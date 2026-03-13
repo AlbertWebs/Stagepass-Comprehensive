@@ -1,9 +1,13 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useState } from 'react';
+import { useDispatch } from 'react-redux';
+import Animated, { FadeInUp } from 'react-native-reanimated';
 import { HomeDashboardScreen } from '@/components/screens/HomeDashboardScreen';
 import { StagepassLoader } from '@/components/StagepassLoader';
 import { useAppRole } from '~/hooks/useAppRole';
-import { api, type Event as EventType } from '~/services/api';
+import { api, type Event as EventType, type Payment } from '~/services/api';
+import { setUser } from '~/store/authSlice';
+import { getDevicePushTokenAsync } from '~/utils/pushToken';
 
 const todayDateString = () => {
   const d = new Date();
@@ -29,11 +33,14 @@ function isPastEvent(event: EventType): boolean {
 }
 
 export default function HomeScreen() {
+  const dispatch = useDispatch();
   const role = useAppRole();
   const [eventToday, setEventToday] = useState<EventType | null | undefined>(undefined);
   const [pastEvents, setPastEvents] = useState<EventType[]>([]);
   const [eventsTodayList, setEventsTodayList] = useState<EventType[]>([]);
   const [taskCount, setTaskCount] = useState(0);
+  const [equipmentCount, setEquipmentCount] = useState(0);
+  const [approvedAllowances, setApprovedAllowances] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchMyEventToday = useCallback(async () => {
@@ -79,6 +86,27 @@ export default function HomeScreen() {
     }
   }, []);
 
+  const fetchEquipmentCount = useCallback(async () => {
+    try {
+      const res = await api.myChecklists();
+      const data = Array.isArray(res?.data) ? res.data : [];
+      const total = data.reduce((acc, c) => acc + (c.items?.length ?? 0), 0);
+      setEquipmentCount(total);
+    } catch {
+      setEquipmentCount(0);
+    }
+  }, []);
+
+  const fetchApprovedAllowances = useCallback(async () => {
+    try {
+      const res = await api.payments.list({ status: 'approved', per_page: 50 });
+      const list = Array.isArray(res?.data) ? res.data : [];
+      setApprovedAllowances(list);
+    } catch {
+      setApprovedAllowances([]);
+    }
+  }, []);
+
   const fetchPastEventsForAdmin = useCallback(async () => {
     try {
       const res = await api.events.list({ per_page: 50 });
@@ -101,10 +129,21 @@ export default function HomeScreen() {
         await fetchEventsTodayList();
       }
       await fetchTaskCount();
+      await fetchEquipmentCount();
+      await fetchApprovedAllowances();
+      try {
+        const me = await api.auth.me();
+        dispatch(setUser(me));
+      } catch {
+        // ignore
+      }
+      getDevicePushTokenAsync().then((token) => {
+        if (token) api.auth.updateProfile({ fcm_token: token }).catch(() => {});
+      });
     } finally {
       setLoading(false);
     }
-  }, [role, fetchMyEventToday, fetchPastEventsForAdmin, fetchEventsTodayList, fetchTaskCount]);
+  }, [role, dispatch, fetchMyEventToday, fetchPastEventsForAdmin, fetchEventsTodayList, fetchTaskCount, fetchEquipmentCount, fetchApprovedAllowances]);
 
   useEffect(() => {
     loadAll();
@@ -116,8 +155,15 @@ export default function HomeScreen() {
         fetchMyEventToday();
         fetchEventsTodayList();
         fetchTaskCount();
+        fetchEquipmentCount();
+        fetchApprovedAllowances();
       }
-    }, [role, fetchMyEventToday, fetchEventsTodayList, fetchTaskCount])
+      // Refresh /me so has_approved_time_off_today and office check-in state are up to date (e.g. after admin adds time off on web).
+      api.auth.me().then((me) => dispatch(setUser(me))).catch(() => {});
+      getDevicePushTokenAsync().then((token) => {
+        if (token) api.auth.updateProfile({ fcm_token: token }).catch(() => {});
+      });
+    }, [role, dispatch, fetchMyEventToday, fetchEventsTodayList, fetchTaskCount, fetchEquipmentCount, fetchApprovedAllowances])
   );
 
   const onRefresh = useCallback(async () => {
@@ -129,14 +175,30 @@ export default function HomeScreen() {
       await fetchEventsTodayList();
     }
     await fetchTaskCount();
-  }, [role, fetchMyEventToday, fetchPastEventsForAdmin, fetchEventsTodayList, fetchTaskCount]);
+    await fetchEquipmentCount();
+    await fetchApprovedAllowances();
+    try {
+      const me = await api.auth.me();
+      dispatch(setUser(me));
+    } catch {
+      // ignore
+    }
+    getDevicePushTokenAsync().then((token) => {
+      if (token) api.auth.updateProfile({ fcm_token: token }).catch(() => {});
+    });
+  }, [role, dispatch, fetchMyEventToday, fetchPastEventsForAdmin, fetchEventsTodayList, fetchTaskCount, fetchEquipmentCount, fetchApprovedAllowances]);
 
   if (loading) {
-    return <StagepassLoader message="Loading…" fullScreen />;
+    return (
+      <Animated.View entering={FadeInUp.duration(400)} style={{ flex: 1 }}>
+        <StagepassLoader message="Loading…" fullScreen />
+      </Animated.View>
+    );
   }
 
   return (
-    <HomeDashboardScreen
+    <Animated.View entering={FadeInUp.duration(400)} style={{ flex: 1 }}>
+      <HomeDashboardScreen
       eventToday={eventToday ?? null}
       eventsTodayList={eventsTodayList}
       taskCount={taskCount}
@@ -144,6 +206,9 @@ export default function HomeScreen() {
       onRefresh={onRefresh}
       role={role}
       pastEvents={role === 'admin' ? pastEvents : []}
+      equipmentCount={equipmentCount}
+      approvedAllowances={approvedAllowances}
     />
+    </Animated.View>
   );
 }

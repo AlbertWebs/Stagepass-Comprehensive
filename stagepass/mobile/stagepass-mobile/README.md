@@ -25,6 +25,18 @@ In the output, you'll find options to open the app in a
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
+## Project structure (StagePass)
+
+- **API** (Laravel): `C:\projects\Stapepass-mobile-app-api` — set `EXPO_PUBLIC_API_URL` in `.env` to your API base URL (e.g. `http://localhost:8000` for local).
+- **Web Admin**: `C:\projects\Stapepass-mobile-app-webadmin`
+- **Mobile app**: this repository. Communicates with the API via the service layer in `src/services/api.ts`.
+
+**Daily (office) check-in** uses a **30m radius** at a fixed location. Set the location in `.env` from Google Maps (e.g. [office location](https://maps.app.goo.gl/wZg18AJBwUt9kJdj7) — right‑click map → copy coordinates):
+
+- `EXPO_PUBLIC_OFFICE_CHECKIN_LAT` — latitude  
+- `EXPO_PUBLIC_OFFICE_CHECKIN_LNG` — longitude  
+- `EXPO_PUBLIC_OFFICE_CHECKIN_RADIUS_M=30` — radius in metres (default 30)
+
 ## Get a fresh project
 
 When you're ready, run:

@@ -18,7 +18,7 @@ class Event extends Model
     public const STATUS_CLOSED = 'closed';
 
     protected $fillable = [
-        'name', 'description', 'date', 'start_time', 'expected_end_time',
+        'name', 'description', 'date', 'end_date', 'start_time', 'expected_end_time',
         'location_name', 'latitude', 'longitude', 'geofence_radius',
         'team_leader_id', 'client_id', 'status', 'created_by_id',
         'ended_at', 'ended_by_id', 'end_comment',
@@ -28,9 +28,35 @@ class Event extends Model
     {
         return [
             'date' => 'date',
+            'end_date' => 'date',
             'geofence_radius' => 'integer',
             'ended_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Scope: event spans the given date (single-day or multi-day).
+     * Single-day: date = $date. Multi-day: date <= $date <= end_date.
+     */
+    public function scopeSpansDate($query, string $date)
+    {
+        return $query->where('date', '<=', $date)
+            ->where(function ($q) use ($date) {
+                $q->where(function ($q2) use ($date) {
+                    $q2->whereNull('end_date')->where('date', $date);
+                })->orWhere(function ($q2) use ($date) {
+                    $q2->whereNotNull('end_date')->where('end_date', '>=', $date);
+                });
+            });
+    }
+
+    /**
+     * Scope: event overlaps the date range [from, to] (at least one day in range).
+     */
+    public function scopeSpansRange($query, string $from, string $to)
+    {
+        return $query->where('date', '<=', $to)
+            ->whereRaw('COALESCE(end_date, date) >= ?', [$from]);
     }
 
     public function teamLeader(): BelongsTo

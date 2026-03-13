@@ -1,13 +1,23 @@
 /**
- * Google Places API (New) – autocomplete and place details.
- * Uses EXPO_PUBLIC_GOOGLE_PLACES_API_KEY. No key = no requests.
+ * Google Places – legacy REST APIs (same as web Maps JavaScript Places Autocomplete).
+ * Uses Place Autocomplete (Legacy) + Place Details (Legacy) so mobile matches web results
+ * (e.g. "Stagepass" returns the same suggestions).
+ * Key from: EXPO_PUBLIC_GOOGLE_PLACES_API_KEY, EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
+ * or app.config.js extra.googlePlacesApiKey (e.g. from VITE_GOOGLE_MAPS_API_KEY in .env).
  */
 
-const PLACES_AUTOCOMPLETE_URL = 'https://places.googleapis.com/v1/places:autocomplete';
-const PLACES_DETAILS_BASE = 'https://places.googleapis.com/v1/places';
+import Constants from 'expo-constants';
+
+const LEGACY_AUTOCOMPLETE_URL = 'https://maps.googleapis.com/maps/api/place/autocomplete/json';
+const LEGACY_DETAILS_URL = 'https://maps.googleapis.com/maps/api/place/details/json';
 
 function getApiKey(): string | null {
-  return (typeof process !== 'undefined' && process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY) || null;
+  const fromEnv =
+    typeof process !== 'undefined' &&
+    (process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY || process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY);
+  if (fromEnv) return fromEnv;
+  const fromExtra = (Constants.expoConfig?.extra as { googlePlacesApiKey?: string } | undefined)?.googlePlacesApiKey;
+  return fromExtra || null;
 }
 
 export function hasGooglePlacesKey(): boolean {
@@ -30,19 +40,21 @@ export type PlaceDetails = {
   displayName?: string;
 };
 
-/** Autocomplete (New): POST with body { input: string }. Returns place predictions only. */
+/**
+ * Legacy Place Autocomplete – same product as web (establishment + geocode).
+ * Matches Maps JavaScript API Places Autocomplete results.
+ */
 export async function fetchPlaceSuggestions(query: string): Promise<PlaceSuggestion[]> {
   const key = getApiKey();
   if (!key || !query.trim()) return [];
 
-  const res = await fetch(PLACES_AUTOCOMPLETE_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': key,
-    },
-    body: JSON.stringify({ input: query.trim() }),
+  const params = new URLSearchParams({
+    input: query.trim(),
+    types: 'establishment|geocode',
+    key,
   });
+  const url = `${LEGACY_AUTOCOMPLETE_URL}?${params.toString()}`;
+  const res = await fetch(url);
 
   if (!res.ok) {
     const err = await res.text();
@@ -51,46 +63,51 @@ export async function fetchPlaceSuggestions(query: string): Promise<PlaceSuggest
   }
 
   const data = (await res.json()) as {
-    suggestions?: Array<{
-      placePrediction?: {
-        placeId?: string;
-        place?: string;
-        text?: { text?: string };
-        structuredFormat?: { mainText?: { text?: string }; secondaryText?: { text?: string } };
-      };
+    status: string;
+    predictions?: Array<{
+      place_id?: string;
+      description?: string;
+      structured_formatting?: { main_text?: string; secondary_text?: string };
     }>;
   };
 
+  if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+    console.warn('[Google Places] Autocomplete status', data.status);
+    return [];
+  }
+
   const list: PlaceSuggestion[] = [];
-  for (const s of data.suggestions || []) {
-    const p = s.placePrediction;
-    if (!p?.placeId) continue;
+  for (const p of data.predictions || []) {
+    const placeId = p.place_id;
+    if (!placeId) continue;
     const text =
-      p.text?.text ||
-      [p.structuredFormat?.mainText?.text, p.structuredFormat?.secondaryText?.text].filter(Boolean).join(', ') ||
-      p.placeId;
+      p.description ||
+      [p.structured_formatting?.main_text, p.structured_formatting?.secondary_text].filter(Boolean).join(', ') ||
+      placeId;
     list.push({
-      placeId: p.placeId,
-      place: p.place || `places/${p.placeId}`,
+      placeId,
+      place: `places/${placeId}`,
       text,
     });
   }
   return list;
 }
 
-/** Place Details (New): GET place by placeId, fields location, formattedAddress, displayName. */
+/**
+ * Legacy Place Details – geometry, formatted_address, name.
+ * Same product as web; place_id from legacy autocomplete.
+ */
 export async function fetchPlaceDetails(placeId: string): Promise<PlaceDetails | null> {
   const key = getApiKey();
   if (!key || !placeId) return null;
 
-  const url = `${PLACES_DETAILS_BASE}/${encodeURIComponent(placeId)}`;
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'X-Goog-Api-Key': key,
-      'X-Goog-FieldMask': 'location,formattedAddress,displayName',
-    },
+  const params = new URLSearchParams({
+    place_id: placeId,
+    fields: 'geometry,formatted_address,name',
+    key,
   });
+  const url = `${LEGACY_DETAILS_URL}?${params.toString()}`;
+  const res = await fetch(url);
 
   if (!res.ok) {
     const err = await res.text();
@@ -99,24 +116,30 @@ export async function fetchPlaceDetails(placeId: string): Promise<PlaceDetails |
   }
 
   const data = (await res.json()) as {
-    location?: { latitude?: number; longitude?: number };
-    formattedAddress?: string;
-    displayName?: { text?: string };
+    status: string;
+    result?: {
+      geometry?: { location?: { lat: number; lng: number } };
+      formatted_address?: string;
+      name?: string;
+    };
   };
 
-  const lat = data.location?.latitude;
-  const lng = data.location?.longitude;
-  const formattedAddress = data.formattedAddress || '';
-  const displayName = data.displayName?.text || '';
+  if (data.status !== 'OK' || !data.result) return null;
+
+  const loc = data.result.geometry?.location;
+  const lat = loc?.lat;
+  const lng = loc?.lng;
+  const formattedAddress = data.result.formatted_address || '';
+  const name = data.result.name || '';
 
   if (typeof lat !== 'number' || typeof lng !== 'number') return null;
 
-  const location_name = formattedAddress || displayName || placeId;
+  const location_name = formattedAddress || name || placeId;
   return {
     location_name,
     latitude: lat,
     longitude: lng,
     formattedAddress,
-    displayName,
+    displayName: name || undefined,
   };
 }
