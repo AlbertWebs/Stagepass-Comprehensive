@@ -221,7 +221,10 @@ export default function CreateTaskScreen() {
         </View>
 
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Assign to crew *</ThemedText>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+            <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Assign to crew *</ThemedText>
+          </View>
           <ThemedText style={[styles.hint, { color: colors.textSecondary }]}>
             Select at least one crew member to assign this task to.
           </ThemedText>
@@ -275,7 +278,9 @@ const styles = StyleSheet.create({
   label: { fontSize: 14, fontWeight: '600', marginBottom: Spacing.xs },
   input: {},
   inputMultiline: { minHeight: 80, textAlignVertical: 'top' },
-  sectionTitle: { fontSize: 17, fontWeight: '700', marginBottom: Spacing.sm },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm },
+  sectionTitleAccent: { width: 3, height: 16, borderRadius: 0 },
+  sectionTitle: { fontSize: 17, fontWeight: '700', flex: 1 },
   hint: { fontSize: 13, marginBottom: Spacing.sm },
   priorityRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
   priorityBtn: {

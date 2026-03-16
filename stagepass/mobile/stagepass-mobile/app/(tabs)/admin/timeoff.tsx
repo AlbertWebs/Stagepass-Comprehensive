@@ -309,7 +309,10 @@ export default function AdminTimeOffScreen() {
             />
           </View>
 
-          <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>My requests</ThemedText>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+            <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>My requests</ThemedText>
+          </View>
           {loadingList ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator size="small" color={themeYellow} />
@@ -418,7 +421,9 @@ const styles = StyleSheet.create({
   doneRow: { paddingVertical: Spacing.sm, marginBottom: Spacing.sm },
   doneText: { fontSize: 16, fontWeight: '600' },
   submitBtn: { marginTop: Spacing.sm },
-  sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: Spacing.md },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.md },
+  sectionTitleAccent: { width: 3, height: 16, borderRadius: 0 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', flex: 1 },
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.lg },
   emptyCard: {
     padding: Spacing.xl,

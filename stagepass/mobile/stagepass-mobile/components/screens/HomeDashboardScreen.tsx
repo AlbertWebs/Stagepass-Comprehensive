@@ -26,25 +26,26 @@ import AnimatedReanimated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { setUser } from '~/store/authSlice';
 import type { RoleName } from '~/services/api';
+import { QUICK_ACTIONS } from '@/constants/quickActions';
 import { CrewAttendanceStatistic } from '@/components/CrewAttendanceStatistic';
 import { HomeHeader } from '@/components/HomeHeader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Cards, Icons, Typography, UI } from '@/constants/ui';
 import { BorderRadius, Spacing, StatusColors, themeBlue, themeYellow, VibrantColors, VibrantColorsList } from '@/constants/theme';
 import { getOfficeCheckinConfig } from '@/constants/officeCheckin';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
+import { getActivityAccentColor, useRecentCheckinActivities } from '~/hooks/useRecentCheckinActivities';
 import { useGeofence } from '~/hooks/useGeofence';
 import { api, type User as ApiUser, type Payment } from '~/services/api';
 import type { Event as EventType } from '~/services/api';
 import { isWithinGeofence } from '~/utils/geofence';
 
-/* Scaled-down spacing and radii */
-const U = { xs: 6, sm: 8, md: 12, lg: 14, xl: 16, section: 24 };
-const CARD_RADIUS = 12;
-const CARD_RADIUS_SM = 10;
 const TAB_BAR_HEIGHT = 58;
 
 function getGreeting(): string {
@@ -95,20 +96,6 @@ type Props = {
   approvedAllowances?: Payment[];
 };
 
-type QuickAction = { id: string; label: string; icon: keyof typeof Ionicons.glyphMap; href: string; roles?: RoleName[] };
-
-const QUICK_ACTIONS: QuickAction[] = [
-  { id: 'create', label: 'Create Event', icon: 'add-circle', href: '/admin/events/create', roles: ['admin'] },
-  { id: 'events', label: 'My Events', icon: 'calendar', href: '/(tabs)/events' },
-  { id: 'checkin', label: 'Crew Check-in', icon: 'location', href: '/(tabs)/events', roles: ['crew', 'team_leader'] },
-  { id: 'activity', label: 'Activities', icon: 'notifications', href: '/(tabs)/activity' },
-  { id: 'requestoff', label: 'Request off', icon: 'time-outline', href: '/admin/timeoff' },
-  { id: 'managecheckin', label: 'Manage check-in', icon: 'location', href: '/admin/manage-checkin', roles: ['admin', 'team_leader'] },
-  { id: 'checklist', label: 'Checklist', icon: 'checkbox', href: '/admin/checklists', roles: ['admin', 'team_leader'] },
-  { id: 'equipment', label: 'Equipment', icon: 'cube', href: '/admin/equipment', roles: ['admin', 'logistics'] },
-  { id: 'reports', label: 'Reports', icon: 'bar-chart', href: '/admin/reports', roles: ['admin'] },
-];
-
 function useCurrentTime(intervalMs: number = 60_000): Date {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -131,11 +118,21 @@ export function HomeDashboardScreen({
   approvedAllowances = [],
 }: Props) {
   const router = useRouter();
+  const handleNav = useNavigationPress();
   const { colors, isDark } = useStagePassTheme();
   const iconColor = isDark ? themeYellow : themeBlue;
   const iconOutlineColor = isDark ? themeYellow : themeBlue;
+  /** Light mode: yellow torches for welcome card and key accents. */
+  const welcomeCardBg = isDark ? '#1E212A' : '#FEFCE8';
+  const cardBg = isDark ? '#1E212A' : '#F5F7FC';
+  const dispatch = useDispatch();
   const user = useSelector((s: { auth: { user: ApiUser | null } }) => s.auth.user);
   const userName = (user?.name ?? '').trim();
+
+  // Ensure office check-in state is fresh after login (login response has no office_* fields).
+  useEffect(() => {
+    api.auth.me().then((me) => dispatch(setUser(me))).catch(() => {});
+  }, [dispatch]);
   const displayName = userName ? userName.split(/\s+/)[0] : '';
   const currentTime = useCurrentTime(30_000);
   const timeLabel = currentTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
@@ -148,6 +145,7 @@ export function HomeDashboardScreen({
   const [officeCheckoutStep, setOfficeCheckoutStep] = useState<'idle' | 'checking_out' | 'success_thankyou' | 'see_you'>('idle');
   const [optimisticOfficeCheckedIn, setOptimisticOfficeCheckedIn] = useState(false);
   const [optimisticOfficeCheckinTime, setOptimisticOfficeCheckinTime] = useState<string | null>(null);
+  const [dismissedCheckedOutCard, setDismissedCheckedOutCard] = useState(false);
   const scrollBottomPadding = TAB_BAR_HEIGHT;
   const { checkCanCheckIn } = useGeofence();
   const officeConfig = officeConfigFromApi ?? getOfficeCheckinConfig();
@@ -181,6 +179,8 @@ export function HomeDashboardScreen({
   const hasApprovedTimeOffToday = user?.has_approved_time_off_today ?? false;
   // Default to true when unknown so crew see office check-in unless backend explicitly marks them temporary
   const isPermanentEmployee = user?.is_permanent_employee !== false;
+  const dayOfWeek = currentTime.getDay();
+  const isOfficeOpenToday = dayOfWeek !== 0 && dayOfWeek !== 6;
 
   useEffect(() => {
     api.settings.getOfficeCheckinConfig().then((s) => {
@@ -199,7 +199,10 @@ export function HomeDashboardScreen({
     }).catch(() => {});
   }, []);
 
-  const myAssignment = eventToday?.crew?.find((c: { pivot?: unknown }) => c.pivot);
+  const currentUserId = user?.id;
+  const myAssignment = currentUserId != null
+    ? eventToday?.crew?.find((c: { id?: number }) => c.id === currentUserId)
+    : eventToday?.crew?.find((c: { pivot?: unknown }) => c.pivot);
   const pivotData = myAssignment && typeof myAssignment === 'object' && 'pivot' in myAssignment
     ? (myAssignment.pivot as { checkin_time?: string; checkout_time?: string })
     : undefined;
@@ -236,73 +239,26 @@ export function HomeDashboardScreen({
     }
     return '';
   })();
+  const officeCheckinTimeStr = user?.office_checkin_time
+    ? (() => {
+        try {
+          return new Date(user.office_checkin_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+        } catch {
+          return user.office_checkin_time;
+        }
+      })()
+    : '';
+  const officeCheckoutTimeStr = user?.office_checkout_time
+    ? (() => {
+        try {
+          return new Date(user.office_checkout_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+        } catch {
+          return user.office_checkout_time;
+        }
+      })()
+    : '';
 
-  const recentCheckinActivities = ((): { key: string; title: string; sub: string; time: string; timeIso: string; icon: 'location' | 'exit' | 'checkmark-circle' }[] => {
-    const items: { key: string; title: string; sub: string; time: string; timeIso: string; icon: 'location' | 'exit' | 'checkmark-circle' }[] = [];
-    const officeCheckinTime = user?.office_checkin_time ?? optimisticOfficeCheckinTime;
-    if (officeCheckinTime) {
-      try {
-        const t = new Date(user.office_checkin_time);
-        items.push({
-          key: 'office-checkin',
-          title: 'Office check-in',
-          sub: 'Daily shift started',
-          time: t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-          timeIso: user.office_checkin_time,
-          icon: 'location',
-        });
-      } catch {
-        items.push({ key: 'office-checkin', title: 'Office check-in', sub: 'Daily shift started', time: '—', timeIso: officeCheckinTime, icon: 'location' });
-      }
-    }
-    if (user?.office_checkout_time) {
-      try {
-        const t = new Date(user.office_checkout_time);
-        items.push({
-          key: 'office-checkout',
-          title: 'Office checkout',
-          sub: 'Shift ended',
-          time: t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-          timeIso: user.office_checkout_time,
-          icon: 'exit',
-        });
-      } catch {
-        items.push({ key: 'office-checkout', title: 'Office checkout', sub: 'Shift ended', time: '—', timeIso: user.office_checkout_time, icon: 'exit' });
-      }
-    }
-    if (pivotData?.checkin_time && eventToday?.name) {
-      try {
-        const t = new Date(pivotData.checkin_time);
-        items.push({
-          key: 'event-checkin',
-          title: `Checked in: ${eventToday.name}`,
-          sub: 'Event',
-          time: t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-          timeIso: pivotData.checkin_time,
-          icon: 'checkmark-circle',
-        });
-      } catch {
-        items.push({ key: 'event-checkin', title: `Checked in: ${eventToday.name}`, sub: 'Event', time: '—', timeIso: pivotData.checkin_time, icon: 'checkmark-circle' });
-      }
-    }
-    if (pivotData?.checkout_time && eventToday?.name) {
-      try {
-        const t = new Date(pivotData.checkout_time);
-        items.push({
-          key: 'event-checkout',
-          title: `Checked out: ${eventToday.name}`,
-          sub: 'Event',
-          time: t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-          timeIso: pivotData.checkout_time,
-          icon: 'exit',
-        });
-      } catch {
-        items.push({ key: 'event-checkout', title: `Checked out: ${eventToday.name}`, sub: 'Event', time: '—', timeIso: pivotData.checkout_time, icon: 'exit' });
-      }
-    }
-    items.sort((a, b) => new Date(b.timeIso).getTime() - new Date(a.timeIso).getTime());
-    return items;
-  })();
+  const recentCheckinActivities = useRecentCheckinActivities(user, eventToday ?? null, optimisticOfficeCheckinTime);
 
   const isWithinOfficeCheckinWindow = ((): boolean => {
     const [startH, startM] = officeCheckinWindow.start.split(':').map(Number);
@@ -419,7 +375,15 @@ export function HomeDashboardScreen({
       await new Promise((r) => setTimeout(r, 1600));
       await onRefresh?.();
     } catch (e: unknown) {
-      Alert.alert('Checkout failed', e instanceof Error ? e.message : 'Try again.');
+      const message = e instanceof Error ? e.message : 'Try again.';
+      const notCheckedIn = /not checked in|have not checked in/i.test(String(message));
+      setOptimisticOfficeCheckedIn(false);
+      setOptimisticOfficeCheckinTime(null);
+      await onRefresh?.();
+      Alert.alert(
+        notCheckedIn ? 'Check in first' : 'Checkout failed',
+        notCheckedIn ? 'You haven\'t checked in at the office today. Tap "Check in office" when you\'re at the office to start your shift, then you can checkout.' : message
+      );
     } finally {
       setCheckInLoading(false);
       setOfficeCheckoutStep('idle');
@@ -525,8 +489,8 @@ export function HomeDashboardScreen({
       }
     }
 
-    router.push('/(tabs)/events');
-  }, [eventToday, hasEventCheckedIn, userLocation, checkInLoading, checkCanCheckIn, onRefresh, officeConfig, router]);
+    handleNav(() => router.push('/(tabs)/events'));
+  }, [eventToday, hasEventCheckedIn, userLocation, checkInLoading, checkCanCheckIn, onRefresh, officeConfig, router, handleNav]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -543,10 +507,15 @@ export function HomeDashboardScreen({
     }
   }, [user?.office_checked_out_today, user?.office_checkin_time]);
 
+  useEffect(() => {
+    if (!hasEventCheckedOut) setDismissedCheckedOutCard(false);
+  }, [hasEventCheckedOut]);
+
   const todayLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
   const eventsTodayCount = eventsTodayList.length;
 
   const visibleQuickActions = QUICK_ACTIONS.filter((a) => {
+    if (a.id === 'everything') return false;
     if (!a.roles) return true;
     if (a.id === 'checkin' && eventToday && !hasEventCheckedIn) return a.roles.includes(role);
     return a.roles.includes(role);
@@ -557,8 +526,12 @@ export function HomeDashboardScreen({
   const rippleEasing = Easing.out(Easing.cubic);
   const RIPPLE_DURATION = 4800;
 
+  const showEventCheckInRipple = Boolean(eventToday && !hasEventCheckedIn);
+  const showOfficeRipple = !eventToday;
+  const rippleActive = showEventCheckInRipple || showOfficeRipple;
+
   useEffect(() => {
-    if (hasCheckedIn) {
+    if (!rippleActive) {
       rippleProgress.value = withTiming(0);
       rippleProgress2.value = withTiming(0);
       return;
@@ -576,7 +549,7 @@ export function HomeDashboardScreen({
         false
       )
     );
-  }, [hasCheckedIn, rippleProgress, rippleProgress2]);
+  }, [rippleActive, rippleProgress, rippleProgress2]);
 
   const rippleStyle = useAnimatedStyle(() => {
     const scale = 1 + 0.55 * rippleProgress.value;
@@ -596,15 +569,35 @@ export function HomeDashboardScreen({
     };
   });
 
+  // Gentle pulse on the checkout button when it's the active CTA (idle, checked in).
+  const checkoutPulse = useSharedValue(0);
+  useEffect(() => {
+    if (showCheckoutCta && officeCheckoutStep === 'idle' && !checkInLoading) {
+      checkoutPulse.value = withRepeat(
+        withTiming(1, { duration: 1600, easing: Easing.inOut(Easing.ease) }),
+        -1,
+        true
+      );
+    } else {
+      checkoutPulse.value = withTiming(0, { duration: 200 });
+    }
+  }, [showCheckoutCta, officeCheckoutStep, checkInLoading, checkoutPulse]);
+
+  const checkoutButtonAnimatedStyle = useAnimatedStyle(() => {
+    const scale = 1 + 0.028 * checkoutPulse.value;
+    return { transform: [{ scale }] };
+  });
+
   return (
     <ThemedView style={styles.container}>
-      <HomeHeader notificationCount={notificationCount} />
+      <HomeHeader title="Home" notificationCount={notificationCount} />
       <View style={styles.scrollWrapper}>
         <ScrollView
           contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollBottomPadding }]}
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}
           decelerationRate="normal"
+          removeClippedSubviews={false}
           {...(Platform.OS === 'android' && { overScrollMode: 'always' as const })}
           bounces={true}
           refreshControl={
@@ -616,13 +609,17 @@ export function HomeDashboardScreen({
             />
           }
         >
-        {/* Welcome / Status card – elegant, clear hierarchy */}
+        {/* Welcome / Status card – single layer so no inner rect can obscure rounded corners */}
         <AnimatedReanimated.View
           entering={FadeInDown.duration(420).delay(0)}
-          style={[styles.welcomeCard, { backgroundColor: colors.surface, borderColor: colors.border, borderLeftWidth: 5, borderLeftColor: themeYellow }]}
+          style={[
+            styles.welcomeCard,
+            { backgroundColor: welcomeCardBg, borderColor: colors.border },
+            !isDark && { borderLeftWidth: 4, borderLeftColor: themeYellow },
+          ]}
         >
           <ThemedText style={[styles.welcomeGreeting, { color: colors.text }]}>
-            Welcome{displayName ? `, ${displayName}` : ''}
+            {getGreeting()}{displayName ? `, ${displayName}` : ''}
           </ThemedText>
           <ThemedText style={[styles.welcomeMeta, { color: colors.textSecondary }]}>
             {eventsTodayCount === 0
@@ -633,21 +630,21 @@ export function HomeDashboardScreen({
             {roleLabel(role)} · {todayLabel} · {timeLabel}
           </ThemedText>
           <View style={styles.statusRow}>
-            <View style={[styles.statusChip, { backgroundColor: VibrantColors.sky + '22', borderColor: VibrantColors.sky + '55' }]}>
-              <Ionicons name="calendar" size={12} color={VibrantColors.sky} />
-              <ThemedText style={[styles.statusChipText, { color: VibrantColors.sky }]} numberOfLines={1} ellipsizeMode="tail">
+            <View style={[styles.statusChip, { backgroundColor: (isDark ? VibrantColors.sky : themeYellow) + '22', borderColor: (isDark ? VibrantColors.sky : themeYellow) + '55' }]}>
+              <Ionicons name="calendar" size={Icons.xs} color={isDark ? VibrantColors.sky : themeYellow} />
+              <ThemedText style={[styles.statusChipText, { color: isDark ? VibrantColors.sky : themeYellow }]} numberOfLines={1} ellipsizeMode="tail">
                 {eventsTodayCount} event{eventsTodayCount !== 1 ? 's' : ''}
               </ThemedText>
             </View>
             <View style={[styles.statusChip, { backgroundColor: VibrantColors.amber + '22', borderColor: VibrantColors.amber + '55' }]}>
-              <Ionicons name="checkbox" size={12} color={VibrantColors.amber} />
+              <Ionicons name="checkbox" size={Icons.xs} color={VibrantColors.amber} />
               <ThemedText style={[styles.statusChipText, { color: VibrantColors.amber }]} numberOfLines={1} ellipsizeMode="tail">
                 {taskCount} task{taskCount !== 1 ? 's' : ''}
               </ThemedText>
             </View>
-            <View style={[styles.statusChip, { backgroundColor: VibrantColors.violet + '22', borderColor: VibrantColors.violet + '55' }]}>
-              <Ionicons name="notifications-outline" size={12} color={VibrantColors.violet} />
-              <ThemedText style={[styles.statusChipText, { color: VibrantColors.violet }]} numberOfLines={1} ellipsizeMode="tail">
+            <View style={[styles.statusChip, { backgroundColor: (isDark ? VibrantColors.violet : themeBlue) + '22', borderColor: (isDark ? VibrantColors.violet : themeBlue) + '55' }]}>
+              <Ionicons name="notifications-outline" size={Icons.xs} color={isDark ? VibrantColors.violet : themeBlue} />
+              <ThemedText style={[styles.statusChipText, { color: isDark ? VibrantColors.violet : themeBlue }]} numberOfLines={1} ellipsizeMode="tail">
                 {notificationCount} notice{notificationCount !== 1 ? 's' : ''}
               </ThemedText>
             </View>
@@ -660,15 +657,26 @@ export function HomeDashboardScreen({
             {eventToday ? (
               /* Event day: Check-in → Check-out (with confirm) → Checked out */
               <>
-              {hasEventCheckedOut ? (
-                <View style={[styles.dailyCheckInStatus, { backgroundColor: StatusColors.checkedIn + '18', borderColor: StatusColors.checkedIn + '44' }]}>
-                  <Ionicons name="checkmark-done-circle" size={24} color={StatusColors.checkedIn} />
-                  <ThemedText style={[styles.dailyCheckInStatusText, { color: StatusColors.checkedIn }]}>
-                    Checked out
-                  </ThemedText>
-                  {checkoutTimeStr && (
-                    <ThemedText style={[styles.dailyCheckInTime, { color: colors.textSecondary }]}>{checkoutTimeStr}</ThemedText>
-                  )}
+              {hasEventCheckedOut && !dismissedCheckedOutCard ? (
+                <View style={[styles.dailyCheckInStatus, styles.dailyCheckInStatusDismissible, { backgroundColor: StatusColors.checkedIn + '18', borderColor: StatusColors.checkedIn + '44' }]}>
+                  <View style={styles.dailyCheckInStatusContent}>
+                    <Ionicons name="checkmark-done-circle" size={Icons.xl} color={StatusColors.checkedIn} />
+                    <View style={styles.dailyCheckInStatusTextWrap}>
+                      <ThemedText style={[styles.dailyCheckInStatusText, { color: StatusColors.checkedIn }]}>
+                        Checked out
+                      </ThemedText>
+                      {checkoutTimeStr && (
+                        <ThemedText style={[styles.dailyCheckInTime, { color: colors.textSecondary }]}>{checkoutTimeStr}</ThemedText>
+                      )}
+                    </View>
+                  </View>
+                  <Pressable
+                    onPress={() => setDismissedCheckedOutCard(true)}
+                    hitSlop={12}
+                    style={({ pressed }) => [styles.checkedOutCloseBtn, { opacity: pressed ? 0.7 : 1 }]}
+                  >
+                    <Ionicons name="close" size={Icons.header} color={colors.textSecondary} />
+                  </Pressable>
                 </View>
               ) : hasEventCheckedIn ? (
                 <View style={styles.roundCheckInWrap}>
@@ -684,7 +692,7 @@ export function HomeDashboardScreen({
                       ]}
                     >
                       <LinearGradient colors={[themeBlue, '#1e3a5f', '#0f1838']} style={styles.roundCheckInGradient}>
-                        <Ionicons name="exit-outline" size={32} color="#fff" />
+                        <Ionicons name="exit-outline" size={Icons.large} color="#fff" />
                         <ThemedText style={[styles.roundCheckInLabel, { color: '#fff' }]}>
                           {checkInLoading ? 'Checking out…' : 'Check out'}
                         </ThemedText>
@@ -698,29 +706,30 @@ export function HomeDashboardScreen({
               ) : (
                 <View style={styles.roundCheckInWrap}>
                   <AnimatedReanimated.View style={styles.roundCheckInButtonWrap}>
-                    <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: themeYellow }, rippleStyle]} pointerEvents="none" />
-                    <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: themeYellow }, rippleStyle2]} pointerEvents="none" />
+                    <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: VibrantColors.emerald }, rippleStyle]} pointerEvents="none" />
+                    <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: VibrantColors.emerald }, rippleStyle2]} pointerEvents="none" />
                     <Pressable
                       onPress={handleCheckIn}
                       disabled={checkInLoading}
                       style={({ pressed }) => [
                         styles.roundCheckInButton,
+                        styles.roundCheckInButtonEvent,
                         checkInLoading && styles.roundCheckInButtonDisabled,
-                        checkInLoading && { backgroundColor: isDark ? themeYellow + '35' : themeBlue + '18' },
+                        checkInLoading && { backgroundColor: isDark ? VibrantColors.emerald + '35' : VibrantColors.emerald + '22' },
                         pressed && !checkInLoading && styles.roundCheckInButtonPressed,
                       ]}
                     >
                       {checkInLoading ? (
                         <View style={styles.roundCheckInInner}>
-                          <Ionicons name="location" size={32} color={colors.textSecondary} />
+                          <Ionicons name="location" size={Icons.large} color={colors.textSecondary} />
                           <ThemedText style={[styles.roundCheckInLabel, styles.roundCheckInLabelDisabled, { color: colors.textSecondary }]}>Checking in…</ThemedText>
                           <ThemedText style={[styles.roundCheckInSub, { color: colors.textSecondary }]}>TAP TO START SHIFT</ThemedText>
                         </View>
                       ) : (
-                        <LinearGradient colors={['#facc15', themeYellow, '#b89107']} style={styles.roundCheckInGradient}>
-                          <Ionicons name="location" size={32} color={themeBlue} />
-                          <ThemedText style={[styles.roundCheckInLabel, { color: themeBlue }]}>Check in</ThemedText>
-                          <ThemedText style={[styles.roundCheckInSub, { color: themeBlue }]}>TAP TO START SHIFT</ThemedText>
+                        <LinearGradient colors={['#34d399', VibrantColors.emerald, '#059669']} style={styles.roundCheckInGradient}>
+                          <Ionicons name="location" size={Icons.large} color="#fff" />
+                          <ThemedText style={[styles.roundCheckInLabel, { color: '#fff' }]}>Check in</ThemedText>
+                          <ThemedText style={[styles.roundCheckInSub, { color: 'rgba(255,255,255,0.95)' }]}>TAP TO START SHIFT</ThemedText>
                         </LinearGradient>
                       )}
                     </Pressable>
@@ -728,14 +737,14 @@ export function HomeDashboardScreen({
                 </View>
               )}
 
-              {/* Daily check-in (office): show when event today; hide when user has approved time off today */}
-              {(isPermanentEmployee || role === 'team_leader' || role === 'admin') && !hasApprovedTimeOffToday && (
-                <View style={[styles.dailyCheckInSecondary, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  {officeCheckedInToday && officeCheckedOutToday ? (
+              {/* Daily check-in (office): show when event today and office open (Mon–Fri); hide when user has approved time off today or weekend */}
+              {(isPermanentEmployee || role === 'team_leader' || role === 'admin') && !hasApprovedTimeOffToday && isOfficeOpenToday && (
+                <View style={[styles.dailyCheckInSecondary, { backgroundColor: cardBg, borderColor: colors.border }]}>
+                  {officeCheckedOutToday ? (
                     <View style={styles.dailyCheckInSecondaryRow}>
-                      <Ionicons name="checkmark-circle" size={20} color={StatusColors.checkedIn} />
-                      <ThemedText style={[styles.dailyCheckInSecondaryLabel, { color: colors.text }]}>Daily check-in</ThemedText>
-                      <ThemedText style={[styles.dailyCheckInSecondaryTime, { color: colors.textSecondary }]}>{checkinTimeStr || 'Done'}</ThemedText>
+                      <Ionicons name="checkmark-done-circle" size={Icons.standard} color={StatusColors.checkedIn} />
+                      <ThemedText style={[styles.dailyCheckInSecondaryLabel, { color: colors.textSecondary }]}>Daily check-in done</ThemedText>
+                      <ThemedText style={[styles.dailyCheckInSecondaryTime, { color: colors.textSecondary }]}>{officeCheckinTimeStr && officeCheckoutTimeStr ? `${officeCheckinTimeStr} – ${officeCheckoutTimeStr}` : 'Done'}</ThemedText>
                     </View>
                   ) : showCheckoutCta ? (
                     <Pressable
@@ -743,7 +752,7 @@ export function HomeDashboardScreen({
                       disabled={checkInLoading}
                       style={({ pressed }) => [styles.dailyCheckInSecondaryRow, styles.dailyCheckInSecondaryButton, { opacity: pressed && !checkInLoading ? 0.8 : 1 }]}
                     >
-                      <Ionicons name="exit-outline" size={20} color={iconColor} />
+                      <Ionicons name="exit-outline" size={Icons.standard} color={iconColor} />
                       <ThemedText style={[styles.dailyCheckInSecondaryLabel, { color: colors.text }]}>Daily check-in</ThemedText>
                       <ThemedText style={[styles.dailyCheckInSecondaryCta, { color: iconColor }]}>{officeCheckinSecondaryCta}</ThemedText>
                     </Pressable>
@@ -753,7 +762,7 @@ export function HomeDashboardScreen({
                       disabled={checkInLoading}
                       style={({ pressed }) => [styles.dailyCheckInSecondaryRow, styles.dailyCheckInSecondaryButton, { opacity: pressed && !checkInLoading ? 0.8 : 1 }]}
                     >
-                      <Ionicons name="location-outline" size={20} color={iconColor} />
+                      <Ionicons name="location-outline" size={Icons.standard} color={iconColor} />
                       <ThemedText style={[styles.dailyCheckInSecondaryLabel, { color: colors.text }]}>Daily check-in</ThemedText>
                       <ThemedText style={[styles.dailyCheckInSecondaryCta, { color: iconColor }]}>{officeCheckinSecondaryCta}</ThemedText>
                     </Pressable>
@@ -763,21 +772,27 @@ export function HomeDashboardScreen({
               </>
             ) : hasApprovedTimeOffToday ? (
               /* Approved time off today: no daily check-in button */
-              <View style={[styles.dailyCheckInStatus, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Ionicons name="calendar-outline" size={24} color={colors.textSecondary} />
+              <View style={[styles.dailyCheckInStatus, { backgroundColor: cardBg, borderColor: colors.border }]}>
+                <Ionicons name="calendar-outline" size={Icons.xl} color={colors.textSecondary} />
                 <ThemedText style={[styles.dailyCheckInStatusText, { color: colors.textSecondary }]}>You're on time off today</ThemedText>
               </View>
+            ) : !isOfficeOpenToday ? (
+              /* Weekend: office closed, no check-in button – compact to match other inline items */
+              <View style={[styles.dailyCheckInStatus, styles.dailyCheckInStatusCompact, { backgroundColor: cardBg, borderColor: colors.border }]}>
+                <Ionicons name="business-outline" size={Icons.standard} color={colors.textSecondary} />
+                <ThemedText style={[styles.dailyCheckInStatusTextCompact, { color: colors.textSecondary }]}>Office closed (weekend)</ThemedText>
+              </View>
             ) : (isPermanentEmployee || role === 'team_leader' || role === 'admin') ? (
-              /* No event today: Daily (office) check-in for permanent crew, team leaders, and admin */
+              /* No event today: Daily (office) check-in for permanent crew, team leaders, and admin. After checkout, hide button until next day. */
               hasCheckedIn && officeCheckedOutToday ? (
-                <View style={[styles.dailyCheckInStatus, { backgroundColor: StatusColors.checkedIn + '18', borderColor: StatusColors.checkedIn + '44' }]}>
-                  <Ionicons name="checkmark-circle" size={24} color={StatusColors.checkedIn} />
-                  <ThemedText style={[styles.dailyCheckInStatusText, { color: StatusColors.checkedIn }]}>Checked in today</ThemedText>
-                  {checkinTimeStr && <ThemedText style={[styles.dailyCheckInTime, { color: colors.textSecondary }]}>{checkinTimeStr}</ThemedText>}
+                <View style={[styles.dailyCheckInStatus, { backgroundColor: cardBg, borderColor: colors.border }]}>
+                  <Ionicons name="checkmark-done-circle" size={Icons.xl} color={StatusColors.checkedIn} />
+                  <ThemedText style={[styles.dailyCheckInStatusText, { color: colors.textSecondary }]}>Done for today</ThemedText>
+                  <ThemedText style={[styles.dailyCheckInTime, { color: colors.textSecondary }]}>{getSeeYouMessage()}</ThemedText>
                 </View>
               ) : (
                 <View style={styles.roundCheckInWrap}>
-                  <AnimatedReanimated.View style={styles.roundCheckInButtonWrap}>
+                  <AnimatedReanimated.View style={[styles.roundCheckInButtonWrap, showCheckoutCta ? checkoutButtonAnimatedStyle : undefined]}>
                     <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle]} pointerEvents="none" />
                     <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle2]} pointerEvents="none" />
                     <Pressable
@@ -793,7 +808,7 @@ export function HomeDashboardScreen({
                     >
                       {(checkInLoading || officeCheckinStep !== 'idle' || officeCheckoutStep !== 'idle') ? (
                         <View style={styles.roundCheckInInner}>
-                          <Ionicons name={officeCheckinStep === 'you_made_it' || officeCheckoutStep === 'success_thankyou' || officeCheckoutStep === 'see_you' ? 'checkmark-circle' : showCheckoutCta ? 'exit' : 'location'} size={32} color={officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary} />
+                          <Ionicons name={officeCheckinStep === 'you_made_it' || officeCheckoutStep === 'success_thankyou' || officeCheckoutStep === 'see_you' ? 'checkmark-circle' : showCheckoutCta ? 'exit' : 'location'} size={Icons.large} color={officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary} />
                           <ThemedText style={[styles.roundCheckInLabel, styles.roundCheckInLabelDisabled, { color: officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary }]}>{officeCheckinButtonLabel.label}</ThemedText>
                           <ThemedText style={[styles.roundCheckInSub, { color: officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary }]}>{officeCheckinButtonLabel.sub}</ThemedText>
                         </View>
@@ -802,7 +817,7 @@ export function HomeDashboardScreen({
                           colors={showCheckoutCta ? [themeBlue, '#1e3a5f', '#0f1838'] : ['#facc15', themeYellow, '#b89107']}
                           style={styles.roundCheckInGradient}
                         >
-                          <Ionicons name={showCheckoutCta ? 'exit' : 'location'} size={32} color={showCheckoutCta ? '#fff' : themeBlue} />
+                          <Ionicons name={showCheckoutCta ? 'exit' : 'location'} size={Icons.large} color={showCheckoutCta ? '#fff' : themeBlue} />
                           <ThemedText style={[styles.roundCheckInLabel, { color: showCheckoutCta ? '#fff' : themeBlue }]}>{officeCheckinButtonLabel.label}</ThemedText>
                           <ThemedText style={[styles.roundCheckInSub, { color: showCheckoutCta ? '#fff' : themeBlue }]}>{officeCheckinButtonLabel.sub}</ThemedText>
                         </LinearGradient>
@@ -811,10 +826,17 @@ export function HomeDashboardScreen({
                   </AnimatedReanimated.View>
                 </View>
               )
+            ) : officeCheckedOutToday ? (
+              /* Temporary crew, no event today, but already checked out: hide button until next day */
+              <View style={[styles.dailyCheckInStatus, { backgroundColor: cardBg, borderColor: colors.border }]}>
+                <Ionicons name="checkmark-done-circle" size={Icons.xl} color={StatusColors.checkedIn} />
+                <ThemedText style={[styles.dailyCheckInStatusText, { color: colors.textSecondary }]}>Done for today</ThemedText>
+                <ThemedText style={[styles.dailyCheckInTime, { color: colors.textSecondary }]}>{getSeeYouMessage()}</ThemedText>
+              </View>
             ) : (
               /* Temporary crew, no event today: show Daily check-in (backend may reject if not allowed) */
               <View style={styles.roundCheckInWrap}>
-                <AnimatedReanimated.View style={styles.roundCheckInButtonWrap}>
+                <AnimatedReanimated.View style={[styles.roundCheckInButtonWrap, showCheckoutCta ? checkoutButtonAnimatedStyle : undefined]}>
                   <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle]} pointerEvents="none" />
                   <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle2]} pointerEvents="none" />
                   <Pressable
@@ -830,7 +852,7 @@ export function HomeDashboardScreen({
                   >
                     {(checkInLoading || officeCheckinStep !== 'idle' || officeCheckoutStep !== 'idle') ? (
                       <View style={styles.roundCheckInInner}>
-                        <Ionicons name={officeCheckinStep === 'you_made_it' || officeCheckoutStep === 'success_thankyou' || officeCheckoutStep === 'see_you' ? 'checkmark-circle' : showCheckoutCta ? 'exit' : 'location'} size={32} color={officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary} />
+                        <Ionicons name={officeCheckinStep === 'you_made_it' || officeCheckoutStep === 'success_thankyou' || officeCheckoutStep === 'see_you' ? 'checkmark-circle' : showCheckoutCta ? 'exit' : 'location'} size={Icons.large} color={officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary} />
                         <ThemedText style={[styles.roundCheckInLabel, styles.roundCheckInLabelDisabled, { color: officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary }]}>{officeCheckinButtonLabel.label}</ThemedText>
                         <ThemedText style={[styles.roundCheckInSub, { color: officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary }]}>{officeCheckinButtonLabel.sub}</ThemedText>
                       </View>
@@ -839,7 +861,7 @@ export function HomeDashboardScreen({
                         colors={showCheckoutCta ? [themeBlue, '#1e3a5f', '#0f1838'] : ['#facc15', themeYellow, '#b89107']}
                         style={styles.roundCheckInGradient}
                       >
-                        <Ionicons name={showCheckoutCta ? 'exit' : 'location'} size={32} color={showCheckoutCta ? '#fff' : themeBlue} />
+                        <Ionicons name={showCheckoutCta ? 'exit' : 'location'} size={Icons.large} color={showCheckoutCta ? '#fff' : themeBlue} />
                         <ThemedText style={[styles.roundCheckInLabel, { color: showCheckoutCta ? '#fff' : themeBlue }]}>{officeCheckinButtonLabel.label}</ThemedText>
                         <ThemedText style={[styles.roundCheckInSub, { color: showCheckoutCta ? '#fff' : themeBlue }]}>{officeCheckinButtonLabel.sub}</ThemedText>
                       </LinearGradient>
@@ -851,22 +873,22 @@ export function HomeDashboardScreen({
           </AnimatedReanimated.View>
         )}
 
-        {/* Today's Event card – clean, scannable */}
-        {eventToday && (role === 'crew' || role === 'team_leader') && (
+        {/* Today's Event card – clean, scannable (hide once user has checked out) */}
+        {eventToday && (role === 'crew' || role === 'team_leader') && !hasEventCheckedOut && (
           <AnimatedReanimated.View entering={FadeInDown.duration(360).delay(80)} style={styles.section}>
-            <View style={[styles.todayEventCard, { backgroundColor: colors.surface, borderColor: colors.border, borderLeftWidth: 5, borderLeftColor: themeYellow }]}>
+            <View style={[styles.todayEventCard, { backgroundColor: cardBg, borderColor: colors.border }]}>
               <View style={styles.todayEventHeader}>
-                <Ionicons name="calendar" size={20} color={iconColor} />
+                <Ionicons name="calendar" size={Icons.standard} color={isDark ? iconColor : themeBlue} />
                 <ThemedText style={[styles.todayEventTitle, { color: colors.text }]}>Today&apos;s Event</ThemedText>
                 <View style={[styles.confirmedBadge, { backgroundColor: StatusColors.checkedIn + '22' }]}>
                   <ThemedText style={[styles.confirmedBadgeText, { color: StatusColors.checkedIn }]}>CONFIRMED</ThemedText>
                 </View>
               </View>
-              <Pressable onPress={() => router.push(`/events/${eventToday.id}`)} style={({ pressed }) => [{ opacity: pressed ? 0.9 : 1 }]}>
+              <Pressable onPress={() => handleNav(() => router.push(`/events/${eventToday.id}`))} style={({ pressed }) => [{ opacity: pressed ? NAV_PRESSED_OPACITY : 1 }]}>
                 <ThemedText style={[styles.todayEventName, { color: colors.text }]} numberOfLines={2}>{eventToday.name}</ThemedText>
                 {eventToday.start_time && (
                   <View style={styles.todayEventRow}>
-                    <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                    <Ionicons name="time-outline" size={Icons.small} color={colors.textSecondary} />
                     <ThemedText style={[styles.todayEventMeta, { color: colors.textSecondary }]}>
                       {formatTime(eventToday.start_time)}
                       {eventToday.expected_end_time ? ` — ${formatTime(eventToday.expected_end_time)}` : ''}
@@ -875,19 +897,19 @@ export function HomeDashboardScreen({
                 )}
                 {eventToday.location_name && (
                   <View style={styles.todayEventRow}>
-                    <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+                    <Ionicons name="location-outline" size={Icons.small} color={colors.textSecondary} />
                     <ThemedText style={[styles.todayEventMeta, { color: colors.textSecondary }]} numberOfLines={1}>{eventToday.location_name}</ThemedText>
                   </View>
                 )}
                 {(eventToday.team_leader ?? eventToday.teamLeader) && (
                   <View style={styles.todayEventRow}>
-                    <Ionicons name="people-outline" size={14} color={colors.textSecondary} />
+                    <Ionicons name="people-outline" size={Icons.small} color={colors.textSecondary} />
                     <ThemedText style={[styles.todayEventMeta, { color: colors.textSecondary }]}>
                       {(eventToday.team_leader ?? eventToday.teamLeader)!.name}
                     </ThemedText>
                   </View>
                 )}
-                <ThemedText style={[styles.viewDetailsLink, { color: colors.brandText }]}>View Details →</ThemedText>
+                <ThemedText style={[styles.viewDetailsLink, { color: isDark ? colors.brandText : themeBlue }]}>View Details →</ThemedText>
               </Pressable>
             </View>
           </AnimatedReanimated.View>
@@ -896,28 +918,38 @@ export function HomeDashboardScreen({
         {/* Crew / Team leader: Daily Allowance + Approved allowances – only when user is event crew for today */}
         {(role === 'crew' || role === 'team_leader') && eventsTodayList.length > 0 && (
           <AnimatedReanimated.View entering={FadeInDown.duration(360).delay(100)} style={styles.allowancesSection}>
+            <View style={[styles.sectionTitleRow, styles.allowanceSectionHeader]}>
+              <View style={[styles.sectionTitleAccent, styles.sectionTitleAccentVibe, { backgroundColor: themeYellow }]} />
+              <View style={[styles.sectionTitleIconWrap, { backgroundColor: themeYellow + '28' }]}>
+                <Ionicons name="wallet-outline" size={Icons.small} color={themeYellow} />
+              </View>
+              <ThemedText style={[styles.allowanceSectionTitle, { color: isDark ? themeYellow + 'dd' : colors.text, flex: 1 }]}>Daily allowance</ThemedText>
+            </View>
             <View style={styles.summaryCardsRow}>
-              <View style={[styles.summaryCard, styles.summaryCardAllowance, { backgroundColor: colors.surface, borderColor: colors.border, borderLeftColor: StatusColors.checkedIn }]}>
-                <View style={[styles.summaryCardIconWrap, { backgroundColor: StatusColors.checkedIn + '18', borderColor: StatusColors.checkedIn + '35' }]}>
-                  <Ionicons name="wallet-outline" size={22} color={StatusColors.checkedIn} />
-                </View>
-                <ThemedText style={[styles.summaryCardValue, { color: colors.text }]}>
-                  {allowanceToday != null
-                    ? (typeof allowanceToday === 'number' ? `KES ${allowanceToday}` : String(allowanceToday))
-                    : '0.00 KES'}
-                </ThemedText>
-                <ThemedText style={[styles.summaryCardLabel, { color: colors.textSecondary }]}>DAILY ALLOWANCE</ThemedText>
+              <View style={[styles.summaryCard, styles.summaryCardAllowanceEnhanced, { backgroundColor: cardBg, borderColor: colors.border }]}>
+              <View style={[styles.summaryCardIconWrap, { backgroundColor: themeYellow + '18', borderColor: themeYellow + '35' }]}>
+                <Ionicons name="wallet-outline" size={Icons.xl} color={themeYellow} />
+              </View>
+              <ThemedText style={[styles.summaryCardValue, { color: colors.text }]}>
+                {allowanceToday != null
+                  ? `KES ${Number(allowanceToday).toLocaleString()}`
+                  : '0.00 KES'}
+              </ThemedText>
+              <ThemedText style={[styles.summaryCardLabel, { color: colors.textSecondary }]}>Today&apos;s rate</ThemedText>
               </View>
             </View>
             {approvedAllowances.length > 0 && (
               <>
                 <View style={styles.sectionTitleRow}>
                   <View style={[styles.sectionTitleAccent, styles.sectionTitleAccentVibe, { backgroundColor: StatusColors.checkedIn }]} />
+                  <View style={[styles.sectionTitleIconWrap, { backgroundColor: StatusColors.checkedIn + '28' }]}>
+                    <Ionicons name="checkmark-done" size={Icons.small} color={StatusColors.checkedIn} />
+                  </View>
                   <ThemedText style={[styles.sectionTitle, { color: isDark ? themeYellow + 'dd' : colors.text }]}>
-                    Allowances
+                    Approved allowances
                   </ThemedText>
                 </View>
-                <View style={[styles.activityCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={[styles.activityCard, { backgroundColor: cardBg, borderColor: colors.border }]}>
                   {approvedAllowances.slice(0, 10).map((p) => {
                     const eventName = p.event?.name ?? 'Event';
                     const amount = Number(p.total_amount);
@@ -941,7 +973,7 @@ export function HomeDashboardScreen({
                     );
                   })}
                   {approvedAllowances.length > 10 && (
-                    <ThemedText style={[styles.activityTime, { color: colors.textSecondary, marginTop: U.sm }]}>
+                    <ThemedText style={[styles.activityTime, { color: colors.textSecondary, marginTop: Spacing.sm }]}>
                       +{approvedAllowances.length - 10} more
                     </ThemedText>
                   )}
@@ -951,102 +983,59 @@ export function HomeDashboardScreen({
           </AnimatedReanimated.View>
         )}
 
-        {/* Quick Actions – 2-column grid */}
+        {/* Quick Actions – 3 per row */}
         <AnimatedReanimated.View entering={FadeInDown.duration(400).delay(140)} style={styles.section}>
           <View style={styles.sectionTitleRow}>
             <View style={[styles.sectionTitleAccent, styles.sectionTitleAccentVibe, { backgroundColor: themeYellow }]} />
+            <View style={[styles.sectionTitleIconWrap, { backgroundColor: themeYellow + '28' }]}>
+              <Ionicons name="flash" size={Icons.small} color={themeYellow} />
+            </View>
             <ThemedText style={[styles.sectionTitle, { color: isDark ? themeYellow + 'dd' : colors.text }]}>
               Quick actions
             </ThemedText>
+            <Pressable onPress={() => handleNav(() => router.push('/(tabs)/everything'))} style={({ pressed }) => ({ opacity: pressed ? NAV_PRESSED_OPACITY : 1 })}>
+              <ThemedText style={[styles.seeAllLink, { color: isDark ? colors.brandText : themeYellow }]}>See all</ThemedText>
+            </Pressable>
           </View>
           <View style={styles.quickGrid}>
-            {visibleQuickActions.map((action, index) => {
-              const href = action.id === 'checkin' && eventToday ? `/events/${eventToday.id}` : action.href;
-              return (
-                <AnimatedReanimated.View
-                  key={action.id}
-                  entering={FadeIn.delay(120 + index * 40).duration(320)}
-                  style={styles.quickCardWrap}
-                >
-                  <Pressable
-                    onPress={() => href && router.push(href as any)}
-                    style={({ pressed }) => [
-                      styles.quickCard,
-                      { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.92 : 1 },
-                    ]}
-                  >
-                    <View style={[styles.quickIconWrap, { backgroundColor: (isDark ? themeYellow : themeBlue) + '1a', borderColor: (isDark ? themeYellow : themeBlue) + '38' }]}>
-                      <Ionicons name={action.icon as any} size={20} color={iconColor} />
-                    </View>
-                    <ThemedText style={[styles.quickLabel, { color: colors.text }]} numberOfLines={1}>
-                      {action.label}
-                    </ThemedText>
-                  </Pressable>
-                </AnimatedReanimated.View>
-              );
-            })}
+            {(() => {
+              const COLS = 3;
+              const rows: typeof visibleQuickActions[] = [];
+              for (let i = 0; i < visibleQuickActions.length; i += COLS) {
+                rows.push(visibleQuickActions.slice(i, i + COLS));
+              }
+              return rows.map((row, rowIndex) => (
+                <View key={rowIndex} style={styles.quickGridRow}>
+                  {row.map((action, colIndex) => {
+                    const href = action.id === 'checkin' && eventToday ? `/events/${eventToday.id}` : action.href;
+                    const index = rowIndex * COLS + colIndex;
+                    return (
+                      <AnimatedReanimated.View
+                        key={action.id}
+                        entering={FadeIn.delay(120 + index * 40).duration(320)}
+                        style={styles.quickCardWrap}
+                      >
+                        <Pressable
+                          onPress={() => href && handleNav(() => router.push(href as any))}
+                          style={({ pressed }) => [
+                            styles.quickCard,
+                            { backgroundColor: cardBg, borderColor: colors.border, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
+                          ]}
+                        >
+                          <View style={[styles.quickIconWrap, { backgroundColor: themeYellow + '1a', borderColor: themeYellow + '38' }]}>
+                            <Ionicons name={action.icon as any} size={Icons.standard} color={themeYellow} />
+                          </View>
+                          <ThemedText style={[styles.quickLabel, { color: colors.text }]} numberOfLines={1}>
+                            {action.label}
+                          </ThemedText>
+                        </Pressable>
+                      </AnimatedReanimated.View>
+                    );
+                  })}
+                </View>
+              ));
+            })()}
           </View>
-        </AnimatedReanimated.View>
-
-        {/* Today's Events */}
-        <AnimatedReanimated.View entering={FadeInDown.duration(400).delay(180)} style={styles.section}>
-          <View style={styles.sectionTitleRow}>
-            <View style={[styles.sectionTitleAccent, styles.sectionTitleAccentVibe, { backgroundColor: VibrantColors.emerald }]} />
-            <ThemedText style={[styles.sectionTitle, { color: isDark ? themeYellow + 'dd' : colors.text }]}>
-              Today&apos;s events
-            </ThemedText>
-          </View>
-          {eventsTodayList.length === 0 ? (
-            <AnimatedReanimated.View
-              entering={FadeIn.delay(220).duration(360)}
-              style={[styles.emptyCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            >
-              <View style={[styles.emptyCardIconWrap, { backgroundColor: VibrantColors.sky + '28' }]}>
-                <Ionicons name="calendar-outline" size={32} color={VibrantColors.sky} />
-              </View>
-              <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>No events today</ThemedText>
-              <ThemedText style={[styles.emptySub, { color: colors.textSecondary }]}>
-                Open My Events to see your schedule
-              </ThemedText>
-              <Pressable onPress={() => router.push('/(tabs)/events')} style={styles.emptyLink}>
-                <ThemedText style={[styles.emptyLinkText, { color: colors.brandText }]}>My Events</ThemedText>
-                <Ionicons name="chevron-forward" size={16} color={iconColor} />
-              </Pressable>
-            </AnimatedReanimated.View>
-          ) : (
-            eventsTodayList.map((event, index) => {
-              const timeStr = event.start_time ? formatTime(event.start_time) : '';
-              const venue = event.location_name ?? '';
-              const status = (event.status || 'Scheduled').trim();
-              return (
-                <AnimatedReanimated.View
-                  key={event.id}
-                  entering={FadeIn.delay(220 + index * 55).duration(300)}
-                >
-                  <Pressable
-                    onPress={() => router.push(`/events/${event.id}`)}
-                    style={({ pressed }) => [
-                      styles.eventCard,
-                      { backgroundColor: colors.surface, borderColor: colors.border, borderLeftWidth: 3, borderLeftColor: VibrantColorsList[index % VibrantColorsList.length], opacity: pressed ? 0.92 : 1 },
-                    ]}
-                  >
-                    <View style={styles.eventCardMain}>
-                      <ThemedText style={[styles.eventCardTitle, { color: colors.text }]} numberOfLines={1}>
-                        {event.name}
-                      </ThemedText>
-                      <ThemedText style={[styles.eventCardMeta, { color: colors.textSecondary }]} numberOfLines={1}>
-                        {[venue, timeStr].filter(Boolean).join(' · ') || '—'}
-                      </ThemedText>
-                    </View>
-                    <View style={[styles.eventBadge, { backgroundColor: VibrantColors.emerald + '22' }]}>
-                      <ThemedText style={[styles.eventBadgeText, { color: VibrantColors.emerald }]}>{status}</ThemedText>
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color={iconColor} />
-                  </Pressable>
-                </AnimatedReanimated.View>
-              );
-            })
-          )}
         </AnimatedReanimated.View>
 
         {/* Admin: Past events */}
@@ -1054,6 +1043,9 @@ export function HomeDashboardScreen({
           <AnimatedReanimated.View entering={FadeIn.duration(400).delay(220)} style={styles.section}>
             <View style={styles.sectionTitleRow}>
               <View style={[styles.sectionTitleAccent, styles.sectionTitleAccentVibe, { backgroundColor: isDark ? themeYellow : themeBlue }]} />
+              <View style={[styles.sectionTitleIconWrap, { backgroundColor: (isDark ? themeYellow : themeBlue) + '28' }]}>
+                <Ionicons name="calendar-outline" size={Icons.small} color={isDark ? themeYellow : themeBlue} />
+              </View>
               <ThemedText style={[styles.sectionTitle, { color: isDark ? themeYellow + 'dd' : colors.text }]}>
                 Past events
               </ThemedText>
@@ -1065,10 +1057,10 @@ export function HomeDashboardScreen({
               return (
                 <Pressable
                   key={event.id}
-                  onPress={() => router.push({ pathname: '/admin/events/[id]/operations', params: { id: String(event.id) } })}
+                  onPress={() => handleNav(() => router.push({ pathname: '/admin/events/[id]/operations', params: { id: String(event.id) } }))}
                   style={({ pressed }) => [
                     styles.eventCard,
-                    { backgroundColor: colors.surface, borderColor: colors.border, borderLeftWidth: 3, borderLeftColor: isDark ? themeYellow : themeBlue, opacity: pressed ? 0.92 : 1 },
+                    { backgroundColor: cardBg, borderColor: colors.border, borderLeftWidth: 3, borderLeftColor: isDark ? themeYellow : themeBlue, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
                   ]}
                 >
                   <View style={styles.eventCardMain}>
@@ -1079,53 +1071,73 @@ export function HomeDashboardScreen({
                       {[evDate, loc, evTime].filter(Boolean).join(' · ')}
                     </ThemedText>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color={iconColor} />
+                  <Ionicons name="chevron-forward" size={Icons.header} color={iconColor} />
                 </Pressable>
               );
             })}
             {pastEvents.length > 6 && (
-              <Pressable onPress={() => router.push('/admin/events')} style={styles.viewAll}>
+              <Pressable onPress={() => handleNav(() => router.push('/admin/events'))} style={({ pressed }) => [styles.viewAll, pressed && { opacity: NAV_PRESSED_OPACITY }]}>
                 <ThemedText style={[styles.viewAllText, { color: colors.brandText }]}>View all ({pastEvents.length})</ThemedText>
-                <Ionicons name="chevron-forward" size={16} color={iconColor} />
+                <Ionicons name="chevron-forward" size={Icons.medium} color={iconColor} />
               </Pressable>
             )}
           </AnimatedReanimated.View>
         )}
 
-        {/* Recent Activity – at bottom of page (warning/amber accent) */}
+        {/* Recent Activity – at bottom of page */}
         {(role === 'crew' || role === 'team_leader') && (
           <AnimatedReanimated.View entering={FadeInDown.duration(360).delay(120)} style={styles.section}>
             <View style={styles.sectionTitleRow}>
-              <View style={[styles.sectionTitleAccent, styles.sectionTitleAccentVibe, { backgroundColor: VibrantColors.amber }]} />
+              <View style={[styles.sectionTitleAccent, styles.sectionTitleAccentVibe, { backgroundColor: isDark ? VibrantColors.amber : themeBlue }]} />
+              <View style={[styles.sectionTitleIconWrap, { backgroundColor: (isDark ? VibrantColors.amber : themeBlue) + '28' }]}>
+                <Ionicons name="pulse" size={Icons.small} color={isDark ? VibrantColors.amber : themeBlue} />
+              </View>
               <ThemedText style={[styles.sectionTitle, { color: isDark ? themeYellow + 'dd' : colors.text }]}>
                 Recent activity
               </ThemedText>
+              <Pressable onPress={() => handleNav(() => router.push('/(tabs)/recent-activity'))} style={({ pressed }) => ({ opacity: pressed ? NAV_PRESSED_OPACITY : 1 })}>
+                <ThemedText style={[styles.seeAllLink, { color: isDark ? colors.brandText : themeBlue }]}>See all</ThemedText>
+              </Pressable>
             </View>
-            <View style={[styles.activityCard, { backgroundColor: isDark ? colors.surface : VibrantColors.amber + '12', borderColor: colors.border, borderLeftColor: VibrantColors.amber, borderLeftWidth: 5 }]}>
+            <View style={[styles.activityCard, { backgroundColor: cardBg, borderColor: isDark ? colors.border : '#E4E4E7' }]}>
               {recentCheckinActivities.length === 0 ? (
                 <View style={styles.activityItem}>
-                  <View style={[styles.activityDotLarge, { backgroundColor: VibrantColors.amber + '30', borderColor: VibrantColors.amber }]}>
-                    <Ionicons name="pulse-outline" size={14} color={VibrantColors.amber} />
+                  <View style={[styles.activityDotLarge, { backgroundColor: (isDark ? VibrantColors.amber : themeBlue) + '22', borderColor: isDark ? VibrantColors.amber : themeBlue }]}>
+                    <Ionicons name="pulse-outline" size={Icons.header} color={isDark ? VibrantColors.amber : themeBlue} />
                   </View>
                   <View style={styles.activityContent}>
-                    <ThemedText style={[styles.activityTitle, { color: colors.text }]}>Check-in & updates</ThemedText>
-                    <ThemedText style={[styles.activitySub, { color: colors.textSecondary }]}>No check-ins yet today</ThemedText>
-                    <ThemedText style={[styles.activityTime, { color: VibrantColors.amber }]}>—</ThemedText>
+                    <ThemedText style={[styles.activityTitle, { color: colors.text }]}>Your activity</ThemedText>
+                    <ThemedText style={[styles.activitySub, { color: colors.textSecondary }]}>Office and event check-ins will appear here</ThemedText>
+                    <ThemedText style={[styles.activityTime, { color: colors.textSecondary }]}>Pull to refresh after checking in</ThemedText>
                   </View>
                 </View>
               ) : (
-                recentCheckinActivities.map((item) => (
-                  <View key={item.key} style={[styles.activityItem, recentCheckinActivities.indexOf(item) > 0 && styles.activityItemNotFirst]}>
-                    <View style={[styles.activityDotLarge, { backgroundColor: VibrantColors.amber + '30', borderColor: VibrantColors.amber }]}>
-                      <Ionicons name={item.icon} size={14} color={VibrantColors.amber} />
-                    </View>
-                    <View style={styles.activityContent}>
-                      <ThemedText style={[styles.activityTitle, { color: colors.text }]}>{item.title}</ThemedText>
-                      <ThemedText style={[styles.activitySub, { color: colors.textSecondary }]}>{item.sub}</ThemedText>
-                      <ThemedText style={[styles.activityTime, { color: VibrantColors.amber }]}>{item.time}</ThemedText>
-                    </View>
-                  </View>
-                ))
+                <View style={styles.activityTimeline}>
+                  {recentCheckinActivities.map((item, index) => {
+                    const accent = getActivityAccentColor(item.type, isDark);
+                    const isLast = index === recentCheckinActivities.length - 1;
+                    return (
+                      <View key={item.key} style={[styles.activityItem, index > 0 && styles.activityItemNotFirst]}>
+                        <View style={styles.activityLeftColumn}>
+                          <View style={[styles.activityDotLarge, { backgroundColor: accent + '28', borderColor: accent }]}>
+                            <Ionicons name={item.icon} size={Icons.small} color={accent} />
+                          </View>
+                          {!isLast && <View style={[styles.activityTimelineLine, { backgroundColor: isDark ? colors.border : '#E4E4E7' }]} />}
+                        </View>
+                        <View style={styles.activityContent}>
+                          <ThemedText style={[styles.activityTitle, { color: colors.text }]}>{item.title}</ThemedText>
+                          <ThemedText style={[styles.activitySub, { color: colors.textSecondary }]}>{item.sub}</ThemedText>
+                          <View style={styles.activityTimeRow}>
+                            <ThemedText style={[styles.activityTime, { color: accent }]}>{item.time}</ThemedText>
+                            {item.relativeTime !== item.time && item.relativeTime !== '—' && (
+                              <ThemedText style={[styles.activityTimeAgo, { color: colors.textSecondary }]}> · {item.relativeTime}</ThemedText>
+                            )}
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
               )}
             </View>
           </AnimatedReanimated.View>
@@ -1133,16 +1145,19 @@ export function HomeDashboardScreen({
 
         {/* Active Streak (Pull Up Rate) – crew/team_leader only, just before footer */}
         {(role === 'crew' || role === 'team_leader') && (
-          <AnimatedReanimated.View entering={FadeInDown.duration(360).delay(80)} style={styles.section}>
+          <AnimatedReanimated.View entering={FadeInDown.duration(360).delay(80)} style={[styles.section, styles.sectionLast]}>
             <View style={styles.sectionTitleRow}>
               <View style={[styles.sectionTitleAccent, styles.sectionTitleAccentVibe, { backgroundColor: StatusColors.checkedIn }]} />
+              <View style={[styles.sectionTitleIconWrap, { backgroundColor: StatusColors.checkedIn + '28' }]}>
+                <Ionicons name="trending-up" size={Icons.small} color={StatusColors.checkedIn} />
+              </View>
               <ThemedText style={[styles.sectionTitle, { color: isDark ? themeYellow + 'dd' : colors.text }]}>
                 Active Streak
               </ThemedText>
             </View>
             <CrewAttendanceStatistic
-              key={`attendance-${user?.office_checkin_time ?? optimisticOfficeCheckinTime ?? 'none'}`}
-              refreshTrigger={user?.office_checkin_time ?? optimisticOfficeCheckinTime ?? undefined}
+              key={`attendance-${user?.office_checkin_time ?? optimisticOfficeCheckinTime ?? 'none'}-ev-${pivotData?.checkin_time ?? 'no'}`}
+              refreshTrigger={user?.office_checkin_time ?? optimisticOfficeCheckinTime ?? pivotData?.checkin_time ?? undefined}
             />
           </AnimatedReanimated.View>
         )}
@@ -1159,14 +1174,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: U.lg,
-    paddingTop: U.section,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.xxl,
   },
   welcomeCard: {
-    padding: U.xl,
-    borderRadius: CARD_RADIUS,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.lg + 4,
+    marginBottom: Spacing.lg,
+    borderRadius: Cards.borderRadius,
     borderWidth: 1,
-    marginBottom: U.xl,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
@@ -1174,35 +1190,35 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   welcomeGreeting: {
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-    marginBottom: 4,
-    lineHeight: 24,
+    fontSize: Typography.titleHero,
+    fontWeight: Typography.titleLargeWeight,
+    letterSpacing: 0.2,
+    marginBottom: 6,
+    lineHeight: 28,
   },
   welcomeMeta: {
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: U.xs,
+    fontSize: Typography.bodySmall,
+    lineHeight: 20,
+    marginBottom: Spacing.xs,
   },
   welcomeMetaSmall: {
-    fontSize: 12,
+    fontSize: Typography.label,
     marginTop: 2,
     letterSpacing: 0.2,
     opacity: 0.9,
   },
   welcomeMetaBold: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: Typography.bodySmall,
+    fontWeight: Typography.labelWeight,
     letterSpacing: 0.25,
-    marginTop: 2,
+    marginTop: 4,
     marginBottom: 0,
   },
   statusRow: {
     flexDirection: 'row',
     flexWrap: 'nowrap',
-    gap: U.xs,
-    marginTop: U.sm,
+    gap: Spacing.xs,
+    marginTop: Spacing.sm,
   },
   statusChip: {
     flex: 1,
@@ -1212,21 +1228,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
     paddingVertical: 6,
-    borderRadius: BorderRadius.lg,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
     overflow: 'hidden',
   },
   statusChipText: {
-    fontSize: 10,
-    fontWeight: '600',
+    fontSize: Typography.statLabel,
+    fontWeight: Typography.statLabelWeight,
     letterSpacing: 0.2,
     flexShrink: 1,
   },
   dailyCheckInSection: {
     alignItems: 'center',
-    marginBottom: U.xl,
+    marginBottom: Spacing.lg,
   },
   roundCheckInWrap: {
     position: 'relative',
@@ -1271,6 +1287,10 @@ const styles = StyleSheet.create({
     shadowColor: themeBlue,
     shadowOpacity: 0.4,
   },
+  roundCheckInButtonEvent: {
+    shadowColor: VibrantColors.emerald,
+    shadowOpacity: 0.4,
+  },
   roundCheckInButtonOffice: {
     shadowColor: themeYellow,
     shadowOpacity: 0.35,
@@ -1293,8 +1313,8 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
   },
   roundCheckInSub: {
-    fontSize: 10,
-    fontWeight: '700',
+    fontSize: Typography.statLabel,
+    fontWeight: Typography.statLabelWeight,
     marginTop: 2,
     letterSpacing: 0.6,
     textAlign: 'center',
@@ -1308,8 +1328,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
   },
   roundCheckInLabel: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: Typography.buttonText,
+    fontWeight: Typography.titleCardWeight,
     color: themeBlue,
     marginTop: 6,
     letterSpacing: 0.3,
@@ -1322,52 +1342,85 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: U.sm,
-    padding: U.lg,
-    borderRadius: CARD_RADIUS,
+    gap: Spacing.sm,
+    padding: Spacing.lg,
+    borderRadius: Cards.borderRadius,
     borderWidth: 1,
+    overflow: 'hidden',
+  },
+  dailyCheckInStatusCompact: {
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+  },
+  dailyCheckInStatusDismissible: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  dailyCheckInStatusContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    flex: 1,
+    minWidth: 0,
+  },
+  dailyCheckInStatusTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  checkedOutCloseBtn: {
+    padding: Spacing.xs,
+    marginTop: -Spacing.xs,
+    marginRight: -Spacing.xs,
   },
   dailyCheckInStatusText: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: Typography.body,
+    fontWeight: Typography.titleCardWeight,
+    letterSpacing: 0.2,
+  },
+  dailyCheckInStatusTextCompact: {
+    fontSize: Typography.bodySmall,
+    fontWeight: Typography.buttonTextWeight,
     letterSpacing: 0.2,
   },
   dailyCheckInTime: {
-    fontSize: 14,
+    fontSize: Typography.bodySmall,
     marginTop: 2,
   },
   dailyCheckInSecondary: {
-    marginTop: U.md,
-    paddingVertical: U.lg,
-    paddingHorizontal: U.xl,
-    borderRadius: CARD_RADIUS,
+    marginTop: Spacing.md,
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: Cards.borderRadius,
     borderWidth: 1,
+    overflow: 'hidden',
   },
   dailyCheckInSecondaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: U.sm,
+    gap: Spacing.sm,
   },
   dailyCheckInSecondaryLabel: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: Typography.buttonText,
+    fontWeight: Typography.buttonTextWeight,
     flex: 1,
   },
   dailyCheckInSecondaryTime: {
-    fontSize: 14,
+    fontSize: Typography.bodySmall,
   },
   dailyCheckInSecondaryButton: {
     paddingVertical: 2,
   },
   dailyCheckInSecondaryCta: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: Typography.bodySmall,
+    fontWeight: Typography.buttonTextWeight,
   },
   todayEventCard: {
-    padding: U.xl,
-    borderRadius: CARD_RADIUS,
+    padding: Spacing.lg,
+    borderRadius: Cards.borderRadius,
     borderWidth: 1,
-    marginBottom: U.lg,
+    marginBottom: Spacing.lg,
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
@@ -1377,31 +1430,32 @@ const styles = StyleSheet.create({
   todayEventHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: U.sm,
-    marginBottom: U.lg,
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
   },
   todayEventTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.6,
+    fontSize: Typography.titleSection,
+    fontWeight: Typography.titleSectionWeight,
+    letterSpacing: Typography.titleSectionLetterSpacing,
     textTransform: 'uppercase',
     flex: 1,
   },
   confirmedBadge: {
-    paddingHorizontal: U.sm,
+    paddingHorizontal: Spacing.sm,
     paddingVertical: 5,
-    borderRadius: BorderRadius.full,
+    borderRadius: 9999,
+    overflow: 'hidden',
   },
   confirmedBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
+    fontSize: Typography.statLabel,
+    fontWeight: Typography.statLabelWeight,
     letterSpacing: 0.4,
   },
   todayEventName: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: Typography.titleLarge,
+    fontWeight: Typography.titleLargeWeight,
     letterSpacing: 0.2,
-    marginBottom: U.sm,
+    marginBottom: Spacing.sm,
     lineHeight: 24,
   },
   todayEventRow: {
@@ -1411,28 +1465,29 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   todayEventMeta: {
-    fontSize: 13,
+    fontSize: Typography.bodySmall,
     flex: 1,
     lineHeight: 18,
   },
   viewDetailsLink: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: U.md,
+    fontSize: Typography.bodySmall,
+    fontWeight: Typography.buttonTextWeight,
+    marginTop: Spacing.md,
     letterSpacing: 0.2,
   },
   summaryCardsRow: {
     flexDirection: 'row',
-    gap: U.lg,
-    marginBottom: U.xl,
+    gap: Spacing.lg,
+    marginBottom: Spacing.lg,
   },
   summaryCard: {
     flex: 1,
-    padding: U.xl,
-    borderRadius: CARD_RADIUS,
+    padding: Spacing.lg,
+    borderRadius: Cards.borderRadius,
     borderWidth: 1,
     alignItems: 'center',
     minHeight: 100,
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
@@ -1440,19 +1495,31 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   summaryCardValue: {
-    fontSize: 19,
-    fontWeight: '800',
-    marginTop: U.sm,
+    fontSize: Typography.statValue,
+    fontWeight: Typography.statValueWeight,
+    marginTop: Spacing.sm,
     letterSpacing: 0.2,
   },
   summaryCardLabel: {
-    fontSize: 10,
-    fontWeight: '700',
+    fontSize: Typography.statLabel,
+    fontWeight: Typography.statLabelWeight,
     letterSpacing: 0.5,
     marginTop: 4,
   },
   summaryCardAllowance: {
     borderLeftWidth: 4,
+  },
+  allowanceSectionHeader: {
+    marginBottom: Spacing.md,
+  },
+  allowanceSectionTitle: {
+    fontSize: Typography.titleCard,
+    fontWeight: Typography.titleCardWeight,
+    letterSpacing: 0.2,
+  },
+  summaryCardAllowanceEnhanced: {
+    shadowRadius: 10,
+    elevation: 2,
   },
   summaryCardIconWrap: {
     width: 44,
@@ -1461,43 +1528,69 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
+    overflow: 'hidden',
   },
   section: {
-    marginBottom: U.section,
+    marginBottom: Spacing.xxl,
+  },
+  sectionLast: {
+    marginBottom: Spacing.sm,
   },
   sectionTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: U.lg,
-    gap: U.sm,
+    marginBottom: Spacing.lg,
+    gap: Spacing.sm,
   },
   sectionTitleAccent: {
     width: 3,
     height: 16,
-    borderRadius: 2,
+    borderRadius: 0,
   },
   sectionTitleAccentVibe: {
     width: 3,
     height: 16,
-    borderRadius: 2,
+    borderRadius: 0,
+  },
+  sectionTitleIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  todaysEventsSectionHeader: {
+    marginBottom: Spacing.lg,
+  },
+  todaysEventsSectionTitle: {
+    fontSize: Typography.titleCard,
+    fontWeight: Typography.titleCardWeight,
+    letterSpacing: 0.2,
   },
   sectionTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.6,
+    fontSize: Typography.titleSection,
+    fontWeight: Typography.titleSectionWeight,
+    letterSpacing: Typography.titleSectionLetterSpacing,
     textTransform: 'uppercase',
     flex: 1,
   },
-  sectionTitlePlain: {
-    fontSize: 15,
-    fontWeight: '700',
+  seeAllLink: {
+    fontSize: Typography.label,
+    fontWeight: Typography.labelWeight,
     letterSpacing: 0.2,
-    marginBottom: U.lg,
+    textDecorationLine: 'underline',
+  },
+  sectionTitlePlain: {
+    fontSize: Typography.buttonText,
+    fontWeight: Typography.buttonTextWeight,
+    letterSpacing: 0.2,
+    marginBottom: Spacing.lg,
   },
   activityCard: {
-    borderRadius: CARD_RADIUS,
+    borderRadius: Cards.borderRadius,
     borderWidth: 1,
-    padding: U.xl,
+    padding: Spacing.lg,
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
@@ -1505,21 +1598,44 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   allowancesSection: {
-    marginBottom: U.lg,
+    marginBottom: Spacing.lg,
   },
   allowanceRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: U.md,
-    marginBottom: U.sm,
+    gap: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  activityTimeline: {
+    flexDirection: 'column',
   },
   activityItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: U.md,
+    gap: Spacing.md,
+  },
+  activityLeftColumn: {
+    alignItems: 'center',
+    width: 28,
+  },
+  activityTimelineLine: {
+    width: 2,
+    flex: 1,
+    minHeight: Spacing.lg,
+    marginTop: 4,
+    borderRadius: 1,
   },
   activityItemNotFirst: {
-    marginTop: U.lg,
+    marginTop: Spacing.lg,
+  },
+  activityTimeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    gap: 2,
+  },
+  activityTimeAgo: {
+    fontSize: Typography.titleSection,
   },
   activityDot: {
     width: 8,
@@ -1535,45 +1651,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
+    overflow: 'hidden',
   },
   activityContent: {
     flex: 1,
   },
   activityTitle: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: Typography.bodySmall,
+    fontWeight: Typography.buttonTextWeight,
     marginBottom: 2,
   },
   activitySub: {
-    fontSize: 13,
+    fontSize: Typography.bodySmall,
     marginBottom: 4,
   },
   activityTime: {
-    fontSize: 11,
+    fontSize: Typography.titleSection,
   },
   quickGrid: {
+    gap: Spacing.sm,
+  },
+  quickGridRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: U.sm,
-    justifyContent: 'space-between',
+    gap: Spacing.sm,
   },
   quickCardWrap: {
-    width: '48%',
-    minWidth: '48%',
-    maxWidth: '48%',
-    flexShrink: 0,
+    flex: 1,
+    minWidth: 0,
   },
   quickCard: {
-    padding: U.md,
-    borderRadius: CARD_RADIUS,
+    padding: Spacing.md,
+    borderRadius: Cards.borderRadius,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 76,
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
-    shadowRadius: 6,
+    shadowRadius: 8,
     elevation: 2,
   },
   quickIconWrap: {
@@ -1582,21 +1699,23 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: U.xs,
+    marginBottom: Spacing.xs,
     borderWidth: 1,
+    overflow: 'hidden',
   },
   quickLabel: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: Typography.label,
+    fontWeight: Typography.labelWeight,
     textAlign: 'center',
     letterSpacing: 0.2,
   },
   emptyCard: {
-    padding: U.xl * 1.5,
-    borderRadius: CARD_RADIUS,
+    padding: Spacing.lg * 1.5,
+    borderRadius: Cards.borderRadius,
     borderWidth: 1,
     alignItems: 'center',
     borderStyle: 'dashed',
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.03,
@@ -1609,19 +1728,20 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: U.md,
+    marginBottom: Spacing.md,
+    overflow: 'hidden',
   },
   emptyTitle: {
-    fontSize: 17,
-    fontWeight: '700',
+    fontSize: Typography.titleCard,
+    fontWeight: Typography.titleCardWeight,
     letterSpacing: 0.2,
-    marginTop: U.sm,
+    marginTop: Spacing.sm,
     marginBottom: 6,
   },
   emptySub: {
-    fontSize: 14,
+    fontSize: Typography.bodySmall,
     lineHeight: 20,
-    marginBottom: U.md,
+    marginBottom: Spacing.md,
   },
   emptyLink: {
     flexDirection: 'row',
@@ -1629,16 +1749,16 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   emptyLinkText: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: Typography.bodySmall,
+    fontWeight: Typography.buttonTextWeight,
   },
   eventCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: U.lg,
-    borderRadius: CARD_RADIUS_SM,
+    padding: Spacing.lg,
+    borderRadius: Cards.borderRadiusSmall,
     borderWidth: 1,
-    marginBottom: U.sm,
+    marginBottom: Spacing.sm,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -1651,24 +1771,24 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   eventCardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: Typography.buttonText,
+    fontWeight: Typography.titleCardWeight,
     letterSpacing: 0.2,
     marginBottom: 4,
   },
   eventCardMeta: {
-    fontSize: 13,
+    fontSize: Typography.bodySmall,
     lineHeight: 18,
   },
   eventBadge: {
-    paddingHorizontal: U.sm,
+    paddingHorizontal: Spacing.sm,
     paddingVertical: 5,
     borderRadius: BorderRadius.md,
-    marginRight: U.sm,
+    marginRight: Spacing.sm,
   },
   eventBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
+    fontSize: Typography.statLabel,
+    fontWeight: Typography.statLabelWeight,
     letterSpacing: 0.3,
     textTransform: 'capitalize',
   },
@@ -1677,10 +1797,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    paddingVertical: U.md,
+    paddingVertical: Spacing.md,
   },
   viewAllText: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: Typography.bodySmall,
+    fontWeight: Typography.buttonTextWeight,
   },
 });

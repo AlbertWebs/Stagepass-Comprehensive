@@ -18,6 +18,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 import { useAppRole } from '~/hooks/useAppRole';
 
 const TAB_BAR_HEIGHT = 58;
@@ -52,6 +53,7 @@ function formatDueDate(d?: string | null): string {
 
 export default function TasksListScreen() {
   const router = useRouter();
+  const handleNav = useNavigationPress();
   const { colors } = useStagePassTheme();
   const role = useAppRole();
   const [tasks, setTasks] = useState<TaskItem[]>([]);
@@ -115,10 +117,10 @@ export default function TasksListScreen() {
           tasks.map((task) => (
             <Pressable
               key={task.id}
-              onPress={() => router.push(`/(tabs)/tasks/${task.id}`)}
+              onPress={() => handleNav(() => router.push(`/(tabs)/tasks/${task.id}`))}
               style={({ pressed }) => [
                 styles.card,
-                { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.92 : 1 },
+                { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
               ]}
             >
               <View style={styles.cardRow}>

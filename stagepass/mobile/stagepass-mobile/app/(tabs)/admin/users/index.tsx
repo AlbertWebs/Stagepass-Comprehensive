@@ -1,7 +1,9 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -13,12 +15,14 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing, themeBlue } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 import { api, type User } from '~/services/api';
 
 export default function AdminUsersScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useStagePassTheme();
+  const handleNav = useNavigationPress();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -67,20 +71,27 @@ export default function AdminUsersScreen() {
             </ThemedText>
           ) : (
             users.map((u) => (
-              <View
+              <Pressable
                 key={u.id}
-                style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={() => handleNav(() => router.push({ pathname: '/admin/users/[id]', params: { id: String(u.id) } }))}
+                style={({ pressed }) => [
+                  styles.card,
+                  { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
+                ]}
               >
-                <ThemedText style={[styles.name, { color: colors.text }]}>{u.name}</ThemedText>
-                <ThemedText style={[styles.meta, { color: colors.textSecondary }]}>
-                  {u.email} {u.username ? `· @${u.username}` : ''}
-                </ThemedText>
-                {u.roles?.length ? (
-                  <ThemedText style={[styles.roles, { color: themeBlue }]}>
-                    {u.roles.map((r) => r.name).join(', ')}
+                <View style={styles.cardInner}>
+                  <ThemedText style={[styles.name, { color: colors.text }]}>{u.name}</ThemedText>
+                  <ThemedText style={[styles.meta, { color: colors.textSecondary }]}>
+                    {u.email} {u.username ? `· @${u.username}` : ''}
                   </ThemedText>
-                ) : null}
-              </View>
+                  {u.roles?.length ? (
+                    <ThemedText style={[styles.roles, { color: themeBlue }]}>
+                      {u.roles.map((r) => r.name).join(', ')}
+                    </ThemedText>
+                  ) : null}
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={themeBlue} />
+              </Pressable>
             ))
           )}
         </ScrollView>
@@ -92,15 +103,18 @@ export default function AdminUsersScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { flex: 1 },
-  scrollContent: { padding: Spacing.lg, paddingTop: 0 },
+  scrollContent: { padding: Spacing.lg, paddingTop: Spacing.lg },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   empty: { textAlign: 'center', paddingVertical: Spacing.xxl, fontSize: 15 },
   card: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: Spacing.lg,
     borderRadius: 12,
     borderWidth: 1,
     marginBottom: Spacing.md,
   },
+  cardInner: { flex: 1, minWidth: 0 },
   name: { fontSize: 17, fontWeight: '700', marginBottom: Spacing.xs },
   meta: { fontSize: 14, marginBottom: Spacing.xs },
   roles: { fontSize: 13, fontWeight: '600' },

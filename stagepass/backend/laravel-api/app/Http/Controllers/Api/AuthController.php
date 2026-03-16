@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -90,11 +91,30 @@ class AuthController extends Controller
     public function me(Request $request): JsonResponse
     {
         $user = $request->user()->load('roles');
-        $today = now(config('app.timezone', 'Africa/Nairobi'))->toDateString();
+        // Use fixed timezone for office "today" so calendar day matches business location (Nairobi).
+        $today = now('Africa/Nairobi')->toDateString();
+        // Use whereDate so comparison is robust regardless of column cast/format.
         $officeCheckin = \App\Models\DailyOfficeCheckin::where('user_id', $user->id)
-            ->where('date', $today)
+            ->whereDate('date', $today)
             ->first();
         $officeCheckedInToday = $officeCheckin !== null;
+
+        // Diagnostic: if no row found, log recent check-ins for this user to compare stored dates.
+        if (! $officeCheckin) {
+            $recent = \App\Models\DailyOfficeCheckin::where('user_id', $user->id)
+                ->orderByDesc('checkin_time')
+                ->limit(3)
+                ->get(['id', 'date', 'checkin_time']);
+            Log::info('GET /me no office check-in today; recent rows', [
+                'user_id' => $user->id,
+                'today' => $today,
+                'recent_dates' => $recent->map(fn ($r) => [
+                    'id' => $r->id,
+                    'date' => $r->date?->format('Y-m-d') ?? (is_string($r->date) ? $r->date : null),
+                    'checkin_time' => $r->checkin_time?->toIso8601String(),
+                ])->toArray(),
+            ]);
+        }
         $officeCheckinTime = $officeCheckin?->checkin_time?->toIso8601String();
         $officeCheckedOutToday = $officeCheckin?->checkout_time !== null;
         $officeCheckoutTime = $officeCheckin?->checkout_time?->toIso8601String();
@@ -111,6 +131,13 @@ class AuthController extends Controller
         $payload['office_checked_out_today'] = $officeCheckedOutToday;
         $payload['office_checkout_time'] = $officeCheckoutTime;
         $payload['has_approved_time_off_today'] = $hasApprovedTimeOffToday;
+
+        Log::info('GET /me office state', [
+            'user_id' => $user->id,
+            'today' => $today,
+            'office_checked_in_today' => $officeCheckedInToday,
+            'office_checkin_time' => $officeCheckinTime,
+        ]);
 
         return response()->json($payload);
     }

@@ -76,6 +76,7 @@ class CheckinsController extends Controller
             $expectedToReport = $u->is_permanent_employee
                 || $u->hasRole('admin')
                 || $u->hasRole('team_leader');
+            $checkedOut = $checkin && $checkin->checkout_time !== null;
             return [
                 'user_id' => $u->id,
                 'user_name' => $u->name,
@@ -83,6 +84,9 @@ class CheckinsController extends Controller
                 'checked_in' => $checkin !== null,
                 'checkin_time' => $checkin ? $checkin->checkin_time->format('H:i') : null,
                 'checkin_time_iso' => $checkin ? $checkin->checkin_time->toIso8601String() : null,
+                'checked_out' => $checkedOut,
+                'checkout_time' => $checkin && $checkin->checkout_time ? $checkin->checkout_time->format('H:i') : null,
+                'checkout_time_iso' => $checkin && $checkin->checkout_time ? $checkin->checkout_time->toIso8601String() : null,
                 'is_off' => $isOff,
                 'expected_to_report' => $expectedToReport,
             ];
@@ -213,12 +217,13 @@ class CheckinsController extends Controller
         }
         $officeCheckins = $officeCheckinsQuery->get();
 
+        // Event check-ins: filter by when the check-in occurred (in app timezone), not by event date span.
+        $fromUtc = $from->copy()->setTimezone('UTC');
+        $toUtc = $to->copy()->setTimezone('UTC');
         $eventCheckins = EventUser::query()
             ->whereNotNull('checkin_time')
-            ->whereHas('event', function ($q) use ($from, $to) {
-                $q->spansRange($from->toDateString(), $to->toDateString());
-            })
-            ->with(['user:id,name,email', 'event:id,name,date'])
+            ->whereBetween('checkin_time', [$fromUtc, $toUtc])
+            ->with(['user:id,name,email', 'event:id,name,date,location_name'])
             ->orderBy('checkin_time')
             ->get();
 
@@ -251,12 +256,16 @@ class CheckinsController extends Controller
             $dateStr = $c->date ? \Carbon\Carbon::parse($c->date)->format('Y-m-d') : '';
             $checkinTime = $c->checkin_time ? \Carbon\Carbon::parse($c->checkin_time)->format('H:i') : '—';
             $checkinTimeIso = $c->checkin_time ? \Carbon\Carbon::parse($c->checkin_time)->toIso8601String() : '';
+            $checkoutTime = $c->checkout_time ? \Carbon\Carbon::parse($c->checkout_time)->format('H:i') : null;
+            $checkoutTimeIso = $c->checkout_time ? \Carbon\Carbon::parse($c->checkout_time)->toIso8601String() : null;
             $items[] = [
                 'type' => 'office',
                 'id' => 'office-' . $c->id,
                 'date' => $dateStr,
                 'checkin_time' => $checkinTime,
                 'checkin_time_iso' => $checkinTimeIso,
+                'checkout_time' => $checkoutTime,
+                'checkout_time_iso' => $checkoutTimeIso,
                 'user_id' => $c->user_id,
                 'user_name' => $c->user?->name ?? 'User #' . $c->user_id,
                 'user_email' => $c->user?->email ?? null,
@@ -273,6 +282,8 @@ class CheckinsController extends Controller
                 'date' => $a->event?->date?->format('Y-m-d') ?? $a->checkin_time?->format('Y-m-d'),
                 'checkin_time' => $a->checkin_time?->format('H:i') ?? '—',
                 'checkin_time_iso' => $a->checkin_time?->toIso8601String(),
+                'checkout_time' => $a->checkout_time ? $a->checkout_time->format('H:i') : null,
+                'checkout_time_iso' => $a->checkout_time?->toIso8601String(),
                 'user_id' => $a->user_id,
                 'user_name' => $a->user?->name ?? 'User #' . $a->user_id,
                 'user_email' => $a->user?->email ?? null,

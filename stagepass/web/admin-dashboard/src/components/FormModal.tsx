@@ -1,3 +1,5 @@
+import { createPortal } from 'react-dom';
+
 type FormModalProps = {
   /** When false, modal is not rendered (closed) */
   open?: boolean;
@@ -18,8 +20,12 @@ export function FormModal({
   scrollable = true,
 }: FormModalProps) {
   if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+
+  const modal = (
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+    >
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} aria-hidden />
       <div
         className={`relative flex max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xl ${wide ? 'max-w-3xl' : 'max-w-lg'}`}
@@ -46,4 +52,6 @@ export function FormModal({
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }

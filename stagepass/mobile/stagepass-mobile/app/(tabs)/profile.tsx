@@ -6,6 +6,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -22,15 +23,36 @@ import { StagePassInput } from '@/components/StagePassInput';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useThemePreference } from '@/context/ThemePreferenceContext';
-import { themeBlue, themeYellow } from '@/constants/theme';
+import { Cards, Icons, Typography } from '@/constants/ui';
+import { Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
-
-const U = { xs: 6, sm: 8, md: 12, lg: 14, xl: 16, section: 24 };
-const CARD_RADIUS = 12;
+import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 import { useAppRole } from '~/hooks/useAppRole';
 import { api } from '~/services/api';
 import { logout, setUser } from '~/store/authSlice';
 import { clearStoredToken } from '~/store/persistAuth';
+
+/** Profile scale: all spacing and sizes proportional to card title (titleCard = 17) */
+const T = Typography.titleCard;
+const P = {
+  xs: Math.round(T * 0.24),      // 4
+  sm: Math.round(T * 0.47),     // 8
+  md: Math.round(T * 0.71),     // 12
+  lg: Math.round(T * 0.94),     // 16
+  xl: Math.round(T * 1.18),     // 20
+  xxl: Math.round(T * 1.41),    // 24
+  section: Math.round(T * 1.41), // 24 – section top margin
+  cardPadding: Math.round(T * 0.94), // 16
+  iconSection: Math.round(T * 1.53), // 26 – section title icon wrap
+  iconCard: Math.round(T * 1.88),   // 32 – card header icon wrap
+  avatar: Math.round(T * 3.53),     // 60
+  avatarBadge: Math.round(T * 1.29), // 22
+  swatch: Math.round(T * 2.35),     // 40 – appearance option
+  radiusSm: Math.round(T * 0.47),   // 8
+  radiusMd: Math.round(T * 0.94),   // 16
+  passportW: Math.round(T * 5.18),  // 88
+  passportH: Math.round(T * 6.71),  // 114
+};
 
 function roleLabel(role: string) {
   const map: Record<string, string> = {
@@ -57,6 +79,7 @@ const TAB_BAR_HEIGHT = 58;
 /** Profile tab – premium layout with hero, cards, and clear sections. Fits within safe area. */
 export default function ProfileScreen() {
   const router = useRouter();
+  const handleNav = useNavigationPress();
   const dispatch = useDispatch();
   const { colors, isDark } = useStagePassTheme();
   const { preference, setPreference } = useThemePreference();
@@ -79,6 +102,7 @@ export default function ProfileScreen() {
   const [changingPin, setChangingPin] = useState(false);
   const [passportPhotoUri, setPassportPhotoUri] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -240,6 +264,7 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = async () => {
+    setSigningOut(true);
     try {
       await api.auth.logout();
     } catch {
@@ -248,13 +273,14 @@ export default function ProfileScreen() {
     await clearStoredToken();
     dispatch(logout());
     router.replace('/login');
+    setSigningOut(false);
   };
 
   if (!user) {
     return (
       <ThemedView style={styles.container}>
         <HomeHeader title="Profile" />
-        <ThemedText type="subtitle" style={{ color: colors.textSecondary, padding: U.xl }}>
+        <ThemedText type="subtitle" style={{ color: colors.textSecondary, padding: P.lg }}>
           Not signed in
         </ThemedText>
       </ThemedView>
@@ -278,7 +304,6 @@ export default function ProfileScreen() {
         >
           {/* Name & role card – subtle tint, no solid block */}
           <View style={[styles.heroCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <View style={[styles.heroCardAccent, { backgroundColor: themeYellow }]} />
             <LinearGradient
               colors={isDark ? [themeBlue + '18', themeBlue + '08', 'transparent'] : [themeYellow + '0c', themeBlue + '06', 'transparent']}
               locations={[0, 0.5, 1]}
@@ -306,7 +331,7 @@ export default function ProfileScreen() {
                   <ThemedText style={[styles.avatarText, { color: isDark ? themeYellow : themeBlue }]}>{getInitial(user.name)}</ThemedText>
                 )}
                 <View style={[styles.avatarEditBadge, { backgroundColor: colors.surface, borderColor: isDark ? themeYellow : themeBlue }]}>
-                  <Ionicons name="camera" size={10} color={isDark ? themeYellow : themeBlue} />
+                  <Ionicons name="camera" size={Icons.xs} color={isDark ? themeYellow : themeBlue} />
                 </View>
               </Pressable>
               <ThemedText style={[styles.heroName, { color: colors.text }]} numberOfLines={2}>
@@ -324,16 +349,20 @@ export default function ProfileScreen() {
           </View>
 
           {/* PREFERENCES: Appearance – colored cards for Light / Dark / Auto */}
-          <ThemedText style={[styles.sectionHeading, { color: colors.textSecondary }]}>PREFERENCES</ThemedText>
+          <View style={styles.sectionTitleRow}>
+            <View style={[styles.sectionTitleIconWrap, { backgroundColor: themeYellow + '28' }]}>
+              <Ionicons name="options-outline" size={Icons.small} color={themeYellow} />
+            </View>
+            <ThemedText style={[styles.sectionHeading, { color: colors.textSecondary }]}>PREFERENCES</ThemedText>
+          </View>
           <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-            <View style={[styles.cardAccent, { backgroundColor: themeYellow }]} />
             <View style={styles.preferenceCardHeader}>
               <View style={[styles.cardIconWrap, { backgroundColor: themeYellow + '22', borderColor: themeYellow + '66' }]}>
-                <Ionicons name="color-palette-outline" size={18} color={themeYellow} />
+                <Ionicons name="color-palette-outline" size={Icons.header} color={themeYellow} />
               </View>
               <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Appearance</ThemedText>
             </View>
-            <ThemedText style={[styles.cardSub, { color: colors.textSecondary, marginBottom: U.sm }]}>
+            <ThemedText style={[styles.cardSub, { color: colors.textSecondary, marginBottom: P.sm }]}>
               Choose how the app looks. Dark uses a dark background.
             </ThemedText>
             <View style={styles.appearanceRow}>
@@ -355,7 +384,7 @@ export default function ProfileScreen() {
                     ]}
                   >
                     <View style={[styles.appearanceOptionSwatch, { backgroundColor: selected ? themeBlue + '22' : (mode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.06)') }]}>
-                      <Ionicons name={icon} size={20} color={selected ? themeBlue : fg} />
+                      <Ionicons name={icon} size={Icons.standard} color={selected ? themeBlue : fg} />
                     </View>
                     <Text style={[styles.appearanceOptionText, { color: selected ? themeBlue : fg }]}>
                       {label}
@@ -367,15 +396,19 @@ export default function ProfileScreen() {
           </View>
 
           {/* ACCOUNT DETAILS */}
-          <ThemedText style={[styles.sectionHeading, { color: colors.textSecondary }]}>ACCOUNT DETAILS</ThemedText>
+          <View style={styles.sectionTitleRow}>
+            <View style={[styles.sectionTitleIconWrap, { backgroundColor: (isDark ? themeYellow : themeBlue) + '28' }]}>
+              <Ionicons name="person-circle-outline" size={Icons.small} color={colors.brandIcon} />
+            </View>
+            <ThemedText style={[styles.sectionHeading, { color: colors.textSecondary }]}>ACCOUNT DETAILS</ThemedText>
+          </View>
 
           {/* Admin – only for admin role */}
           {role === 'admin' && (
             <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-              <View style={[styles.cardAccent, { backgroundColor: isDark ? themeYellow : themeBlue }]} />
               <View style={styles.cardHeader}>
                 <View style={[styles.cardIconWrap, { backgroundColor: (isDark ? themeYellow : themeBlue) + '18', borderColor: (isDark ? themeYellow : themeBlue) + '44' }]}>
-                  <Ionicons name="shield-checkmark-outline" size={18} color={colors.brandIcon} />
+                  <Ionicons name="shield-checkmark-outline" size={Icons.header} color={colors.brandIcon} />
                 </View>
                 <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Admin</ThemedText>
               </View>
@@ -393,18 +426,18 @@ export default function ProfileScreen() {
                 ].map((item) => (
                   <Pressable
                     key={item.href}
-                    onPress={() => router.push(item.href as any)}
+                    onPress={() => handleNav(() => router.push(item.href as any))}
                     style={({ pressed }) => [
                       styles.adminLinkRow,
                       { borderBottomColor: cardBorder },
-                      pressed && { opacity: 0.7 },
+                      pressed && { opacity: NAV_PRESSED_OPACITY },
                     ]}
                   >
                     <View style={[styles.adminLinkIconWrap, { backgroundColor: themeYellow + '22', borderColor: themeYellow + '55' }]}>
-                      <Ionicons name={item.icon} size={18} color={themeYellow} />
+                      <Ionicons name={item.icon} size={Icons.header} color={themeYellow} />
                     </View>
                     <ThemedText style={[styles.adminLinkLabel, { color: colors.text }]}>{item.label}</ThemedText>
-                    <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                    <Ionicons name="chevron-forward" size={Icons.medium} color={colors.textSecondary} />
                   </Pressable>
                 ))}
               </View>
@@ -413,10 +446,9 @@ export default function ProfileScreen() {
 
           {/* Profile photo card */}
           <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-            <View style={[styles.cardAccent, { backgroundColor: themeYellow }]} />
             <View style={styles.cardHeader}>
               <View style={[styles.cardIconWrap, { backgroundColor: themeYellow + '22', borderColor: themeYellow + '66' }]}>
-                <Ionicons name="person-circle-outline" size={18} color={themeYellow} />
+                <Ionicons name="person-circle-outline" size={Icons.header} color={themeYellow} />
               </View>
               <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Profile photo</ThemedText>
             </View>
@@ -442,7 +474,7 @@ export default function ProfileScreen() {
                   />
                 ) : (
                   <View style={styles.passportPhotoPlaceholder}>
-                    <Ionicons name="camera-outline" size={32} color={colors.textSecondary} />
+                    <Ionicons name="camera-outline" size={Icons.large} color={colors.textSecondary} />
                     <ThemedText style={[styles.passportPhotoPlaceholderText, { color: colors.textSecondary }]}>
                       Tap to add photo
                     </ThemedText>
@@ -461,10 +493,9 @@ export default function ProfileScreen() {
 
           {/* Personal info card */}
           <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-            <View style={[styles.cardAccent, { backgroundColor: isDark ? themeYellow : themeBlue }]} />
             <View style={styles.cardHeader}>
               <View style={[styles.cardIconWrap, { backgroundColor: (isDark ? themeYellow : themeBlue) + '18', borderColor: (isDark ? themeYellow : themeBlue) + '44' }]}>
-                <Ionicons name="person-outline" size={18} color={colors.brandIcon} />
+                <Ionicons name="person-outline" size={Icons.header} color={colors.brandIcon} />
               </View>
               <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Personal info</ThemedText>
             </View>
@@ -530,10 +561,9 @@ export default function ProfileScreen() {
 
           {/* Security: PIN card */}
           <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-            <View style={[styles.cardAccent, { backgroundColor: themeYellow }]} />
             <View style={styles.cardHeader}>
                 <View style={[styles.cardIconWrap, { backgroundColor: themeYellow + '22', borderColor: themeYellow + '66' }]}>
-                <Ionicons name="keypad-outline" size={18} color={themeYellow} />
+                <Ionicons name="keypad-outline" size={Icons.header} color={themeYellow} />
               </View>
               <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Change PIN</ThemedText>
             </View>
@@ -579,10 +609,9 @@ export default function ProfileScreen() {
           {/* Security: Password card – admin only (web login) */}
           {role === 'admin' ? (
             <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-              <View style={[styles.cardAccent, { backgroundColor: isDark ? themeYellow : themeBlue }]} />
               <View style={styles.cardHeader}>
                 <View style={[styles.cardIconWrap, { backgroundColor: (isDark ? themeYellow : themeBlue) + '18', borderColor: (isDark ? themeYellow : themeBlue) + '44' }]}>
-                  <Ionicons name="lock-closed-outline" size={18} color={colors.brandIcon} />
+                  <Ionicons name="lock-closed-outline" size={Icons.header} color={colors.brandIcon} />
                 </View>
                 <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Change password</ThemedText>
               </View>
@@ -618,14 +647,24 @@ export default function ProfileScreen() {
             <Pressable
               style={({ pressed }) => [
                 styles.logoutWrap,
-                { opacity: pressed ? 0.8 : 1 },
+                { opacity: signingOut ? 0.8 : pressed ? 0.8 : 1 },
               ]}
               onPress={handleLogout}
+              disabled={signingOut}
             >
-              <View style={[styles.logoutIconWrap, { backgroundColor: colors.error + '18', borderColor: colors.error + '55' }]}>
-                <Ionicons name="log-out-outline" size={18} color={colors.error} />
-              </View>
-              <ThemedText style={[styles.logoutText, { color: colors.error }]}>Sign out</ThemedText>
+              {signingOut ? (
+                <>
+                  <ActivityIndicator size="small" color={colors.error} style={styles.logoutSpinner} />
+                  <ThemedText style={[styles.logoutText, { color: colors.error }]}>Signing out…</ThemedText>
+                </>
+              ) : (
+                <>
+                  <View style={[styles.logoutIconWrap, { backgroundColor: colors.error + '18', borderColor: colors.error + '55' }]}>
+                    <Ionicons name="log-out-outline" size={Icons.header} color={colors.error} />
+                  </View>
+                  <ThemedText style={[styles.logoutText, { color: colors.error }]}>Sign out</ThemedText>
+                </>
+              )}
             </Pressable>
           </View>
 
@@ -639,45 +678,36 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   keyboard: { flex: 1 },
   scrollContent: {
-    paddingHorizontal: U.xl,
-    paddingTop: U.lg,
+    paddingHorizontal: P.lg,
+    paddingTop: P.lg,
   },
   heroCard: {
-    marginBottom: U.lg,
-    borderRadius: CARD_RADIUS + 2,
+    marginBottom: P.lg,
+    borderRadius: P.radiusMd,
     borderWidth: 1,
     overflow: 'hidden',
     position: 'relative',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
-    shadowRadius: 8,
+    shadowRadius: P.sm,
     elevation: 3,
   },
-  heroCardAccent: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    borderTopLeftRadius: CARD_RADIUS + 2,
-    borderBottomLeftRadius: CARD_RADIUS + 2,
-  },
   heroCardInner: {
-    paddingTop: U.lg,
-    paddingBottom: U.md,
-    paddingHorizontal: U.xl,
+    paddingTop: P.lg,
+    paddingBottom: P.md,
+    paddingHorizontal: P.lg,
     alignItems: 'center',
   },
   avatarWrap: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: P.avatar,
+    height: P.avatar,
+    borderRadius: P.avatar / 2,
     borderWidth: 2,
     backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: U.md,
+    marginBottom: P.md,
     overflow: 'hidden',
   },
   avatarWrapPressed: {
@@ -688,9 +718,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     right: 0,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: P.avatarBadge,
+    height: P.avatarBadge,
+    borderRadius: P.avatarBadge / 2,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
@@ -700,175 +730,180 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   avatarText: {
-    fontSize: 22,
-    fontWeight: '800',
+    fontSize: Typography.titleHero,
+    fontWeight: Typography.titleLargeWeight,
     letterSpacing: 0.6,
   },
   heroName: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: U.xs,
+    fontSize: Typography.titleLarge,
+    fontWeight: Typography.bodyBoldWeight,
+    marginBottom: P.xs,
     textAlign: 'center',
     letterSpacing: 0.2,
-    paddingHorizontal: U.md,
+    paddingHorizontal: P.md,
   },
   roleBadge: {
-    paddingHorizontal: U.md,
-    paddingVertical: 4,
+    paddingHorizontal: P.md,
+    paddingVertical: P.xs,
     borderRadius: 9999,
     borderWidth: 1,
   },
   roleBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: Typography.titleSection,
+    fontWeight: Typography.labelWeight,
     letterSpacing: 0.3,
   },
   heroPhotoHint: {
-    fontSize: 10,
+    fontSize: Typography.statLabel,
     fontWeight: '500',
-    marginTop: U.xs,
+    marginTop: P.xs,
   },
   card: {
-    borderRadius: CARD_RADIUS + 2,
+    borderRadius: P.radiusMd,
     borderWidth: 1,
-    padding: U.lg,
-    marginBottom: U.lg,
+    padding: P.cardPadding,
+    marginBottom: P.lg,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 6,
+    shadowRadius: P.md,
     elevation: 3,
   },
   cardVibrant: {
     position: 'relative',
     overflow: 'hidden',
     shadowOpacity: 0.06,
-    shadowRadius: 8,
+    shadowRadius: P.sm,
     elevation: 4,
-  },
-  cardAccent: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    borderTopLeftRadius: CARD_RADIUS + 2,
-    borderBottomLeftRadius: CARD_RADIUS + 2,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: U.sm,
-    marginBottom: U.sm,
+    gap: P.sm,
+    marginBottom: P.sm,
   },
   cardIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: CARD_RADIUS,
+    width: P.iconCard,
+    height: P.iconCard,
+    borderRadius: P.radiusMd,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   cardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: Typography.titleCard,
+    fontWeight: Typography.titleCardWeight,
   },
   cardSub: {
-    fontSize: 12,
-    marginBottom: U.md,
+    fontSize: Typography.label,
+    marginBottom: P.md,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: P.sm,
+    marginBottom: P.sm,
+    marginTop: P.section,
+  },
+  sectionTitleIconWrap: {
+    width: P.iconSection,
+    height: P.iconSection,
+    borderRadius: P.radiusSm,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sectionHeading: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.6,
-    marginBottom: U.sm,
-    marginTop: U.lg,
+    fontSize: Typography.titleSection,
+    fontWeight: Typography.titleSectionWeight,
+    letterSpacing: Typography.titleSectionLetterSpacing,
+    textTransform: 'uppercase',
+    flex: 1,
   },
   preferenceRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: U.sm,
+    gap: P.sm,
   },
   preferenceCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: U.sm,
-    marginBottom: U.xs,
+    gap: P.sm,
+    marginBottom: P.xs,
   },
   appearanceRow: {
     flexDirection: 'row',
-    gap: U.sm,
-    marginTop: U.sm,
+    gap: P.sm,
+    marginTop: P.sm,
   },
   appearanceOption: {
     flex: 1,
     flexDirection: 'column',
-    paddingVertical: U.md,
-    paddingHorizontal: U.sm,
-    borderRadius: CARD_RADIUS,
+    paddingVertical: P.md,
+    paddingHorizontal: P.sm,
+    borderRadius: P.radiusMd,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: U.sm,
+    gap: P.sm,
   },
   appearanceOptionSwatch: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+    width: P.swatch,
+    height: P.swatch,
+    borderRadius: Math.round(T * 0.59),
     justifyContent: 'center',
     alignItems: 'center',
   },
   appearanceOptionText: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: Typography.bodySmall,
+    fontWeight: Typography.buttonTextWeight,
   },
   appearanceOptionSelected: {
     shadowColor: themeYellow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
-    shadowRadius: 4,
+    shadowRadius: P.xs,
     elevation: 3,
   },
-  adminLinks: { marginTop: U.xs },
+  adminLinks: { marginTop: P.xs },
   adminLinkRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: U.sm,
+    paddingVertical: P.sm,
     paddingHorizontal: 0,
-    gap: U.sm,
+    gap: P.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   adminLinkIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: P.iconCard,
+    height: P.iconCard,
+    borderRadius: P.radiusSm,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  adminLinkLabel: { flex: 1, fontSize: 14, fontWeight: '600' },
-  input: { marginBottom: U.md },
+  adminLinkLabel: { flex: 1, fontSize: Typography.bodySmall, fontWeight: '600' },
+  input: { marginBottom: P.md },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: U.sm,
+    paddingVertical: P.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    marginBottom: U.xs,
+    marginBottom: P.xs,
   },
-  infoLabel: { fontSize: 13 },
-  infoValue: { fontSize: 14, fontWeight: '600' },
-  cardButton: { marginTop: U.sm },
+  infoLabel: { fontSize: Typography.bodySmall },
+  infoValue: { fontSize: Typography.bodySmall, fontWeight: '600' },
+  cardButton: { marginTop: P.sm },
   passportPhotoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: U.lg,
-    marginTop: U.sm,
+    gap: P.lg,
+    marginTop: P.sm,
   },
   passportPhotoWrap: {
-    width: 88,
-    height: 114,
-    borderRadius: CARD_RADIUS,
+    width: P.passportW,
+    height: P.passportH,
+    borderRadius: P.radiusMd,
     borderWidth: 1,
     overflow: 'hidden',
   },
@@ -876,7 +911,7 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
-    shadowRadius: 4,
+    shadowRadius: P.xs,
     elevation: 3,
   },
   passportPhoto: {
@@ -891,35 +926,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   passportPhotoPlaceholderText: {
-    fontSize: 11,
-    marginTop: U.xs,
+    fontSize: Typography.titleSection,
+    marginTop: P.xs,
   },
   passportUploadBtn: { flex: 1 },
   logoutCard: {
-    borderRadius: CARD_RADIUS,
+    borderRadius: P.radiusMd,
     borderWidth: 1,
-    marginBottom: U.lg,
+    marginBottom: P.lg,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 4,
+    shadowRadius: P.xs,
     elevation: 2,
   },
   logoutWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: U.sm,
-    paddingVertical: U.lg,
+    gap: P.sm,
+    paddingVertical: P.lg,
   },
   logoutIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: P.iconCard,
+    height: P.iconCard,
+    borderRadius: P.radiusSm,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  logoutText: { fontSize: 14, fontWeight: '600' },
+  logoutText: { fontSize: Typography.bodySmall, fontWeight: '600' },
+  logoutSpinner: { marginRight: P.sm },
 });

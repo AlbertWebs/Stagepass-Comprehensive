@@ -5,6 +5,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing, StagePassColors } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { useNavigationPress } from '@/src/utils/navigationPress';
 
 type Props = {
   eventToday: { id: number; name: string } | null;
@@ -14,6 +15,7 @@ type Props = {
 /** Team leader home: check-in + operations dashboard entry */
 export function LeaderHomeScreen({ eventToday, onOpenEvent }: Props) {
   const router = useRouter();
+  const handleNav = useNavigationPress();
   const { colors } = useStagePassTheme();
 
   return (
@@ -28,7 +30,7 @@ export function LeaderHomeScreen({ eventToday, onOpenEvent }: Props) {
           </ThemedText>
           <StagePassButton
             title="Check in / Event"
-            onPress={() => (onOpenEvent ? onOpenEvent(eventToday.id) : router.push(`/events/${eventToday.id}`))}
+            onPress={() => handleNav(() => (onOpenEvent ? onOpenEvent(eventToday.id) : router.push(`/events/${eventToday.id}`)))}
             variant="primary"
             style={styles.cta}
           />
@@ -43,7 +45,7 @@ export function LeaderHomeScreen({ eventToday, onOpenEvent }: Props) {
       </ThemedText>
       <StagePassButton
         title="Events"
-        onPress={() => router.push('/(tabs)/events')}
+        onPress={() => handleNav(() => router.push('/(tabs)/events'))}
         variant="outline"
         style={styles.opsBtn}
       />

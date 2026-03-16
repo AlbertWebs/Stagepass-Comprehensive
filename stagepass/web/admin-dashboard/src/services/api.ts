@@ -16,6 +16,35 @@ function setToken(token: string | null) {
 
 export { getToken, setToken };
 
+export type ReportType = 'events' | 'crew-attendance' | 'crew-payments' | 'tasks' | 'financial';
+
+export interface ReportFilters {
+  date_from?: string;
+  date_to?: string;
+  date?: string;
+  month?: number;
+  year?: number;
+  event_id?: number;
+  user_id?: number;
+  page?: number;
+  per_page?: number;
+}
+
+function reportParams(f?: ReportFilters): Record<string, string | number> {
+  if (!f) return {};
+  const p: Record<string, string | number> = {};
+  if (f.date_from) p.date_from = f.date_from;
+  if (f.date_to) p.date_to = f.date_to;
+  if (f.date) p.date = f.date;
+  if (f.month != null) p.month = f.month;
+  if (f.year != null) p.year = f.year;
+  if (f.event_id != null) p.event_id = f.event_id;
+  if (f.user_id != null) p.user_id = f.user_id;
+  if (f.page != null) p.page = f.page;
+  if (f.per_page != null) p.per_page = f.per_page;
+  return p;
+}
+
 function buildParams(params: Record<string, string | number | undefined>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(params)) {
@@ -67,6 +96,7 @@ export interface User {
   name: string;
   email: string;
   username?: string;
+  avatar_url?: string | null;
   roles?: Role[];
 }
 
@@ -88,6 +118,7 @@ export interface Event {
   latitude?: number;
   longitude?: number;
   geofence_radius: number;
+  daily_allowance?: number | null;
   team_leader_id?: number;
   client_id?: number | null;
   status: string;
@@ -358,6 +389,21 @@ export const api = {
   reports: {
     get: (from: string, to: string) =>
       request<ReportsData>('/reports', { params: { from, to } }),
+    reportTypes: ['events', 'crew-attendance', 'crew-payments', 'tasks', 'financial'] as const,
+    events: (f?: ReportFilters) =>
+      request<ReportEventsResponse>('/reports/events', { params: reportParams(f) }),
+    crewAttendance: (f?: ReportFilters) =>
+      request<ReportCrewAttendanceResponse>('/reports/crew-attendance', { params: reportParams(f) }),
+    crewPayments: (f?: ReportFilters) =>
+      request<ReportCrewPaymentsResponse>('/reports/crew-payments', { params: reportParams(f) }),
+    tasks: (f?: ReportFilters) =>
+      request<ReportTasksResponse>('/reports/tasks', { params: reportParams(f) }),
+    financial: (f?: ReportFilters) =>
+      request<ReportFinancialResponse>('/reports/financial', { params: reportParams(f) }),
+    exportHtml: (type: ReportType, f?: ReportFilters) =>
+      request<{ html: string; title: string }>('/reports/export', {
+        params: { ...reportParams(f), type, format: 'json' },
+      }),
   },
   checkins: {
     serverDate: () =>
@@ -503,6 +549,8 @@ export interface CheckinItem {
   date: string;
   checkin_time: string;
   checkin_time_iso?: string;
+  checkout_time?: string | null;
+  checkout_time_iso?: string | null;
   user_id: number;
   user_name: string;
   user_email?: string | null;
@@ -529,6 +577,9 @@ export interface DailyEmployeeStatusItem {
   checked_in: boolean;
   checkin_time: string | null;
   checkin_time_iso: string | null;
+  checked_out?: boolean;
+  checkout_time?: string | null;
+  checkout_time_iso?: string | null;
   is_off: boolean;
   expected_to_report: boolean;
 }
@@ -560,4 +611,83 @@ export interface ReportsData {
     by_day: { date: string; count: number }[];
     by_event: { event: string; arrivals: number }[];
   };
+}
+
+export interface ReportEventsResponse {
+  summary: { total_events: number; by_status: Record<string, number> };
+  by_day: { date: string; count: number }[];
+  data: Event[];
+  pagination: { current_page: number; last_page: number; per_page: number; total: number };
+}
+
+export interface ReportCrewAttendanceResponse {
+  summary: {
+    total_assignments: number;
+    total_checkins: number;
+    missed_checkins: number;
+    participation_rate: number;
+    total_hours: number;
+  };
+  by_day: { date: string; checkins: number; hours: number }[];
+  data: Array<{
+    id: number;
+    event_id: number;
+    user_id: number;
+    checkin_time: string | null;
+    checkout_time: string | null;
+    total_hours?: number | null;
+    event?: { id: number; name: string; date: string };
+    user?: { id: number; name: string };
+  }>;
+  pagination: { current_page: number; last_page: number; per_page: number; total: number };
+}
+
+export interface ReportCrewPaymentsResponse {
+  summary: {
+    total_count: number;
+    pending_count: number;
+    pending_total: number;
+    approved_count: number;
+    approved_total: number;
+    rejected_count: number;
+    rejected_total: number;
+    grand_total: number;
+  };
+  data: Array<{
+    id: number;
+    event_id: number;
+    user_id: number;
+    status: string;
+    total_amount: number;
+    payment_date?: string | null;
+    event?: { id: number; name: string; date: string };
+    user?: { id: number; name: string };
+  }>;
+  pagination: { current_page: number; last_page: number; per_page: number; total: number };
+}
+
+export interface ReportTasksResponse {
+  summary: { total: number; pending: number; in_progress: number; completed: number };
+  data: TaskItem[];
+  pagination: { current_page: number; last_page: number; per_page: number; total: number };
+}
+
+export interface ReportFinancialResponse {
+  summary: {
+    total_payments: number;
+    total_amount: number;
+    by_status: Record<string, { count: number; total: number }>;
+  };
+  by_day: { date: string; count: number; total: number }[];
+  data: Array<{
+    id: number;
+    event_id: number;
+    user_id: number;
+    status: string;
+    total_amount: number;
+    payment_date?: string | null;
+    event?: { id: number; name: string; date: string };
+    user?: { id: number; name: string };
+  }>;
+  pagination: { current_page: number; last_page: number; per_page: number; total: number };
 }

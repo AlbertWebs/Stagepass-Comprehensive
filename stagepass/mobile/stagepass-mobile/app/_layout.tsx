@@ -63,7 +63,7 @@ function RootLayoutNav() {
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="login" options={{ headerShown: false }} />
               <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
-              <Stack.Screen name="events/[id]" options={{ title: 'Event' }} />
+              <Stack.Screen name="events/[id]" options={{ title: 'Event details' }} />
               <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
             </Stack>
             {shouldRedirectToLogin && <Redirect href="/login" />}

@@ -120,7 +120,10 @@ export default function ManageCheckInScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Crew status</ThemedText>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+            <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Crew status</ThemedText>
+          </View>
           <ThemedText style={[styles.meta, { color: colors.textSecondary }]}>
             {checkedIn.length} checked in · {pending.length} pending
           </ThemedText>
@@ -134,7 +137,10 @@ export default function ManageCheckInScreen() {
           <>
             {pending.length > 0 && (
               <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Not checked in</ThemedText>
+                <View style={styles.sectionHeader}>
+                  <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                  <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Not checked in</ThemedText>
+                </View>
                 {pending.map((member) => (
                   <View
                     key={member.user_id}
@@ -176,7 +182,10 @@ export default function ManageCheckInScreen() {
 
             {checkedIn.length > 0 && (
               <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Checked in</ThemedText>
+                <View style={styles.sectionHeader}>
+                  <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                  <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Checked in</ThemedText>
+                </View>
                 {checkedIn.map((member) => (
                   <View
                     key={member.user_id}
@@ -201,7 +210,10 @@ export default function ManageCheckInScreen() {
 
             {crewStatus.some((c) => c.status === 'checked_out') && (
               <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Checked out</ThemedText>
+                <View style={styles.sectionHeader}>
+                  <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                  <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Checked out</ThemedText>
+                </View>
                 {crewStatus
                   .filter((c) => c.status === 'checked_out')
                   .map((member) => (
@@ -242,7 +254,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: Spacing.lg,
   },
-  sectionTitle: { fontSize: 17, fontWeight: '700', marginBottom: Spacing.xs },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.xs },
+  sectionTitleAccent: { width: 3, height: 16, borderRadius: 0 },
+  sectionTitle: { fontSize: 17, fontWeight: '700', flex: 1 },
   meta: { fontSize: 13, marginBottom: Spacing.sm },
   empty: { fontSize: 14 },
   row: {

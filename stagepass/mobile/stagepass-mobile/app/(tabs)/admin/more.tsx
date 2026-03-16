@@ -12,6 +12,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BorderRadius, Spacing, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 
 const LINKS = [
   { label: 'Events', icon: 'calendar-outline' as const, href: '/admin/events' },
@@ -25,6 +26,7 @@ const LINKS = [
 export default function AdminMoreScreen() {
   const router = useRouter();
   const { colors } = useStagePassTheme();
+  const handleNav = useNavigationPress();
   const insets = useSafeAreaInsets();
   const cardBg = colors.surface;
   const cardBorder = colors.border;
@@ -39,11 +41,11 @@ export default function AdminMoreScreen() {
         {LINKS.map((item) => (
           <Pressable
             key={item.href}
-            onPress={() => router.push(item.href as any)}
+            onPress={() => handleNav(() => router.push(item.href as any))}
             style={({ pressed }) => [
               styles.row,
               { borderBottomColor: cardBorder },
-              pressed && { opacity: 0.7 },
+              pressed && { opacity: NAV_PRESSED_OPACITY },
             ]}
           >
             <Ionicons name={item.icon} size={22} color={themeYellow} />

@@ -44,6 +44,7 @@ export default function EventDetail() {
   const [error, setError] = useState<string | null>(null);
   const [teamLeaderSaving, setTeamLeaderSaving] = useState(false);
   const [clientSaving, setClientSaving] = useState(false);
+  const [dailyAllowanceSaving, setDailyAllowanceSaving] = useState(false);
   const [checklistItems, setChecklistItems] = useState<EventChecklistItem[]>([]);
   const [checklistLoading, setChecklistLoading] = useState(false);
   const [checklistCreating, setChecklistCreating] = useState(false);
@@ -217,6 +218,22 @@ export default function EventDetail() {
       setError(err instanceof Error ? err.message : 'Failed to update client');
     } finally {
       setClientSaving(false);
+    }
+  };
+
+  const handleDailyAllowanceChange = async (value: string) => {
+    if (!event) return;
+    const num = value.trim() === '' ? null : Number(value);
+    if (value.trim() !== '' && (Number.isNaN(num) || (num !== null && num < 0))) return;
+    setDailyAllowanceSaving(true);
+    setError(null);
+    try {
+      await api.events.update(event.id, { daily_allowance: num } as Partial<Event>);
+      fetchEvent();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update daily allowance');
+    } finally {
+      setDailyAllowanceSaving(false);
     }
   };
 
@@ -436,6 +453,30 @@ export default function EventDetail() {
                   {clientSaving && (
                     <span className="ml-2 text-xs text-slate-500">Saving…</span>
                   )}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wider text-brand-600">Daily allowance (KES)</dt>
+                <dd className="mt-1 flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    className="form-input w-32"
+                    aria-label="Daily allowance in KES"
+                    value={event.daily_allowance != null ? String(event.daily_allowance) : ''}
+                    onChange={(e) => {
+                    const v = e.target.value;
+                    const num = v === '' ? null : Number(v);
+                    setEvent((prev) => (prev ? { ...prev, daily_allowance: num === null || !Number.isNaN(num) ? num : prev.daily_allowance } : null));
+                  }}
+                    onBlur={(e) => handleDailyAllowanceChange(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                  />
+                  {dailyAllowanceSaving && (
+                    <span className="text-xs text-slate-500">Saving…</span>
+                  )}
+                  <span className="text-xs text-slate-500">Shown to crew on mobile for this event</span>
                 </dd>
               </div>
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">

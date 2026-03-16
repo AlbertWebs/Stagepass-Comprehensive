@@ -25,12 +25,11 @@ import { getDevicePushTokenAsync } from '~/utils/pushToken';
 import { getLastUsername, getLoginLockoutUntil, saveToken, setLastUsername, setLoginLockoutUntil } from '~/store/persistAuth';
 import { ThemedText } from '@/components/themed-text';
 import { useThemePreference } from '@/context/ThemePreferenceContext';
-import { BorderRadius, themeBlue, themeYellow } from '@/constants/theme';
+import { Buttons, Cards, Form, Icons, Typography, UI } from '@/constants/ui';
+import { Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 
-const U = { xs: 6, sm: 8, md: 12, lg: 14, xl: 16, section: 24 };
-const CARD_RADIUS = 12;
-const INPUT_RADIUS = 10;
 const PIN_LENGTH = 4;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
@@ -44,6 +43,7 @@ export default function LoginScreen() {
   const [isExiting, setIsExiting] = useState(false);
   const dispatch = useDispatch();
   const router = useRouter();
+  const handleNav = useNavigationPress();
   const exitOpacity = useSharedValue(1);
   const exitTranslateY = useSharedValue(0);
   const { colors, isDark } = useStagePassTheme();
@@ -102,8 +102,14 @@ export default function LoginScreen() {
       setAuthToken(res.token);
       await saveToken(res.token);
       await setLastUsername(trimmedUser);
-      const me = await api.auth.me();
-      dispatch(setCredentials({ user: me, token: res.token }));
+      let user = res.user;
+      try {
+        const me = await api.auth.me();
+        user = me;
+      } catch {
+        // /me failed; use login user. Home will refetch /me on focus and get office check-in state.
+      }
+      dispatch(setCredentials({ user, token: res.token }));
       setFailedAttempts(0);
       setIsExiting(true);
       return;
@@ -167,7 +173,7 @@ export default function LoginScreen() {
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingTop: insets.top + U.lg, paddingBottom: insets.bottom + U.xxl },
+            { paddingTop: insets.top + Spacing.lg, paddingBottom: insets.bottom + Spacing.xl * 2 },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -178,7 +184,7 @@ export default function LoginScreen() {
             <Pressable onPress={toggleTheme} style={({ pressed }) => [styles.themeBtn, { opacity: pressed ? 0.7 : 1 }]}>
               <Ionicons
                 name={isDark ? 'moon' : 'sunny'}
-                size={24}
+                size={Icons.xl}
                 color={isDark ? '#fff' : colors.text}
               />
             </Pressable>
@@ -187,9 +193,9 @@ export default function LoginScreen() {
           {/* Logo + wordmark */}
           <View style={styles.logoSection}>
             <View style={[styles.logoBox, { backgroundColor: accentColor }]}>
-              <Ionicons name="ticket" size={32} color="#fff" />
+              <Ionicons name="ticket" size={Icons.large} color="#fff" />
             </View>
-            <ThemedText style={[styles.wordmark, { color: isDark ? '#fff' : colors.text }]}>
+            <ThemedText type="titleLarge" style={[styles.wordmark, { color: isDark ? '#fff' : colors.text }]}>
               StagePass
             </ThemedText>
           </View>
@@ -197,14 +203,14 @@ export default function LoginScreen() {
           {/* Form card */}
           <View style={[styles.card, { backgroundColor: cardBg, borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)' }]}>
             <ThemedText style={[styles.welcomeTitle, { color: titleColor }]}>Welcome Back</ThemedText>
-            <ThemedText style={[styles.welcomeSubtitle, { color: subtitleColor }]}>
+            <ThemedText type="bodySmall" style={[styles.welcomeSubtitle, { color: subtitleColor }]}>
               Log in to manage your events and tickets
             </ThemedText>
 
             <View style={styles.fieldGroup}>
-              <ThemedText style={[styles.fieldLabel, { color: subtitleColor }]}>Username</ThemedText>
+              <ThemedText type="label" style={[styles.fieldLabel, { color: subtitleColor }]}>Username</ThemedText>
               <View style={[styles.inputRow, { backgroundColor: inputBg, borderColor: inputBorder }]}>
-                <Ionicons name="person-outline" size={20} color={accentColor} style={styles.inputIcon} />
+                <Ionicons name="person-outline" size={Icons.standard} color={accentColor} style={styles.inputIcon} />
                 <TextInput
                   placeholder="Enter your username"
                   placeholderTextColor={colors.placeholder}
@@ -221,13 +227,13 @@ export default function LoginScreen() {
 
             <View style={styles.fieldGroup}>
               <View style={styles.pinLabelRow}>
-                <ThemedText style={[styles.fieldLabel, { color: subtitleColor }]}>4-Digit PIN</ThemedText>
-                <Pressable onPress={() => router.push('/forgot-password')} hitSlop={8} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-                  <ThemedText style={[styles.forgotLink, { color: accentColor }]}>Forgot PIN?</ThemedText>
+                <ThemedText type="label" style={[styles.fieldLabel, { color: subtitleColor }]}>4-Digit PIN</ThemedText>
+                <Pressable onPress={() => handleNav(() => router.push('/forgot-password'))} hitSlop={8} style={({ pressed }) => ({ opacity: pressed ? NAV_PRESSED_OPACITY : 1 })}>
+                  <ThemedText type="link" style={[styles.forgotLink, { color: accentColor }]}>Forgot PIN?</ThemedText>
                 </Pressable>
               </View>
               <View style={[styles.inputRow, { backgroundColor: inputBg, borderColor: inputBorder }]}>
-                <Ionicons name="lock-closed-outline" size={20} color={accentColor} style={styles.inputIcon} />
+                <Ionicons name="lock-closed-outline" size={Icons.standard} color={accentColor} style={styles.inputIcon} />
                 <TextInput
                   placeholder="••••"
                   placeholderTextColor={colors.placeholder}
@@ -243,7 +249,7 @@ export default function LoginScreen() {
             </View>
 
             {isLocked ? (
-              <ThemedText style={[styles.lockoutText, { color: colors.error }]}>
+              <ThemedText type="bodySmall" style={[styles.lockoutText, { color: colors.error }]}>
                 Try again in {lockoutMinsLeft} minute{lockoutMinsLeft !== 1 ? 's' : ''}
               </ThemedText>
             ) : (
@@ -258,12 +264,12 @@ export default function LoginScreen() {
                 {loading ? (
                   <>
                     <ActivityIndicator size="small" color="#fff" style={styles.loginSpinner} />
-                    <ThemedText style={styles.loginBtnText}>Loading…</ThemedText>
+                    <ThemedText type="buttonText" style={styles.loginBtnText}>Loading…</ThemedText>
                   </>
                 ) : (
                   <>
-                    <ThemedText style={styles.loginBtnText}>Sign In</ThemedText>
-                    <Ionicons name="arrow-forward" size={20} color="#fff" />
+                    <ThemedText type="buttonText" style={styles.loginBtnText}>Sign In</ThemedText>
+                    <Ionicons name="arrow-forward" size={Icons.standard} color="#fff" />
                   </>
                 )}
               </Pressable>
@@ -272,17 +278,17 @@ export default function LoginScreen() {
 
           {/* Footer */}
           <View style={styles.footer}>
-            <ThemedText style={[styles.footerText, { color: subtitleColor }]}>New to StagePass?</ThemedText>
-            <Pressable onPress={() => router.push('/forgot-password')} hitSlop={8} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-              <ThemedText style={[styles.footerLink, { color: accentColor }]}>Request Access</ThemedText>
+            <ThemedText type="bodySmall" style={[styles.footerText, { color: subtitleColor }]}>New to StagePass?</ThemedText>
+            <Pressable onPress={() => handleNav(() => router.push('/forgot-password'))} hitSlop={8} style={({ pressed }) => ({ opacity: pressed ? NAV_PRESSED_OPACITY : 1 })}>
+              <ThemedText type="link" style={[styles.footerLink, { color: accentColor }]}>Request Access</ThemedText>
             </Pressable>
           </View>
           <View style={styles.footerIcons}>
             <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-              <Ionicons name="help-circle-outline" size={22} color={subtitleColor} />
+              <Ionicons name="help-circle-outline" size={Icons.header} color={subtitleColor} />
             </Pressable>
             <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-              <Ionicons name="globe-outline" size={22} color={subtitleColor} />
+              <Ionicons name="globe-outline" size={Icons.header} color={subtitleColor} />
             </Pressable>
           </View>
         </ScrollView>
@@ -298,13 +304,13 @@ const styles = StyleSheet.create({
   keyboard: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: U.xl,
+    paddingHorizontal: Spacing.xl,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: U.section,
+    marginBottom: UI.sectionGap,
   },
   headerSpacer: { width: 40 },
   themeBtn: {
@@ -315,96 +321,93 @@ const styles = StyleSheet.create({
   },
   logoSection: {
     alignItems: 'center',
-    marginBottom: U.section,
+    marginBottom: UI.sectionGap,
   },
   logoBox: {
     width: 64,
     height: 64,
-    borderRadius: 16,
+    borderRadius: Cards.borderRadius,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: U.md,
+    marginBottom: Spacing.md,
   },
   wordmark: {
-    fontSize: 22,
-    fontWeight: '700',
+    fontSize: Typography.titleHero,
+    fontWeight: Typography.titleLargeWeight,
     letterSpacing: 0.5,
   },
   card: {
-    borderRadius: CARD_RADIUS,
-    padding: U.xl,
-    marginBottom: U.section,
+    borderRadius: Cards.borderRadius,
+    padding: Cards.padding,
+    marginBottom: UI.sectionGap,
     borderWidth: StyleSheet.hairlineWidth,
   },
   welcomeTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: U.sm,
+    fontSize: Typography.titleWelcome,
+    fontWeight: Typography.titleWelcomeWeight,
+    marginBottom: Spacing.sm,
   },
   welcomeSubtitle: {
-    fontSize: 14,
-    marginBottom: U.xl,
+    marginBottom: Spacing.xl,
   },
-  fieldGroup: { marginBottom: U.lg },
-  fieldLabel: { fontSize: 13, fontWeight: '600', marginBottom: U.sm },
+  fieldGroup: { marginBottom: Spacing.lg },
+  fieldLabel: { marginBottom: Spacing.sm },
   pinLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: U.sm,
+    marginBottom: Spacing.sm,
   },
-  forgotLink: { fontSize: 14, fontWeight: '600' },
+  forgotLink: {},
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: INPUT_RADIUS,
-    minHeight: 48,
+    borderRadius: Form.inputBorderRadius,
+    minHeight: Form.inputMinHeight,
   },
-  inputIcon: { marginLeft: U.lg },
+  inputIcon: { marginLeft: Spacing.lg },
   input: {
     flex: 1,
-    fontSize: 16,
-    paddingHorizontal: U.md,
-    paddingVertical: U.md,
+    fontSize: Form.inputText,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
   },
   pinInput: { letterSpacing: 4 },
   lockoutText: {
-    fontSize: 14,
-    fontWeight: '600',
     textAlign: 'center',
-    marginTop: U.lg,
+    marginTop: Spacing.lg,
   },
   loginBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: U.sm,
-    marginTop: U.lg,
-    minHeight: 52,
-    borderRadius: INPUT_RADIUS,
+    gap: UI.rowGap,
+    marginTop: Spacing.lg,
+    minHeight: Buttons.minHeight,
+    borderRadius: Form.inputBorderRadius,
   },
   loginBtnText: {
-    fontSize: 17,
-    fontWeight: '700',
+    fontSize: Buttons.fontSize,
+    fontWeight: Buttons.fontWeight,
     color: '#fff',
   },
   loginSpinner: {
-    marginRight: U.sm,
+    marginRight: UI.rowGap,
   },
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: U.sm,
-    marginBottom: U.md,
+    gap: UI.rowGap,
+    marginBottom: Spacing.md,
   },
-  footerText: { fontSize: 14 },
-  footerLink: { fontSize: 14, fontWeight: '700' },
+  footerText: {},
+  footerLink: {},
   footerIcons: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: U.xl,
+    gap: Spacing.xl,
   },
 });

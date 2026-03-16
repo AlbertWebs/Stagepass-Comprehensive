@@ -17,13 +17,13 @@ import { EventCard, type EventDisplayStatus } from '@/components/EventCard';
 import { StagepassLoader } from '@/components/StagepassLoader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { StatusColors, themeBlue, themeYellow } from '@/constants/theme';
+import { Cards, Icons, Typography, UI } from '@/constants/ui';
+import { Spacing, StatusColors, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { useNavigationPress } from '@/src/utils/navigationPress';
 import { useAppRole } from '~/hooks/useAppRole';
 
 const TAB_BAR_HEIGHT = 58;
-const U = { xs: 6, sm: 8, md: 12, lg: 14, xl: 16, section: 24 };
-const CARD_RADIUS = 12;
 
 function eventMatchesDate(event: Event, date: Date): boolean {
   try {
@@ -60,6 +60,7 @@ function getEventDisplayStatus(event: Event, userId: number | undefined): EventD
 
 export default function EventsTab() {
   const router = useRouter();
+  const handleNav = useNavigationPress();
   const { colors } = useStagePassTheme();
   const role = useAppRole();
   const userId = useSelector((s: { auth: { user: { id: number } | null } }) => s.auth.user?.id);
@@ -74,11 +75,12 @@ export default function EventsTab() {
   const canAccessSettings = role === 'super_admin' || role === 'director' || role === 'admin';
 
   useEffect(() => {
-    if (!canAccessSettings) return;
-    api.settings.get().then((s) => {
-      const v = s?.daily_allowance ?? s?.default_daily_allowance;
-      setDailyAllowance(v != null ? (typeof v === 'number' ? v : Number(v) || v) : null);
-    }).catch(() => {});
+    if (canAccessSettings) {
+      api.settings.get().then((s) => {
+        const v = s?.daily_allowance ?? s?.default_daily_allowance;
+        setDailyAllowance(v != null ? (typeof v === 'number' ? v : Number(v) || v) : null);
+      }).catch(() => {});
+    }
   }, [canAccessSettings]);
 
   const loadEvents = useCallback(async () => {
@@ -112,6 +114,17 @@ export default function EventsTab() {
     }
     return list;
   }, [events, selectedDate, eventFilter]);
+
+  const dailyAllowanceFromEvents = useMemo(() => {
+    if (!isCrewOrTeamLeader || eventsOnSelectedDate.length === 0) return null;
+    const firstWithAllowance = eventsOnSelectedDate.find(
+      (e) => e.daily_allowance != null && Number(e.daily_allowance) > 0
+    );
+    const v = firstWithAllowance?.daily_allowance;
+    return v != null ? (typeof v === 'number' ? v : Number(v) || null) : null;
+  }, [isCrewOrTeamLeader, eventsOnSelectedDate]);
+
+  const displayDailyAllowance = canAccessSettings ? dailyAllowance : dailyAllowanceFromEvents;
 
   if (loading) {
     return <StagepassLoader message="Loading events…" fullScreen />;
@@ -163,12 +176,12 @@ export default function EventsTab() {
         {isCrewOrTeamLeader && (
           <View style={[styles.allowanceCard, { backgroundColor: colors.surface, borderColor: colors.border, borderLeftColor: StatusColors.checkedIn }]}>
             <View style={[styles.allowanceIconWrap, { backgroundColor: StatusColors.checkedIn + '18', borderColor: StatusColors.checkedIn + '35' }]}>
-              <Ionicons name="wallet-outline" size={18} color={StatusColors.checkedIn} />
+              <Ionicons name="wallet-outline" size={Icons.header} color={StatusColors.checkedIn} />
             </View>
             <View style={styles.allowanceTextWrap}>
               <ThemedText style={[styles.allowanceValue, { color: colors.text }]}>
-                {dailyAllowance != null
-                  ? (typeof dailyAllowance === 'number' ? `KES ${dailyAllowance}` : String(dailyAllowance))
+                {displayDailyAllowance != null
+                  ? `KES ${Number(displayDailyAllowance).toLocaleString()}`
                   : '0.00 KES'}
               </ThemedText>
               <ThemedText style={[styles.allowanceLabel, { color: colors.textSecondary }]}>DAILY ALLOWANCE</ThemedText>
@@ -178,7 +191,7 @@ export default function EventsTab() {
 
         <View style={styles.sectionHeader}>
           <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
-          <Ionicons name="calendar" size={18} color={themeYellow} style={styles.sectionIcon} />
+          <Ionicons name="calendar" size={Icons.header} color={themeYellow} style={styles.sectionIcon} />
           <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>
             {sectionTitle}
           </ThemedText>
@@ -187,7 +200,7 @@ export default function EventsTab() {
         {events.length === 0 ? (
           <View style={styles.emptyWrap}>
             <View style={[styles.emptyIconWrap, { backgroundColor: colors.surface, borderColor: themeYellow }]}>
-              <Ionicons name="calendar-outline" size={36} color={themeYellow} />
+              <Ionicons name="calendar-outline" size={Icons.large} color={themeYellow} />
             </View>
             <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>
               No events yet
@@ -216,7 +229,7 @@ export default function EventsTab() {
         ) : eventsOnSelectedDate.length === 0 ? (
           <View style={styles.emptyWrap}>
             <View style={[styles.emptyIconWrapSmall, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Ionicons name="today-outline" size={26} color={colors.textSecondary} />
+              <Ionicons name="today-outline" size={Icons.xl} color={colors.textSecondary} />
             </View>
             <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>
               No events on this day
@@ -250,7 +263,7 @@ export default function EventsTab() {
                   status: item.status,
                 }}
                 displayStatus={getEventDisplayStatus(item, userId)}
-                onPress={() => router.push({ pathname: '/events/[id]', params: { id: String(item.id) } })}
+                onPress={() => handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(item.id) } }))}
               />
             ))}
           </ScrollView>
@@ -264,42 +277,42 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   content: {
     flex: 1,
-    paddingHorizontal: U.lg,
+    paddingHorizontal: Spacing.lg,
   },
   dateStripWrap: {
-    marginHorizontal: -U.lg,
-    paddingBottom: U.sm,
+    marginHorizontal: -Spacing.lg,
+    paddingBottom: Spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(234, 179, 8, 0.2)',
   },
   filterRow: {
     flexDirection: 'row',
-    gap: U.sm,
-    marginTop: U.md,
-    marginBottom: U.sm,
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.sm,
   },
   filterTab: {
     flex: 1,
-    paddingVertical: U.sm,
-    paddingHorizontal: U.xs,
-    borderRadius: CARD_RADIUS,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.xs,
+    borderRadius: Cards.borderRadius,
     borderWidth: 1,
     alignItems: 'center',
   },
   filterTabText: {
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: Typography.label,
+    fontWeight: Typography.labelWeight,
   },
   allowanceCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: U.md,
-    padding: U.lg,
-    borderRadius: CARD_RADIUS,
+    gap: Spacing.md,
+    padding: Spacing.lg,
+    borderRadius: Cards.borderRadius,
     borderWidth: 1,
     borderLeftWidth: 4,
-    marginTop: U.md,
-    marginBottom: U.lg,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.lg,
   },
   allowanceIconWrap: {
     width: 36,
@@ -313,35 +326,36 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   allowanceValue: {
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: Typography.body,
+    fontWeight: Typography.titleCardWeight,
     letterSpacing: 0.2,
   },
   allowanceLabel: {
-    fontSize: 9,
-    fontWeight: '700',
+    fontSize: Typography.labelSmall,
+    fontWeight: Typography.labelSmallWeight,
     letterSpacing: 0.5,
     marginTop: 2,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: U.lg,
-    marginBottom: U.md,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   sectionTitleAccent: {
     width: 3,
     height: 16,
     borderRadius: 2,
-    marginRight: U.sm,
+    marginRight: Spacing.sm,
   },
   sectionIcon: {
-    marginRight: U.xs,
+    marginRight: Spacing.xs,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 0.3,
+    fontSize: Typography.titleSection,
+    fontWeight: Typography.titleSectionWeight,
+    letterSpacing: Typography.titleSectionLetterSpacing,
+    textTransform: 'uppercase',
   },
   list: {
     paddingBottom: 0,
@@ -350,7 +364,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: U.section * 2,
+    paddingVertical: Spacing.xxl * 2,
   },
   emptyIconWrap: {
     width: 76,
@@ -359,7 +373,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    marginBottom: U.lg,
+    marginBottom: Spacing.lg,
     shadowColor: themeYellow,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.2,
@@ -373,25 +387,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    marginBottom: U.md,
+    marginBottom: Spacing.md,
   },
   emptyTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    marginBottom: U.sm,
+    fontSize: Typography.titleCard,
+    fontWeight: Typography.titleCardWeight,
+    marginBottom: Spacing.sm,
     letterSpacing: 0.2,
   },
   emptySub: {
-    fontSize: 13,
+    fontSize: Typography.bodySmall,
     textAlign: 'center',
     maxWidth: 260,
-    marginBottom: U.lg,
+    marginBottom: Spacing.lg,
     lineHeight: 20,
   },
   emptyButton: {
-    paddingVertical: U.md,
-    paddingHorizontal: U.xl,
-    borderRadius: CARD_RADIUS,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: Cards.borderRadius,
     shadowColor: themeBlue,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -402,11 +416,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: U.sm,
+    gap: Spacing.sm,
   },
   emptyButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: Typography.bodySmall,
+    fontWeight: Typography.buttonTextWeight,
     color: themeBlue,
   },
 });

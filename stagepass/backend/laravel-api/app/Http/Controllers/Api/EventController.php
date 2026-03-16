@@ -81,6 +81,7 @@ class EventController extends Controller
             'latitude' => 'nullable|numeric',
             'longitude' => 'nullable|numeric',
             'geofence_radius' => 'nullable|integer|min:50|max:5000',
+            'daily_allowance' => 'nullable|numeric|min:0',
             'team_leader_id' => 'nullable|exists:users,id',
             'client_id' => 'nullable|exists:clients,id',
         ]);
@@ -143,6 +144,7 @@ class EventController extends Controller
             'latitude' => 'nullable|numeric',
             'longitude' => 'nullable|numeric',
             'geofence_radius' => 'nullable|integer|min:50|max:5000',
+            'daily_allowance' => 'nullable|numeric|min:0',
             'team_leader_id' => 'nullable|exists:users,id',
             'client_id' => 'nullable|exists:clients,id',
             'status' => 'sometimes|in:created,active,completed,closed',

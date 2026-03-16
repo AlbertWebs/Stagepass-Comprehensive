@@ -68,10 +68,11 @@ function downloadCheckinsCsv(
           '',
         ]
       : [];
-  const headers = ['Date', 'Time', 'User', 'Type', 'Event', 'Location'];
+  const headers = ['Date', 'Check-in', 'Checkout', 'User', 'Type', 'Event', 'Location'];
   const dataRows = checkins.map((c) => [
     c.date,
     c.checkin_time,
+    c.checkout_time ?? '—',
     c.user_name,
     c.type === 'office' ? 'Office' : 'Event',
     c.event_name ?? '—',
@@ -431,15 +432,25 @@ export default function Checkins() {
                         ) : (
                           <span
                             className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
-                              emp.checked_in ? OFFICE_COLOR : 'bg-slate-100 text-slate-600 border-slate-200'
+                              emp.checked_out
+                                ? 'bg-slate-100 text-slate-700 border-slate-300'
+                                : emp.checked_in
+                                  ? OFFICE_COLOR
+                                  : 'bg-slate-100 text-slate-600 border-slate-200'
                             }`}
                           >
-                            {emp.checked_in ? 'Checked in' : 'Not checked in'}
+                            {emp.checked_out ? 'Checked out' : emp.checked_in ? 'Checked in' : 'Not checked in'}
                           </span>
                         )}
                       </td>
                       <td className="whitespace-nowrap px-6 py-3 text-slate-700">
-                        {emp.is_off ? '—' : emp.checked_in && emp.checkin_time ? emp.checkin_time : '—'}
+                        {emp.is_off
+                          ? '—'
+                          : emp.checked_in && emp.checkin_time
+                            ? emp.checkout_time
+                              ? `${emp.checkin_time} – ${emp.checkout_time}`
+                              : emp.checkin_time
+                            : '—'}
                       </td>
                       <td className="px-6 py-3">
                         <button
@@ -522,7 +533,8 @@ export default function Checkins() {
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50/80">
                 <th className="px-6 py-3 font-semibold text-slate-700">Date</th>
-                <th className="px-6 py-3 font-semibold text-slate-700">Time</th>
+                <th className="px-6 py-3 font-semibold text-slate-700">Check-in</th>
+                <th className="px-6 py-3 font-semibold text-slate-700">Checkout</th>
                 <th className="px-6 py-3 font-semibold text-slate-700">User</th>
                 <th className="px-6 py-3 font-semibold text-slate-700">Type</th>
                 <th className="px-6 py-3 font-semibold text-slate-700">Event</th>
@@ -532,7 +544,7 @@ export default function Checkins() {
             <tbody>
               {checkins.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
                     No check-ins for the selected period.
                   </td>
                 </tr>
@@ -541,6 +553,7 @@ export default function Checkins() {
                 <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50/50">
                   <td className="whitespace-nowrap px-6 py-3 text-slate-900">{formatDisplayDate(c.date)}</td>
                   <td className="whitespace-nowrap px-6 py-3 text-slate-700">{c.checkin_time}</td>
+                  <td className="whitespace-nowrap px-6 py-3 text-slate-700">{c.checkout_time ?? '—'}</td>
                   <td className="px-6 py-3">
                     <span className="font-medium text-slate-900">{c.user_name}</span>
                     {c.user_email && <span className="block text-xs text-slate-500">{c.user_email}</span>}

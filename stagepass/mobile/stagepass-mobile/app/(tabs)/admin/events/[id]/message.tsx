@@ -125,7 +125,10 @@ export default function EventMessageScreen() {
         </View>
 
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Send to</ThemedText>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+            <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Send to</ThemedText>
+          </View>
 
           <Pressable
             onPress={() => { setSendToAll(true); setSelectedIds(new Set()); }}
@@ -152,7 +155,10 @@ export default function EventMessageScreen() {
 
         {!sendToAll && crew.length > 0 && (
           <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Crew members</ThemedText>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+              <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Crew members</ThemedText>
+            </View>
             <ThemedText style={[styles.hint, { color: colors.textSecondary }]}>
               Tap to select who will receive the message.
             </ThemedText>
@@ -213,7 +219,9 @@ const styles = StyleSheet.create({
   },
   label: { fontSize: 14, fontWeight: '600', marginBottom: Spacing.xs },
   input: { minHeight: 100, textAlignVertical: 'top' },
-  sectionTitle: { fontSize: 17, fontWeight: '700', marginBottom: Spacing.sm },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm },
+  sectionTitleAccent: { width: 3, height: 16, borderRadius: 0 },
+  sectionTitle: { fontSize: 17, fontWeight: '700', flex: 1 },
   optionRow: {
     flexDirection: 'row',
     alignItems: 'center',

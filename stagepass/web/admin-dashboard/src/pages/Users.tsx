@@ -177,6 +177,14 @@ export default function Users({
     }
   };
 
+  function getInitials(u: User): string {
+    const n = (u.name || '').trim();
+    if (!n) return '?';
+    const parts = n.split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    return n.slice(0, 2).toUpperCase();
+  }
+
   const formContent = (
     <div className="form-card-body">
       {error && <div className="form-error-banner mb-5">{error}</div>}
@@ -325,6 +333,7 @@ export default function Users({
           <table className="w-full table-header-brand">
             <thead>
               <tr>
+                <th className="w-14">Photo</th>
                 <th>Name</th>
                 <th>Email</th>
                 <th>Username</th>
@@ -335,6 +344,19 @@ export default function Users({
             <tbody>
               {users.map((u) => (
                 <tr key={u.id} className="border-b border-slate-100 transition hover:bg-slate-50/60">
+                  <td className="px-6 py-4">
+                    <span className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-200 text-sm font-medium text-slate-600">
+                      {u.avatar_url ? (
+                        <img
+                          src={u.avatar_url}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        getInitials(u)
+                      )}
+                    </span>
+                  </td>
                   <td className="px-6 py-4 font-medium text-slate-900">{u.name}</td>
                   <td className="px-6 py-4 text-slate-600">{u.email}</td>
                   <td className="px-6 py-4 text-slate-600">{u.username ?? '–'}</td>

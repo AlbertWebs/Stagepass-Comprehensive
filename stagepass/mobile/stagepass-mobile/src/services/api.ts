@@ -367,8 +367,36 @@ export const api = {
     delete: (id: number) => request<unknown>(`/equipment/${id}`, { method: 'DELETE' }),
   },
   reports: {
+    /** Legacy combined report (from/to required) */
     get: (params?: { from?: string; to?: string }) =>
       request<ReportsData>('/reports', { params: params as Record<string, string> | undefined }),
+    /** Event report with filters */
+    events: (params?: ReportFilters) =>
+      request<ReportEventsResponse>('/reports/events', { params: reportParams(params) }),
+    /** Crew attendance report */
+    crewAttendance: (params?: ReportFilters) =>
+      request<ReportCrewAttendanceResponse>('/reports/crew-attendance', { params: reportParams(params) }),
+    /** Crew payment report */
+    crewPayments: (params?: ReportFilters) =>
+      request<ReportCrewPaymentsResponse>('/reports/crew-payments', { params: reportParams(params) }),
+    /** Task report */
+    tasks: (params?: ReportFilters) =>
+      request<ReportTasksResponse>('/reports/tasks', { params: reportParams(params) }),
+    /** Financial summary report */
+    financial: (params?: ReportFilters) =>
+      request<ReportFinancialResponse>('/reports/financial', { params: reportParams(params) }),
+    /** Export as printable HTML (open in browser / share as PDF) */
+    exportUrl: (type: ReportType, params?: ReportFilters): string => {
+      const base = typeof getApiBase === 'function' ? getApiBase() : '';
+      const q = new URLSearchParams(reportParams(params) || {});
+      q.set('type', type);
+      const token = getAuthToken();
+      return `${base}/api/reports/export?${q.toString()}` + (token ? `&token=${encodeURIComponent(token)}` : '');
+    },
+    exportHtml: (type: ReportType, params?: ReportFilters) =>
+      request<{ html: string; title: string }>('/reports/export', {
+        params: { ...reportParams(params), type, format: 'json' } as Record<string, string>,
+      }),
   },
   timeoff: {
     list: () => request<{ data: TimeOffRequest[] }>('/timeoff'),
@@ -577,6 +605,7 @@ export interface Event {
   latitude?: number;
   longitude?: number;
   geofence_radius: number;
+  daily_allowance?: number | null;
   team_leader_id?: number;
   status: string;
   team_leader?: { id: number; name: string };
@@ -645,6 +674,83 @@ export interface Communication {
 
 export interface ReportsData {
   [key: string]: unknown;
+}
+
+export type ReportType = 'events' | 'crew-attendance' | 'crew-payments' | 'tasks' | 'financial';
+
+export interface ReportFilters {
+  date_from?: string;
+  date_to?: string;
+  month?: number;
+  year?: number;
+  date?: string;
+  event_id?: number;
+  user_id?: number;
+  per_page?: number;
+  page?: number;
+}
+
+function reportParams(f?: ReportFilters | null): Record<string, string> | undefined {
+  if (!f) return undefined;
+  const out: Record<string, string> = {};
+  if (f.date_from) out.date_from = f.date_from;
+  if (f.date_to) out.date_to = f.date_to;
+  if (f.month != null) out.month = String(f.month);
+  if (f.year != null) out.year = String(f.year);
+  if (f.date) out.date = f.date;
+  if (f.event_id != null) out.event_id = String(f.event_id);
+  if (f.user_id != null) out.user_id = String(f.user_id);
+  if (f.per_page != null) out.per_page = String(f.per_page);
+  if (f.page != null) out.page = String(f.page);
+  return Object.keys(out).length ? out : undefined;
+}
+
+export interface ReportEventsResponse {
+  summary: { total_events: number; by_status: Record<string, number> };
+  by_day: { date: string; count: number }[];
+  data: Event[];
+  pagination?: { current_page: number; last_page: number; per_page: number; total: number };
+}
+
+export interface ReportCrewAttendanceResponse {
+  summary: {
+    total_assignments: number;
+    total_checkins: number;
+    missed_checkins: number;
+    participation_rate: number;
+    total_hours: number;
+  };
+  by_day: { date: string; checkins: number; hours: number }[];
+  data: unknown[];
+  pagination?: { current_page: number; last_page: number; per_page: number; total: number };
+}
+
+export interface ReportCrewPaymentsResponse {
+  summary: {
+    total_count: number;
+    pending_count: number;
+    pending_total: number;
+    approved_count: number;
+    approved_total: number;
+    rejected_count: number;
+    rejected_total: number;
+    grand_total: number;
+  };
+  data: unknown[];
+  pagination?: { current_page: number; last_page: number; per_page: number; total: number };
+}
+
+export interface ReportTasksResponse {
+  summary: { total: number; pending: number; in_progress: number; completed: number };
+  data: TaskItem[];
+  pagination?: { current_page: number; last_page: number; per_page: number; total: number };
+}
+
+export interface ReportFinancialResponse {
+  summary: { total_payments: number; total_amount: number; by_status: Record<string, { count: number; total: number }> };
+  by_day: { date: string; count: number; total: number }[];
+  data?: unknown[];
+  pagination?: { current_page: number; last_page: number; per_page: number; total: number };
 }
 
 export interface AuditLogEntry {

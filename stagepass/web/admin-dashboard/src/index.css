@@ -205,4 +205,9 @@
     background-color: #a16204;
     border-color: #a16204;
   }
+
+  /* Google Places Autocomplete dropdown – above modals (FormModal uses z-[9999]) */
+  .pac-container {
+    z-index: 10000 !important;
+  }
 }

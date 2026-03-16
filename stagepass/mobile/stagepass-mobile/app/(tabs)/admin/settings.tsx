@@ -212,6 +212,7 @@ export default function AdminSettingsScreen() {
         <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
           <View style={[styles.cardAccent, { backgroundColor: themeYellow }]} />
           <View style={styles.sectionHeader}>
+            <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
             <View style={[styles.iconWrap, { backgroundColor: themeYellow + '22', borderColor: themeYellow + '66' }]}>
               <Ionicons name="business-outline" size={22} color={themeYellow} />
             </View>
@@ -287,6 +288,7 @@ export default function AdminSettingsScreen() {
         <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
           <View style={[styles.cardAccent, { backgroundColor: themeYellow }]} />
           <View style={styles.sectionHeader}>
+            <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
             <View style={[styles.iconWrap, { backgroundColor: themeYellow + '22', borderColor: themeYellow + '66' }]}>
               <Ionicons name="location-outline" size={22} color={themeYellow} />
             </View>
@@ -322,6 +324,7 @@ export default function AdminSettingsScreen() {
         <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
           <View style={[styles.cardAccent, { backgroundColor: isDark ? themeYellow : themeBlue }]} />
           <View style={styles.sectionHeader}>
+            <View style={[styles.sectionTitleAccent, { backgroundColor: isDark ? themeYellow : themeBlue }]} />
             <View style={[styles.iconWrap, { backgroundColor: (isDark ? themeYellow : themeBlue) + '18', borderColor: (isDark ? themeYellow : themeBlue) + '44' }]}>
               <Ionicons name="calendar-outline" size={22} color={colors.brandIcon} />
             </View>
@@ -369,6 +372,7 @@ export default function AdminSettingsScreen() {
         <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
           <View style={[styles.cardAccent, { backgroundColor: themeYellow }]} />
           <View style={styles.sectionHeader}>
+            <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
             <View style={[styles.iconWrap, { backgroundColor: themeYellow + '22', borderColor: themeYellow + '66' }]}>
               <Ionicons name="notifications-outline" size={22} color={themeYellow} />
             </View>
@@ -392,6 +396,7 @@ export default function AdminSettingsScreen() {
         <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
           <View style={[styles.cardAccent, { backgroundColor: isDark ? themeYellow : themeBlue }]} />
           <View style={styles.sectionHeader}>
+            <View style={[styles.sectionTitleAccent, { backgroundColor: isDark ? themeYellow : themeBlue }]} />
             <View style={[styles.iconWrap, { backgroundColor: (isDark ? themeYellow : themeBlue) + '18', borderColor: (isDark ? themeYellow : themeBlue) + '44' }]}>
               <Ionicons name="options-outline" size={22} color={colors.brandIcon} />
             </View>
@@ -419,6 +424,7 @@ export default function AdminSettingsScreen() {
         <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
           <View style={[styles.cardAccent, { backgroundColor: themeYellow }]} />
           <View style={styles.sectionHeader}>
+            <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
             <View style={[styles.iconWrap, { backgroundColor: themeYellow + '22', borderColor: themeYellow + '66' }]}>
               <Ionicons name="cloud-download-outline" size={22} color={themeYellow} />
             </View>
@@ -468,6 +474,7 @@ const styles = StyleSheet.create({
   cardVibrant: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
   cardAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, borderTopLeftRadius: BorderRadius.xl, borderBottomLeftRadius: BorderRadius.xl },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.lg },
+  sectionTitleAccent: { width: 3, height: 16, borderRadius: 0 },
   iconWrap: { width: 40, height: 40, borderRadius: BorderRadius.lg, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
   sectionTitle: { fontSize: 18, fontWeight: '800' },
   fieldGroup: { marginBottom: Spacing.md },

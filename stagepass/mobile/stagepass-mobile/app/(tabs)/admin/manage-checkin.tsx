@@ -13,6 +13,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BorderRadius, Spacing, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 
 const todayDateString = () => {
   const d = new Date();
@@ -37,6 +38,7 @@ function sortEvents(a: Event, b: Event): number {
 
 export default function ManageCheckInListScreen() {
   const router = useRouter();
+  const handleNav = useNavigationPress();
   const { colors } = useStagePassTheme();
   const insets = useSafeAreaInsets();
   const [events, setEvents] = useState<Event[]>([]);
@@ -84,11 +86,11 @@ export default function ManageCheckInListScreen() {
           events.map((event) => (
             <Pressable
               key={event.id}
-              onPress={() => router.push({ pathname: '/admin/events/[id]/manage-checkin', params: { id: String(event.id) } })}
+              onPress={() => handleNav(() => router.push({ pathname: '/admin/events/[id]/manage-checkin', params: { id: String(event.id) } }))}
               style={({ pressed }) => [
                 styles.card,
                 { backgroundColor: colors.surface, borderColor: colors.border },
-                pressed && { opacity: 0.85 },
+                pressed && { opacity: NAV_PRESSED_OPACITY },
               ]}
             >
               <View style={styles.cardRow}>

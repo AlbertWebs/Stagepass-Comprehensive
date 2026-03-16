@@ -167,6 +167,7 @@ export default function AdminCreateEventScreen() {
           {/* Basics */}
           <View style={styles.section}>
             <View style={styles.sectionTitleRow}>
+              <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
               <Ionicons name="document-text-outline" size={20} color={themeYellow} />
               <ThemedText style={sectionLabel}>Basics</ThemedText>
             </View>
@@ -188,6 +189,7 @@ export default function AdminCreateEventScreen() {
           {/* Date & time */}
           <View style={styles.section}>
             <View style={styles.sectionTitleRow}>
+              <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
               <Ionicons name="calendar-outline" size={20} color={themeYellow} />
               <ThemedText style={sectionLabel}>Date & time</ThemedText>
             </View>
@@ -322,6 +324,7 @@ export default function AdminCreateEventScreen() {
           {/* Location (Google Places – same as web admin) */}
           <View style={styles.section}>
             <View style={styles.sectionTitleRow}>
+              <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
               <Ionicons name="location-outline" size={20} color={themeYellow} />
               <ThemedText style={sectionLabel}>Location</ThemedText>
             </View>
@@ -383,6 +386,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     marginBottom: Spacing.sm,
   },
+  sectionTitleAccent: { width: 3, height: 16, borderRadius: 0 },
   sectionLabel: {
     fontSize: 15,
     fontWeight: '700',

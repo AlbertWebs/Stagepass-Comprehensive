@@ -171,7 +171,10 @@ export default function TaskDetailScreen() {
 
           {/* Status actions (crew + admin) */}
           <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Status</ThemedText>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+              <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Status</ThemedText>
+            </View>
             <View style={styles.statusRow}>
               {STATUS_OPTIONS.map((status) => (
                 <Pressable
@@ -201,9 +204,12 @@ export default function TaskDetailScreen() {
 
           {/* Comments */}
           <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>
-              Comments {task.comments?.length ? `(${task.comments.length})` : ''}
-            </ThemedText>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+              <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>
+                Comments {task.comments?.length ? `(${task.comments.length})` : ''}
+              </ThemedText>
+            </View>
             {(task.comments ?? []).map((c) => (
               <View key={c.id} style={[styles.comment, { borderBottomColor: colors.border }]}>
                 <ThemedText style={[styles.commentBody, { color: colors.text }]}>{c.body}</ThemedText>
@@ -258,7 +264,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: Spacing.lg,
   },
-  sectionTitle: { fontSize: 15, fontWeight: '700', marginBottom: Spacing.sm },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm },
+  sectionTitleAccent: { width: 3, height: 16, borderRadius: 0 },
+  sectionTitle: { fontSize: 15, fontWeight: '700', flex: 1 },
   body: { fontSize: 15, lineHeight: 22 },
   notes: { fontSize: 13, marginTop: Spacing.sm, fontStyle: 'italic' },
   metaRow: { flexDirection: 'row', gap: Spacing.lg, marginTop: Spacing.sm },

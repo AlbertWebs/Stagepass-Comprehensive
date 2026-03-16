@@ -7,6 +7,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { BorderRadius, Spacing, StatusColors, themeBlue, themeYellow, VibrantColors } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { NAV_PRESSED_OPACITY } from '@/src/utils/navigationPress';
 
 export type EventCardEvent = {
   id: number;
@@ -129,7 +130,7 @@ export function EventCard({ event, onPress, onEdit, extraActions, displayStatus 
             onPress={onPress}
             style={({ pressed }) => [
               styles.primaryBtn,
-              { opacity: pressed ? 0.9 : 1 },
+              { opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
             ]}
           >
             <ThemedText style={styles.primaryBtnText}>
@@ -140,7 +141,7 @@ export function EventCard({ event, onPress, onEdit, extraActions, displayStatus 
             <Pressable
               key={action.label}
               onPress={action.onPress}
-              style={({ pressed }) => [styles.extraAction, { opacity: pressed ? 0.8 : 1 }]}
+              style={({ pressed }) => [styles.extraAction, { opacity: pressed ? NAV_PRESSED_OPACITY : 1 }]}
             >
               {action.icon ? (
                 <Ionicons name={action.icon} size={16} color={colors.brandIcon} style={styles.extraActionIcon} />
@@ -151,7 +152,7 @@ export function EventCard({ event, onPress, onEdit, extraActions, displayStatus 
           {onEdit ? (
             <Pressable
               onPress={onEdit}
-              style={({ pressed }) => [styles.secondaryBtn, { opacity: pressed ? 0.8 : 1 }]}
+              style={({ pressed }) => [styles.secondaryBtn, { opacity: pressed ? NAV_PRESSED_OPACITY : 1 }]}
             >
               <ThemedText style={[styles.secondaryBtnText, { color: colors.text }]}>
                 Edit

@@ -18,12 +18,12 @@ import { EventCard } from '@/components/EventCard';
 import { StagepassLoader } from '@/components/StagepassLoader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { themeBlue, themeYellow } from '@/constants/theme';
+import { Cards, Icons, Typography } from '@/constants/ui';
+import { Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 import { useAppRole } from '~/hooks/useAppRole';
 
-const U = { xs: 6, sm: 8, md: 12, lg: 14, xl: 16, section: 24 };
-const CARD_RADIUS = 12;
 const TAB_BAR_HEIGHT = 58;
 
 function isUpcoming(dateStr: string): boolean {
@@ -70,6 +70,7 @@ function getCheckinStatus(event: Event): 'checked_in' | 'checked_out' | 'pending
 
 export default function ActivityScreen() {
   const router = useRouter();
+  const handleNav = useNavigationPress();
   const { colors, isDark } = useStagePassTheme();
   const role = useAppRole();
   const [eventToday, setEventToday] = useState<Event | null | undefined>(undefined);
@@ -140,7 +141,7 @@ export default function ActivityScreen() {
           {/* Hero */}
           <View style={[styles.hero, { backgroundColor: themeBlue + '14', borderColor: colors.border }]}>
             <View style={[styles.heroIconWrap, { backgroundColor: themeBlue }]}>
-              <Ionicons name="time" size={22} color="#fff" />
+              <Ionicons name="time" size={Icons.xl} color="#fff" />
             </View>
             <View style={styles.heroTextWrap}>
               <ThemedText style={[styles.heroTitle, { color: colors.text }]}>
@@ -156,19 +157,20 @@ export default function ActivityScreen() {
           {today && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
+                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
                 <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
                   Today
                 </ThemedText>
                 <View style={[styles.statusDot, { backgroundColor: themeYellow }]} />
               </View>
               <Pressable
-                onPress={() => router.push({ pathname: '/events/[id]', params: { id: String(today.id) } })}
+                onPress={() => handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(today.id) } }))}
                 style={({ pressed }) => [
                   styles.todayCard,
                   {
                     backgroundColor: colors.surface,
                     borderColor: colors.border,
-                    opacity: pressed ? 0.92 : 1,
+                    opacity: pressed ? NAV_PRESSED_OPACITY : 1,
                   },
                 ]}
               >
@@ -181,7 +183,7 @@ export default function ActivityScreen() {
                     <View style={styles.todayMeta}>
                       {today.location_name ? (
                         <View style={styles.todayMetaRow}>
-                          <Ionicons name="location" size={12} color={colors.textSecondary} />
+                          <Ionicons name="location" size={Icons.xs} color={colors.textSecondary} />
                           <ThemedText style={[styles.todayMetaText, { color: colors.textSecondary }]} numberOfLines={1}>
                             {today.location_name}
                           </ThemedText>
@@ -189,7 +191,7 @@ export default function ActivityScreen() {
                       ) : null}
                       {today.start_time ? (
                         <View style={styles.todayMetaRow}>
-                          <Ionicons name="time" size={12} color={colors.textSecondary} />
+                          <Ionicons name="time" size={Icons.xs} color={colors.textSecondary} />
                           <ThemedText style={[styles.todayMetaText, { color: colors.textSecondary }]}>
                             {formatTime(today.start_time)}
                           </ThemedText>
@@ -200,7 +202,7 @@ export default function ActivityScreen() {
                   <View style={styles.todayFooter}>
                     {checkinStatus === 'checked_in' && (
                       <View style={[styles.badge, { backgroundColor: colors.success + '22' }]}>
-                        <Ionicons name="checkmark-circle" size={12} color={colors.success} />
+                        <Ionicons name="checkmark-circle" size={Icons.xs} color={colors.success} />
                         <ThemedText style={[styles.badgeText, { color: colors.success }]}>
                           Checked in
                         </ThemedText>
@@ -231,31 +233,34 @@ export default function ActivityScreen() {
 
           {/* Quick actions */}
           <View style={styles.section}>
-            <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
-              Quick actions
-            </ThemedText>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+                Quick actions
+              </ThemedText>
+            </View>
             <View style={styles.quickRow}>
               <Pressable
-                onPress={() => router.push('/(tabs)/events')}
+                onPress={() => handleNav(() => router.push('/(tabs)/events'))}
                 style={({ pressed }) => [
                   styles.quickCard,
-                  { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.9 : 1 },
+                  { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
                 ]}
               >
                 <View style={[styles.quickIconWrap, { backgroundColor: (isDark ? themeYellow : themeBlue) + '18' }]}>
-                  <Ionicons name="calendar" size={18} color={colors.brandIcon} />
+                  <Ionicons name="calendar" size={Icons.header} color={colors.brandIcon} />
                 </View>
                 <ThemedText style={[styles.quickLabel, { color: colors.text }]}>My Events</ThemedText>
               </Pressable>
               <Pressable
-                onPress={() => today && router.push({ pathname: '/events/[id]', params: { id: String(today.id) } })}
+                onPress={() => today && handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(today.id) } }))}
                 style={({ pressed }) => [
                   styles.quickCard,
-                  { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.9 : 1 },
+                  { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
                 ]}
               >
                 <View style={[styles.quickIconWrap, { backgroundColor: themeYellow + '22' }]}>
-                  <Ionicons name="location" size={18} color={themeYellow} />
+                  <Ionicons name="location" size={Icons.header} color={themeYellow} />
                 </View>
                 <ThemedText style={[styles.quickLabel, { color: colors.text }]}>
                   {today ? 'Today’s event' : 'No event today'}
@@ -267,21 +272,24 @@ export default function ActivityScreen() {
           {/* Upcoming / Past events */}
           {(upcoming.length > 0 || past.length > 0) && (
             <View style={styles.section}>
-              <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
-                Your events
-              </ThemedText>
+              <View style={styles.sectionHeader}>
+                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+                  Your events
+                </ThemedText>
+              </View>
               {upcoming.slice(0, 5).map((item) => (
                 <EventCard
                   key={item.id}
                   event={item}
-                  onPress={() => router.push({ pathname: '/events/[id]', params: { id: String(item.id) } })}
+                  onPress={() => handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(item.id) } }))}
                 />
               ))}
               {past.slice(0, 3).map((item) => (
                 <EventCard
                   key={item.id}
                   event={item}
-                  onPress={() => router.push({ pathname: '/events/[id]', params: { id: String(item.id) } })}
+                  onPress={() => handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(item.id) } }))}
                 />
               ))}
             </View>
@@ -291,7 +299,7 @@ export default function ActivityScreen() {
           {!hasAnyEvents && (
             <View style={styles.emptyWrap}>
               <View style={[styles.emptyIconWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Ionicons name="time-outline" size={34} color={colors.textSecondary} />
+                <Ionicons name="time-outline" size={Icons.large} color={colors.textSecondary} />
               </View>
               <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>
                 No activity yet
@@ -300,10 +308,10 @@ export default function ActivityScreen() {
                 Your events and check-ins will appear here. Open My Events to see your schedule.
               </ThemedText>
               <Pressable
-                onPress={() => router.push('/(tabs)/events')}
+                onPress={() => handleNav(() => router.push('/(tabs)/events'))}
                 style={({ pressed }) => [
                   styles.emptyButton,
-                  { backgroundColor: themeBlue, opacity: pressed ? 0.9 : 1 },
+                  { backgroundColor: themeBlue, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
                 ]}
               >
                 <ThemedText style={styles.emptyButtonText}>Go to My Events</ThemedText>
@@ -320,43 +328,48 @@ export default function ActivityScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContent: { flexGrow: 1 },
-  content: { paddingHorizontal: U.lg, paddingTop: U.sm },
+  content: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
   hero: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: U.lg,
-    padding: U.lg,
-    marginBottom: U.xl,
-    borderRadius: CARD_RADIUS,
+    gap: Spacing.lg,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+    borderRadius: Cards.borderRadius,
     borderWidth: 1,
   },
   heroIconWrap: {
     width: 40,
     height: 40,
-    borderRadius: CARD_RADIUS,
+    borderRadius: Cards.borderRadius,
     justifyContent: 'center',
     alignItems: 'center',
   },
   heroTextWrap: { flex: 1, minWidth: 0 },
-  heroTitle: { fontSize: 18, fontWeight: '800', marginBottom: 2 },
-  heroSub: { fontSize: 13 },
-  section: { marginBottom: U.xl },
+  heroTitle: { fontSize: Typography.titleLarge, fontWeight: Typography.titleLargeWeight, marginBottom: 2 },
+  heroSub: { fontSize: Typography.bodySmall },
+  section: { marginBottom: Spacing.lg },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: U.sm,
-    marginBottom: U.md,
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  sectionTitleAccent: {
+    width: 3,
+    height: 16,
+    borderRadius: 0,
   },
   sectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: Typography.label,
+    fontWeight: Typography.labelWeight,
     letterSpacing: 0.4,
     textTransform: 'uppercase',
   },
   statusDot: { width: 5, height: 5, borderRadius: 3 },
   todayCard: {
     flexDirection: 'row',
-    borderRadius: CARD_RADIUS,
+    borderRadius: Cards.borderRadius,
     borderWidth: 1,
     overflow: 'hidden',
     minHeight: 80,
@@ -367,9 +380,9 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   todayAccent: { width: 4 },
-  todayBody: { flex: 1, padding: U.lg, paddingLeft: U.md },
-  todayName: { fontSize: 16, fontWeight: '700', marginBottom: U.xs },
-  todayMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: U.md, marginBottom: U.sm },
+  todayBody: { flex: 1, padding: Spacing.lg, paddingLeft: Spacing.md },
+  todayName: { fontSize: 16, fontWeight: '700', marginBottom: Spacing.xs },
+  todayMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md, marginBottom: Spacing.sm },
   todayMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   todayMetaText: { fontSize: 12 },
   todayFooter: {
@@ -377,38 +390,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     flexWrap: 'wrap',
-    gap: U.sm,
+    gap: Spacing.sm,
   },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: U.sm,
+    paddingHorizontal: Spacing.sm,
     paddingVertical: 3,
     borderRadius: 9999,
   },
-  badgeText: { fontSize: 11, fontWeight: '700' },
-  todayCta: { fontSize: 13, fontWeight: '600' },
-  quickRow: { flexDirection: 'row', gap: U.md },
+  badgeText: { fontSize: Typography.titleSection, fontWeight: Typography.labelWeight },
+  todayCta: { fontSize: Typography.bodySmall, fontWeight: '600' },
+  quickRow: { flexDirection: 'row', gap: Spacing.md },
   quickCard: {
     flex: 1,
-    padding: U.lg,
-    borderRadius: CARD_RADIUS,
+    padding: Spacing.lg,
+    borderRadius: Cards.borderRadius,
     borderWidth: 1,
     alignItems: 'center',
   },
   quickIconWrap: {
     width: 36,
     height: 36,
-    borderRadius: CARD_RADIUS,
+    borderRadius: Cards.borderRadius,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: U.sm,
+    marginBottom: Spacing.sm,
   },
-  quickLabel: { fontSize: 12, fontWeight: '600', textAlign: 'center' },
+  quickLabel: { fontSize: Typography.label, fontWeight: '600', textAlign: 'center' },
   emptyWrap: {
     alignItems: 'center',
-    paddingVertical: U.section * 2,
+    paddingVertical: Spacing.xxl * 2,
   },
   emptyIconWrap: {
     width: 70,
@@ -417,15 +430,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    marginBottom: U.lg,
+    marginBottom: Spacing.lg,
   },
-  emptyTitle: { fontSize: 16, fontWeight: '700', marginBottom: U.sm },
-  emptySub: { fontSize: 13, textAlign: 'center', marginBottom: U.lg, maxWidth: 260 },
+  emptyTitle: { fontSize: Typography.body, fontWeight: Typography.buttonTextWeight, marginBottom: Spacing.sm },
+  emptySub: { fontSize: Typography.bodySmall, textAlign: 'center', marginBottom: Spacing.lg, maxWidth: 260 },
   emptyButton: {
-    paddingVertical: U.md,
-    paddingHorizontal: U.xl,
-    borderRadius: CARD_RADIUS,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: Cards.borderRadius,
   },
-  emptyButtonText: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  bottomSpacer: { height: U.xl },
+  emptyButtonText: { fontSize: Typography.bodySmall, fontWeight: Typography.buttonTextWeight, color: '#fff' },
+  bottomSpacer: { height: Spacing.lg },
 });

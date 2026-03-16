@@ -93,6 +93,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('communications/{communication}', [CommunicationController::class, 'destroy']);
 
     Route::get('reports', ReportsController::class);
+    Route::get('reports/events', [ReportsController::class, 'events']);
+    Route::get('reports/crew-attendance', [ReportsController::class, 'crewAttendance']);
+    Route::get('reports/crew-payments', [ReportsController::class, 'crewPayments']);
+    Route::get('reports/tasks', [ReportsController::class, 'tasks']);
+    Route::get('reports/financial', [ReportsController::class, 'financial']);
+    Route::get('reports/export', [ReportsController::class, 'export']);
     Route::get('checkins/server-date', [CheckinsController::class, 'serverDate']);
     Route::get('checkins', [CheckinsController::class, 'index']);
     Route::get('checkins/daily-status', [CheckinsController::class, 'dailyEmployeeStatus']);

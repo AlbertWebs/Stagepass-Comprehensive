@@ -47,7 +47,7 @@ export function LocationSearchInput({
 
   const initAutocomplete = useCallback(() => {
     const g = (window as unknown as { google?: { maps: { places: { Autocomplete: new (el: HTMLInputElement, opts: object) => { addListener: (ev: string, fn: () => void) => void; getPlace: () => GooglePlace } } } } }).google;
-    if (!inputRef.current || !g?.maps?.places || autocompleteRef.current) return;
+    if (!inputRef.current || !g?.maps?.places || autocompleteRef.current) return false;
 
     try {
       const Autocomplete = g.maps.places.Autocomplete;
@@ -71,9 +71,11 @@ export function LocationSearchInput({
       });
 
       autocompleteRef.current = autocomplete;
+      return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Places Autocomplete failed';
       setScriptError(msg);
+      return false;
     }
   }, [onChange, onSelect]);
 
@@ -93,12 +95,20 @@ export function LocationSearchInput({
   }, []);
 
   useEffect(() => {
-    if (scriptLoaded && inputRef.current) {
-      initAutocomplete();
-    }
+    if (!scriptLoaded) return;
+    const tryInit = () => {
+      if (inputRef.current && !autocompleteRef.current) initAutocomplete();
+    };
+    tryInit();
+    const id = window.setTimeout(tryInit, 150);
     return () => {
+      clearTimeout(id);
       autocompleteRef.current = null;
     };
+  }, [scriptLoaded, initAutocomplete]);
+
+  const handleFocus = useCallback(() => {
+    if (scriptLoaded && inputRef.current && !autocompleteRef.current) initAutocomplete();
   }, [scriptLoaded, initAutocomplete]);
 
   return (
@@ -109,6 +119,7 @@ export function LocationSearchInput({
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onFocus={handleFocus}
         placeholder={hasGoogleMapsKey() ? placeholder : 'Venue or address (set VITE_GOOGLE_MAPS_API_KEY for search)'}
         className={className}
         disabled={disabled}

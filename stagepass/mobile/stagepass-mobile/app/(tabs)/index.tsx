@@ -122,6 +122,13 @@ export default function HomeScreen() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
+      // Refresh user first so office check-in state is correct after login (login response has no office_* fields).
+      try {
+        const me = await api.auth.me();
+        dispatch(setUser(me));
+      } catch {
+        // keep existing user
+      }
       if (role === 'admin') {
         await Promise.all([fetchPastEventsForAdmin(), fetchEventsTodayList()]);
       } else {
@@ -131,12 +138,6 @@ export default function HomeScreen() {
       await fetchTaskCount();
       await fetchEquipmentCount();
       await fetchApprovedAllowances();
-      try {
-        const me = await api.auth.me();
-        dispatch(setUser(me));
-      } catch {
-        // ignore
-      }
       getDevicePushTokenAsync().then((token) => {
         if (token) api.auth.updateProfile({ fcm_token: token }).catch(() => {});
       });
@@ -200,6 +201,7 @@ export default function HomeScreen() {
     <Animated.View entering={FadeInUp.duration(400)} style={{ flex: 1 }}>
       <HomeDashboardScreen
       eventToday={eventToday ?? null}
+      allowanceToday={eventToday?.daily_allowance ?? null}
       eventsTodayList={eventsTodayList}
       taskCount={taskCount}
       notificationCount={0}

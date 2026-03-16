@@ -1,6 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
@@ -10,12 +11,10 @@ import { AppHeader } from '@/components/AppHeader';
 import { StagepassLoader } from '@/components/StagepassLoader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { themeBlue, themeYellow } from '@/constants/theme';
+import { Cards, Icons, Typography } from '@/constants/ui';
+import { Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import * as Location from 'expo-location';
-
-const U = { xs: 6, sm: 8, md: 12, lg: 14, xl: 16, section: 24 };
-const CARD_RADIUS = 12;
 
 function formatEventDate(dateStr: string | undefined): string {
   if (!dateStr) return '—';
@@ -36,17 +35,42 @@ function formatEventTime(timeStr: string | undefined): string {
   return `${h12}:${m || '00'} ${ampm}`;
 }
 
+/** Format ISO or "Y-m-d H:i:s" timestamp to HH:mm (24h) for checkout badge. */
+function formatCheckoutTime(value: string | undefined): string {
+  if (!value || typeof value !== 'string') return '';
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value.slice(11, 16) || '';
+    const h = d.getHours();
+    const m = d.getMinutes();
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  } catch {
+    return value.slice(11, 16) || value;
+  }
+}
+
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { colors } = useStagePassTheme();
   const insets = useSafeAreaInsets();
   const token = useSelector((s: { auth: { token: string | null } }) => s.auth.token);
+  const currentUserId = useSelector((s: { auth: { user: { id?: number } | null } }) => s.auth.user?.id);
   const [event, setEvent] = useState<EventType | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const { checkCanCheckIn } = useGeofence();
+
+  const fetchEvent = useCallback(() => {
+    if (!id) return;
+    setLoading(true);
+    api.events
+      .get(Number(id))
+      .then(setEvent)
+      .catch(() => Alert.alert('Error', 'Failed to load event'))
+      .finally(() => setLoading(false));
+  }, [id]);
 
   useEffect(() => {
     if (!token) {
@@ -64,18 +88,22 @@ export default function EventDetailScreen() {
   }, [token, router]);
 
   useEffect(() => {
-    if (!id) return;
-    api.events
-      .get(Number(id))
-      .then(setEvent)
-      .catch(() => Alert.alert('Error', 'Failed to load event'))
-      .finally(() => setLoading(false));
-  }, [id]);
+    fetchEvent();
+  }, [fetchEvent]);
 
-  const myAssignment = event?.crew?.find((c) => c.pivot);
+  useFocusEffect(
+    useCallback(() => {
+      if (id && token) fetchEvent();
+    }, [id, token, fetchEvent])
+  );
+
+  const myAssignment = currentUserId != null
+    ? event?.crew?.find((c) => c.id === currentUserId)
+    : event?.crew?.find((c) => c.pivot);
   const hasPivot = myAssignment && 'pivot' in myAssignment && myAssignment.pivot;
-  const checkinTime = hasPivot && myAssignment?.pivot?.checkin_time;
-  const checkoutTime = hasPivot && myAssignment?.pivot?.checkout_time;
+  const checkinTime = hasPivot && (myAssignment?.pivot as { checkin_time?: string })?.checkin_time;
+  const checkoutTime = hasPivot && (myAssignment?.pivot as { checkout_time?: string })?.checkout_time;
+  const checkoutTimeFormatted = formatCheckoutTime(checkoutTime as string | undefined);
 
   const handleCheckIn = async () => {
     if (!event?.id || actionLoading) return;
@@ -104,7 +132,7 @@ export default function EventDetailScreen() {
   };
 
   const handleCheckOut = async () => {
-    if (!event?.id || actionLoading) return;
+    if (!event?.id || actionLoading || checkoutTime) return;
     setActionLoading(true);
     try {
       await api.attendance.checkout(event.id);
@@ -130,22 +158,22 @@ export default function EventDetailScreen() {
       <AppHeader title={event.name} showBack />
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + U.section }]}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + Spacing.xxl }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={[styles.dateRow, { borderBottomColor: colors.border }]}>
-            <Ionicons name="calendar-outline" size={18} color={themeYellow} />
+            <Ionicons name="calendar-outline" size={Icons.header} color={themeYellow} />
             <ThemedText style={[styles.dateText, { color: colors.text }]}>{dateLabel}</ThemedText>
           </View>
           {timeLabel ? (
             <View style={[styles.metaRow, styles.metaRowBorder, { borderBottomColor: colors.border }]}>
-              <Ionicons name="time-outline" size={18} color={themeYellow} />
+              <Ionicons name="time-outline" size={Icons.header} color={themeYellow} />
               <ThemedText style={[styles.metaText, { color: colors.text }]}>{timeLabel}</ThemedText>
             </View>
           ) : null}
           <View style={styles.metaRow}>
-            <Ionicons name="location-outline" size={18} color={themeYellow} />
+            <Ionicons name="location-outline" size={Icons.header} color={themeYellow} />
             <ThemedText style={[styles.metaText, { color: colors.text }]} numberOfLines={2}>{locationLabel}</ThemedText>
           </View>
         </View>
@@ -153,6 +181,18 @@ export default function EventDetailScreen() {
         {event.description ? (
           <View style={[styles.descCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <ThemedText style={[styles.desc, { color: colors.textSecondary }]}>{event.description}</ThemedText>
+          </View>
+        ) : null}
+
+        {event.daily_allowance != null && event.daily_allowance > 0 ? (
+          <View style={[styles.allowanceCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Ionicons name="wallet-outline" size={Icons.standard} color={themeYellow} />
+            <View style={styles.allowanceTextWrap}>
+              <ThemedText style={[styles.allowanceValue, { color: colors.text }]}>
+                KES {Number(event.daily_allowance).toLocaleString()}
+              </ThemedText>
+              <ThemedText style={[styles.allowanceLabel, { color: colors.textSecondary }]}>Daily allowance</ThemedText>
+            </View>
           </View>
         ) : null}
 
@@ -166,12 +206,19 @@ export default function EventDetailScreen() {
                 { backgroundColor: themeYellow, opacity: actionLoading || !userLocation ? 0.7 : pressed ? 0.9 : 1 },
               ]}
             >
-              <Ionicons name="location" size={18} color={themeBlue} />
+              <Ionicons name="location" size={Icons.header} color={themeBlue} />
               <ThemedText style={styles.ctaButtonText}>
                 {actionLoading ? 'Checking in…' : userLocation ? 'Check in at venue' : 'Getting location…'}
               </ThemedText>
             </Pressable>
-          ) : !checkoutTime ? (
+          ) : checkoutTime ? (
+            <View style={[styles.checkedOutBadge, styles.checkedOutBadgeSuccess, { backgroundColor: colors.border }]}>
+              <Ionicons name="checkmark-done-circle" size={Icons.xl} color={themeBlue} />
+              <ThemedText style={[styles.checkedOutText, { color: colors.text }]}>
+                {checkoutTimeFormatted ? `Checked out at ${checkoutTimeFormatted}` : 'Checked out'}
+              </ThemedText>
+            </View>
+          ) : (
             <Pressable
               onPress={handleCheckOut}
               disabled={actionLoading}
@@ -184,11 +231,6 @@ export default function EventDetailScreen() {
                 {actionLoading ? 'Checking out…' : 'Check out'}
               </ThemedText>
             </Pressable>
-          ) : (
-            <View style={[styles.checkedOutBadge, { backgroundColor: colors.border }]}>
-              <Ionicons name="checkmark-done" size={18} color={colors.textSecondary} />
-              <ThemedText style={[styles.checkedOutText, { color: colors.textSecondary }]}>You have checked out</ThemedText>
-            </View>
           )}
         </View>
       </ScrollView>
@@ -199,86 +241,101 @@ export default function EventDetailScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { flex: 1 },
-  content: { padding: U.lg },
+  content: { padding: Spacing.lg },
   card: {
-    borderRadius: CARD_RADIUS,
+    borderRadius: Cards.borderRadius,
     borderWidth: 1,
-    padding: U.lg,
-    marginBottom: U.lg,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
   },
   dateRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: U.md,
-    paddingBottom: U.md,
-    marginBottom: U.md,
+    gap: Spacing.md,
+    paddingBottom: Spacing.md,
+    marginBottom: Spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   dateText: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: Typography.buttonText,
+    fontWeight: Typography.buttonTextWeight,
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: U.md,
-    paddingVertical: U.sm,
+    gap: Spacing.md,
+    paddingVertical: Spacing.sm,
   },
   metaRowBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   metaText: {
     flex: 1,
-    fontSize: 14,
+    fontSize: Typography.bodySmall,
   },
   descCard: {
-    borderRadius: CARD_RADIUS,
+    borderRadius: Cards.borderRadius,
     borderWidth: 1,
-    padding: U.lg,
-    marginBottom: U.lg,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
   },
+  allowanceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    borderRadius: Cards.borderRadius,
+    borderWidth: 1,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
+  allowanceTextWrap: { flex: 1 },
+  allowanceValue: { fontSize: Typography.body, fontWeight: Typography.buttonTextWeight },
+  allowanceLabel: { fontSize: Typography.label, marginTop: 2 },
   desc: {
-    fontSize: 13,
+    fontSize: Typography.bodySmall,
     lineHeight: 20,
   },
-  actions: { marginTop: U.md },
+  actions: { marginTop: Spacing.md },
   ctaButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: U.md,
-    paddingVertical: U.lg,
-    paddingHorizontal: U.xl,
-    borderRadius: CARD_RADIUS,
+    gap: Spacing.md,
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: Cards.borderRadius,
   },
   ctaButtonText: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: Typography.buttonText,
+    fontWeight: Typography.titleCardWeight,
     color: themeBlue,
   },
   ctaButtonSecondary: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: U.lg,
-    paddingHorizontal: U.xl,
-    borderRadius: CARD_RADIUS,
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: Cards.borderRadius,
     borderWidth: 2,
   },
   ctaButtonTextSecondary: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: Typography.buttonText,
+    fontWeight: Typography.buttonTextWeight,
   },
   checkedOutBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: U.sm,
-    paddingVertical: U.lg,
-    borderRadius: CARD_RADIUS,
+    gap: Spacing.sm,
+    paddingVertical: Spacing.lg,
+    borderRadius: Cards.borderRadius,
+  },
+  checkedOutBadgeSuccess: {
+    opacity: 1,
   },
   checkedOutText: {
-    fontSize: 14,
+    fontSize: Typography.bodySmall,
     fontWeight: '600',
   },
 });

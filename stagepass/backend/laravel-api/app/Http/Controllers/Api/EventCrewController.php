@@ -42,6 +42,19 @@ class EventCrewController extends Controller
             return response()->json(['message' => 'User is already on the crew.'], 422);
         }
 
+        // User must not be crew on another event that overlaps this event's dates (transfers are allowed via transfer endpoint).
+        $otherAssignments = EventUser::where('user_id', $request->user_id)
+            ->where('event_id', '!=', $event->id)
+            ->with('event')
+            ->get();
+        foreach ($otherAssignments as $assignment) {
+            if ($event->overlapsWith($assignment->event)) {
+                return response()->json([
+                    'message' => 'This person is already assigned to an event that overlaps these dates. They are not available for a new assignment but can be transferred from that event if needed.',
+                ], 422);
+            }
+        }
+
         $event->crew()->attach($request->user_id, [
             'role_in_event' => $request->role_in_event,
         ]);

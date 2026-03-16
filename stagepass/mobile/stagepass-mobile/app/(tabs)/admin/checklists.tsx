@@ -5,6 +5,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -19,6 +20,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 
 const todayDateString = () => {
   const d = new Date();
@@ -34,6 +36,7 @@ type EventWithProgress = Event & { progress?: ChecklistProgressItem[]; total?: n
 
 export default function ChecklistsListScreen() {
   const router = useRouter();
+  const handleNav = useNavigationPress();
   const { colors } = useStagePassTheme();
   const insets = useSafeAreaInsets();
   const [events, setEvents] = useState<EventWithProgress[]>([]);
@@ -107,11 +110,11 @@ export default function ChecklistsListScreen() {
             return (
               <Pressable
                 key={event.id}
-                onPress={() => router.push({ pathname: '/admin/events/[id]/checklist', params: { id: String(event.id) } })}
+                onPress={() => handleNav(() => router.push({ pathname: '/admin/events/[id]/checklist', params: { id: String(event.id) } }))}
                 style={({ pressed }) => [
                   styles.card,
                   { backgroundColor: colors.surface, borderColor: colors.border },
-                  pressed && { opacity: 0.85 },
+                  pressed && { opacity: NAV_PRESSED_OPACITY },
                 ]}
               >
                 <View style={styles.cardRow}>

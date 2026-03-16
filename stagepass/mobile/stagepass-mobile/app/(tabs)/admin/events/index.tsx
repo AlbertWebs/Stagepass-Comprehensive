@@ -1,9 +1,9 @@
 /**
- * Admin: list all events and create new ones.
+ * Admin: Projects – list events by Today, Upcoming, Past + Create event button.
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
   RefreshControl,
@@ -19,8 +19,10 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 
 const TAB_BAR_HEIGHT = 56;
+const U = { sm: 8, md: 12, lg: 16 };
 
 function sortByDateThenTime(a: Event, b: Event): number {
   const d = new Date(a.date).getTime() - new Date(b.date).getTime();
@@ -30,9 +32,31 @@ function sortByDateThenTime(a: Event, b: Event): number {
   return tA.localeCompare(tB);
 }
 
+function todayDateString(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function eventDateOnly(event: Event): string {
+  if (!event.date || typeof event.date !== 'string') return '';
+  const s = String(event.date).trim();
+  return s.length >= 10 ? s.substring(0, 10) : s;
+}
+
+type Segment = 'today' | 'upcoming' | 'past';
+
+function getSegment(event: Event): Segment {
+  const dateStr = eventDateOnly(event);
+  const today = todayDateString();
+  if (dateStr === today) return 'today';
+  if (dateStr < today) return 'past';
+  return 'upcoming';
+}
+
 export default function AdminEventsListScreen() {
   const router = useRouter();
   const { colors } = useStagePassTheme();
+  const handleNav = useNavigationPress();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -60,12 +84,57 @@ export default function AdminEventsListScreen() {
     loadEvents();
   }, [loadEvents]);
 
+  const { today, upcoming, past } = useMemo(() => {
+    const t: Event[] = [];
+    const u: Event[] = [];
+    const p: Event[] = [];
+    events.forEach((ev) => {
+      const seg = getSegment(ev);
+      if (seg === 'today') t.push(ev);
+      else if (seg === 'upcoming') u.push(ev);
+      else p.push(ev);
+    });
+    return { today: t, upcoming: u, past: p };
+  }, [events]);
+
   const openEventOps = (id: number) => {
-    router.push({ pathname: '/admin/events/[id]/operations', params: { id: String(id) } });
+    handleNav(() => router.push({ pathname: '/admin/events/[id]/operations', params: { id: String(id) } }));
+  };
+
+  const renderSection = (title: string, list: Event[], accentColor: string) => {
+    if (list.length === 0) return null;
+    return (
+      <View style={styles.section} key={title}>
+        <View style={styles.sectionHeader}>
+          <View style={[styles.sectionAccent, { backgroundColor: accentColor }]} />
+          <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>{title}</ThemedText>
+          <ThemedText style={[styles.sectionCount, { color: colors.textSecondary }]}>{list.length}</ThemedText>
+        </View>
+        {list.map((item) => (
+          <EventCard
+            key={item.id}
+            event={{
+              id: item.id,
+              name: item.name,
+              date: item.date,
+              start_time: item.start_time,
+              expected_end_time: item.expected_end_time,
+              location_name: item.location_name,
+              status: item.status,
+            }}
+            onPress={() => openEventOps(item.id)}
+            extraActions={[
+              { label: 'Crew', onPress: () => handleNav(() => router.push({ pathname: '/admin/events/[id]/crew', params: { id: String(item.id) } })), icon: 'people-outline' },
+              { label: 'Operations', onPress: () => openEventOps(item.id), icon: 'settings-outline' },
+            ]}
+          />
+        ))}
+      </View>
+    );
   };
 
   if (loading) {
-    return <StagepassLoader message="Loading events…" fullScreen />;
+    return <StagepassLoader message="Loading projects…" fullScreen />;
   }
 
   return (
@@ -75,63 +144,41 @@ export default function AdminEventsListScreen() {
         <Pressable
           style={({ pressed }) => [
             styles.createBtn,
-            { backgroundColor: themeYellow, opacity: pressed ? 0.9 : 1 },
+            { backgroundColor: themeYellow, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
           ]}
-          onPress={() => router.push('/admin/events/create')}
+          onPress={() => handleNav(() => router.push('/admin/events/create'))}
         >
           <Ionicons name="add-circle" size={24} color={themeBlue} />
           <ThemedText style={styles.createBtnText}>Create event</ThemedText>
         </Pressable>
 
-        {events.length > 0 && (
-          <ThemedText style={[styles.listCount, { color: colors.textSecondary }]}>
-            {events.length} event{events.length !== 1 ? 's' : ''}
-          </ThemedText>
-        )}
-
         {events.length === 0 ? (
           <View style={styles.emptyWrap}>
             <View style={[styles.emptyIconWrap, { borderColor: themeYellow, backgroundColor: themeBlue }]}>
-              <Ionicons name="calendar-outline" size={44} color={themeYellow} />
+              <Ionicons name="folder-open-outline" size={44} color={themeYellow} />
             </View>
-            <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>No events yet</ThemedText>
+            <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>No projects yet</ThemedText>
             <ThemedText style={[styles.emptySub, { color: colors.textSecondary }]}>
               Create your first event to get started.
             </ThemedText>
             <Pressable
-              style={({ pressed }) => [styles.emptyBtn, { opacity: pressed ? 0.9 : 1 }]}
-              onPress={() => router.push('/admin/events/create')}
+              style={({ pressed }) => [styles.emptyBtn, { opacity: pressed ? NAV_PRESSED_OPACITY : 1 }]}
+              onPress={() => handleNav(() => router.push('/admin/events/create'))}
             >
               <ThemedText style={styles.emptyBtnText}>Create event</ThemedText>
             </Pressable>
           </View>
         ) : (
           <ScrollView
-            contentContainerStyle={[styles.list, { paddingBottom: bottomPad, paddingTop: events.length > 0 ? Spacing.sm : 0 }]}
+            contentContainerStyle={[styles.list, { paddingBottom: bottomPad + U.lg }]}
             showsVerticalScrollIndicator={false}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={themeYellow} />
             }
           >
-            {events.map((item) => (
-              <EventCard
-                key={item.id}
-                event={{
-                  id: item.id,
-                  name: item.name,
-                  date: item.date,
-                  start_time: item.start_time,
-                  expected_end_time: item.expected_end_time,
-                  location_name: item.location_name,
-                  status: item.status,
-                }}
-                onPress={() => openEventOps(item.id)}
-                extraActions={[
-                  { label: 'Crew', onPress: () => router.push({ pathname: '/admin/events/[id]/crew', params: { id: String(item.id) } }), icon: 'people-outline' },
-                  { label: 'Operations', onPress: () => openEventOps(item.id), icon: 'settings-outline' },
-                ]}
-              />
-            ))}
+            {renderSection('Today', today, themeYellow)}
+            {renderSection('Upcoming', upcoming, themeBlue)}
+            {renderSection('Past', past, colors.textSecondary)}
           </ScrollView>
         )}
       </View>
@@ -164,12 +211,29 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   createBtnText: { fontSize: 17, fontWeight: '700', color: themeBlue },
-  listCount: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: Spacing.md,
+  list: { paddingTop: U.sm },
+  section: { marginBottom: U.lg },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: U.md,
+    gap: U.sm,
   },
-  list: { paddingBottom: 0 },
+  sectionAccent: {
+    width: 4,
+    height: 18,
+    borderRadius: 2,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  sectionCount: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 'auto',
+  },
   emptyWrap: {
     flex: 1,
     alignItems: 'center',

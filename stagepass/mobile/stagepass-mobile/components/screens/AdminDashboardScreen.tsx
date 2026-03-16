@@ -5,10 +5,12 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing, StagePassColors } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { useNavigationPress } from '@/src/utils/navigationPress';
 
 /** Admin dashboard placeholder – full operational visibility */
 export function AdminDashboardScreen() {
   const router = useRouter();
+  const handleNav = useNavigationPress();
   const { colors } = useStagePassTheme();
 
   return (
@@ -21,7 +23,7 @@ export function AdminDashboardScreen() {
       </ThemedText>
       <StagePassButton
         title="Events"
-        onPress={() => router.push('/(tabs)/events')}
+        onPress={() => handleNav(() => router.push('/(tabs)/events'))}
         variant="primary"
         style={styles.cta}
       />

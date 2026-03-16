@@ -19,7 +19,7 @@ class Event extends Model
 
     protected $fillable = [
         'name', 'description', 'date', 'end_date', 'start_time', 'expected_end_time',
-        'location_name', 'latitude', 'longitude', 'geofence_radius',
+        'location_name', 'latitude', 'longitude', 'geofence_radius', 'daily_allowance',
         'team_leader_id', 'client_id', 'status', 'created_by_id',
         'ended_at', 'ended_by_id', 'end_comment',
     ];
@@ -30,6 +30,7 @@ class Event extends Model
             'date' => 'date',
             'end_date' => 'date',
             'geofence_radius' => 'integer',
+            'daily_allowance' => 'decimal:2',
             'ended_at' => 'datetime',
         ];
     }
@@ -57,6 +58,20 @@ class Event extends Model
     {
         return $query->where('date', '<=', $to)
             ->whereRaw('COALESCE(end_date, date) >= ?', [$from]);
+    }
+
+    /**
+     * Whether this event's date range overlaps another event's date range.
+     * Used to prevent double-booking crew (they can still be transferred between events).
+     */
+    public function overlapsWith(Event $other): bool
+    {
+        if ($this->id === $other->id) {
+            return true;
+        }
+        $thisEnd = $this->end_date ? $this->end_date->format('Y-m-d') : $this->date->format('Y-m-d');
+        $otherEnd = $other->end_date ? $other->end_date->format('Y-m-d') : $other->date->format('Y-m-d');
+        return $this->date->format('Y-m-d') <= $otherEnd && $other->date->format('Y-m-d') <= $thisEnd;
     }
 
     public function teamLeader(): BelongsTo

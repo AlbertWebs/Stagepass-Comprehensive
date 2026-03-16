@@ -136,7 +136,10 @@ export default function EventChecklistScreen() {
           </View>
         ) : (
           <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Checklists</ThemedText>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+              <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Checklists</ThemedText>
+            </View>
             {progress.map((item, idx) => {
               const pct = item.total > 0 ? Math.round((item.completed / item.total) * 100) : 0;
               return (
@@ -223,7 +226,9 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 4,
   },
-  sectionTitle: { fontSize: 17, fontWeight: '700', marginBottom: Spacing.md },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.md },
+  sectionTitleAccent: { width: 3, height: 16, borderRadius: 0 },
+  sectionTitle: { fontSize: 17, fontWeight: '700', flex: 1 },
   empty: { fontSize: 14 },
   checklistRow: {
     paddingVertical: Spacing.sm,

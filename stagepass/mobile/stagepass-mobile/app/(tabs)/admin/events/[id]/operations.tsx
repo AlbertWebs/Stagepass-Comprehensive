@@ -22,6 +22,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 
 function formatEventDate(dateStr: string | undefined): string {
   if (!dateStr) return '';
@@ -60,6 +61,7 @@ function formatEventTime(start?: string, end?: string): string {
 export default function AdminEventOperationsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const handleNav = useNavigationPress();
   const { colors } = useStagePassTheme();
   const insets = useSafeAreaInsets();
   const [event, setEvent] = useState<EventType | null>(null);
@@ -140,7 +142,7 @@ export default function AdminEventOperationsScreen() {
     );
   }
 
-  const navTo = (pathname: string) => () => router.push({ pathname, params: { id: String(eventId) } });
+  const navTo = (pathname: string) => () => handleNav(() => router.push({ pathname, params: { id: String(eventId) } }));
 
   return (
     <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -151,8 +153,8 @@ export default function AdminEventOperationsScreen() {
       >
         {/* Back to events + quick nav */}
         <Pressable
-          style={({ pressed }) => [styles.backStrip, { backgroundColor: themeBlue }, pressed && { opacity: 0.9 }]}
-          onPress={() => router.replace('/admin/events')}
+          style={({ pressed }) => [styles.backStrip, { backgroundColor: themeBlue }, pressed && { opacity: NAV_PRESSED_OPACITY }]}
+          onPress={() => handleNav(() => router.replace('/admin/events'))}
         >
           <Ionicons name="arrow-back" size={20} color={themeYellow} />
           <ThemedText style={styles.backStripText}>Back to events</ThemedText>
@@ -177,7 +179,7 @@ export default function AdminEventOperationsScreen() {
               <Ionicons name="location" size={18} color={themeYellow} />
               <ThemedText style={styles.quickNavPillText}>Check-in</ThemedText>
             </Pressable>
-            <Pressable style={({ pressed }) => [styles.quickNavPill, { backgroundColor: themeBlue }, pressed && styles.quickNavPillPressed]} onPress={() => router.push({ pathname: '/events/[id]', params: { id: String(eventId) } })}>
+            <Pressable style={({ pressed }) => [styles.quickNavPill, { backgroundColor: themeBlue }, pressed && styles.quickNavPillPressed]} onPress={() => handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(eventId) } }))}>
               <Ionicons name="calendar" size={18} color={themeYellow} />
               <ThemedText style={styles.quickNavPillText}>View event</ThemedText>
             </Pressable>
@@ -208,7 +210,7 @@ export default function AdminEventOperationsScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.opsRow, { borderBottomColor: colors.border }, pressed && styles.opsRowPressed]}
-            onPress={() => router.push({ pathname: '/admin/events/[id]/edit', params: { id: String(eventId) } })}
+            onPress={() => handleNav(() => router.push({ pathname: '/admin/events/[id]/edit', params: { id: String(eventId) } }))}
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
               <Ionicons name="pencil" size={20} color={themeBlue} />
@@ -289,7 +291,7 @@ export default function AdminEventOperationsScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.opsRow, styles.opsRowLast, { borderBottomColor: colors.border }, pressed && styles.opsRowPressed]}
-            onPress={() => router.push({ pathname: '/events/[id]', params: { id: String(eventId) } })}
+            onPress={() => handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(eventId) } }))}
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
               <Ionicons name="calendar" size={20} color={themeBlue} />
@@ -418,7 +420,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.full,
   },
-  quickNavPillPressed: { opacity: 0.85 },
+  quickNavPillPressed: { opacity: NAV_PRESSED_OPACITY },
   quickNavPillText: { fontSize: 13, fontWeight: '600', color: themeYellow },
   card: {
     borderRadius: BorderRadius.lg,
@@ -450,7 +452,7 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   opsRowLast: { borderBottomWidth: 0 },
-  opsRowPressed: { opacity: 0.7 },
+  opsRowPressed: { opacity: NAV_PRESSED_OPACITY },
   opsIconWrap: {
     width: 40,
     height: 40,

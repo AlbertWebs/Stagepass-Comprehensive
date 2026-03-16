@@ -1,7 +1,9 @@
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { useDispatch } from 'react-redux';
 import { StagePassButton } from '@/components/StagePassButton';
+import { useNavigationPress } from '@/src/utils/navigationPress';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing, StagePassColors } from '@/constants/theme';
@@ -13,9 +15,12 @@ import { api } from '~/services/api';
 export function NoEventTodayScreen() {
   const router = useRouter();
   const dispatch = useDispatch();
+  const handleNav = useNavigationPress();
   const { colors } = useStagePassTheme();
+  const [signingOut, setSigningOut] = useState(false);
 
   const handleLogout = async () => {
+    setSigningOut(true);
     try {
       await api.auth.logout();
     } catch {
@@ -24,6 +29,7 @@ export function NoEventTodayScreen() {
     await clearStoredToken();
     dispatch(logout());
     router.replace('/login');
+    setSigningOut(false);
   };
 
   return (
@@ -36,7 +42,7 @@ export function NoEventTodayScreen() {
       </ThemedText>
       <StagePassButton
         title="View all events"
-        onPress={() => router.push('/(tabs)/events')}
+        onPress={() => handleNav(() => router.push('/(tabs)/events'))}
         variant="primary"
         style={styles.cta}
       />
@@ -45,6 +51,8 @@ export function NoEventTodayScreen() {
         onPress={handleLogout}
         variant="outline"
         style={styles.logout}
+        loading={signingOut}
+        disabled={signingOut}
       />
     </ThemedView>
   );

@@ -34,7 +34,8 @@ class AttendanceController extends Controller
         ]);
 
         $user = $request->user();
-        $tz = config('app.timezone', 'Africa/Nairobi');
+        // Use fixed timezone so "today" matches /me and business location (Nairobi).
+        $tz = 'Africa/Nairobi';
         $now = Carbon::now($tz);
         $today = $now->toDateString();
 
@@ -136,10 +137,15 @@ class AttendanceController extends Controller
     public function officeCheckout(Request $request): JsonResponse
     {
         $user = $request->user();
-        $today = Carbon::now(config('app.timezone', 'Africa/Nairobi'))->toDateString();
-        $record = DailyOfficeCheckin::where('user_id', $user->id)->where('date', $today)->first();
+        $tz = 'Africa/Nairobi';
+        $today = Carbon::now($tz)->toDateString();
+        $record = DailyOfficeCheckin::where('user_id', $user->id)->whereDate('date', $today)->first();
 
         if (! $record) {
+            Log::info('Office checkout: no check-in found', [
+                'user_id' => $user->id,
+                'today' => $today,
+            ]);
             return response()->json(['message' => 'You have not checked in today.'], 422);
         }
         if ($record->checkout_time) {
@@ -149,7 +155,7 @@ class AttendanceController extends Controller
             ], 422);
         }
 
-        $record->checkout_time = Carbon::now(config('app.timezone', 'Africa/Nairobi'));
+        $record->checkout_time = Carbon::now($tz);
         $record->save();
 
         return response()->json([
@@ -232,16 +238,17 @@ class AttendanceController extends Controller
         $todayStr = $today->toDateString();
         $from = $today->copy()->subDays(30)->toDateString();
 
+        // Include events on or before today so today's assignment and check-in count.
         $totalAssigned = EventUser::where('user_id', $user->id)
             ->whereHas('event', function ($q) use ($todayStr) {
-                $q->where('date', '<', $todayStr);
+                $q->whereDate('date', '<=', $todayStr);
             })
             ->count();
 
         $checkedIn = EventUser::where('user_id', $user->id)
             ->whereNotNull('checkin_time')
             ->whereHas('event', function ($q) use ($todayStr) {
-                $q->where('date', '<', $todayStr);
+                $q->whereDate('date', '<=', $todayStr);
             })
             ->count();
 
@@ -261,6 +268,16 @@ class AttendanceController extends Controller
             ? 100
             : round((float) ($fulfilled / $totalObligations) * 100, 1);
 
+        // Office streak: 100% minus each missed weekday in period (~22 days/month). No expected days = 100%.
+        $officeStreakPercentage = $expectedOfficeWeekdays === 0
+            ? 100
+            : round((float) ($officeCheckinsLast30 / $expectedOfficeWeekdays) * 100, 1);
+
+        // Events streak: 100% minus each allocated event where crew did not check in. No assignments = 100%.
+        $eventsStreakPercentage = $totalAssigned === 0
+            ? 100
+            : round((float) ($checkedIn / $totalAssigned) * 100, 1);
+
         return response()->json([
             'total_assigned' => $totalAssigned,
             'checked_in' => $checkedIn,
@@ -269,6 +286,8 @@ class AttendanceController extends Controller
             'office_checkins_last_30' => $officeCheckinsLast30,
             'expected_office_weekdays' => $expectedOfficeWeekdays,
             'pull_up_percentage' => $pullUpPercentage,
+            'office_streak_percentage' => $officeStreakPercentage,
+            'events_streak_percentage' => $eventsStreakPercentage,
         ]);
     }
 
