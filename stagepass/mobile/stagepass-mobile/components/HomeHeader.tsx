@@ -3,15 +3,14 @@
  * Use everywhere for a consistent look across tabs and admin/stack screens.
  */
 import { usePathname, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Modal, Pressable, StyleSheet, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useDispatch } from 'react-redux';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ThemedText } from '@/components/themed-text';
 import { Icons, Typography } from '@/constants/ui';
-import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { NAV_PRESSED_OPACITY } from '@/src/utils/navigationPress';
 import { useNavigationPress } from '@/src/utils/navigationPress';
@@ -21,8 +20,7 @@ import { logout } from '~/store/authSlice';
 import { clearStoredToken } from '~/store/persistAuth';
 
 const SUPPORT_WHATSAPP = process.env.EXPO_PUBLIC_SUPPORT_WHATSAPP ?? '';
-const ICON_BTN_SIZE = 36;
-const ACCENT_HEIGHT = 2.5;
+const ICON_BTN_SIZE = 34;
 
 const ADMIN_MORE_LINKS: { label: string; href: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { label: 'Events', href: '/admin/events', icon: 'calendar-outline' },
@@ -37,14 +35,14 @@ const ROUTE_TITLES: Record<string, string> = {
   '': 'Home', '/': 'Home', '/(tabs)': 'Home', '/(tabs)/': 'Home', '/(tabs)/index': 'Home',
   '/(tabs)/events': 'My Events', '/(tabs)/activity': 'Activities', '/(tabs)/profile': 'Profile',
   '/(tabs)/everything': 'Everything', '/(tabs)/allowances': 'Allowances',
-  '/(tabs)/recent-activity': 'Recent activity', '/(tabs)/quick-actions': 'Quick actions',
+  '/(tabs)/recent-activity': 'Recent activity', '/(tabs)/quick-actions': 'Quick actions', '/(tabs)/messages': 'Messages',
   '/(tabs)/tasks': 'Tasks',
   events: 'My Events', activity: 'Activities', profile: 'Profile',
-  everything: 'Everything', allowances: 'Allowances', 'recent-activity': 'Recent activity', 'quick-actions': 'Quick actions', tasks: 'Tasks',
+  everything: 'Everything', allowances: 'Allowances', 'recent-activity': 'Recent activity', 'quick-actions': 'Quick actions', messages: 'Messages', tasks: 'Tasks',
 };
 const SEGMENT_TITLES: Record<string, string> = {
   index: 'Home', events: 'My Events', activity: 'Activities', profile: 'Profile',
-  everything: 'Everything', allowances: 'Allowances', 'recent-activity': 'Recent activity', 'quick-actions': 'Quick actions', tasks: 'Tasks',
+  everything: 'Everything', allowances: 'Allowances', 'recent-activity': 'Recent activity', 'quick-actions': 'Quick actions', messages: 'Messages', tasks: 'Tasks',
 };
 const ADMIN_SEGMENT_TITLES: Record<string, string> = {
   users: 'Users & Crew', events: 'Events', equipment: 'Equipment', clients: 'Clients',
@@ -111,11 +109,10 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
   const { colors, isDark } = useStagePassTheme();
   const paddingTop = Math.max(insets.top, Spacing.sm);
   const displayTitle = title ?? (getTitleFromPath(pathname) || 'Home');
-  const chatOutlineColor = isDark ? themeYellow : themeBlue;
-  const chatIconColor = themeYellow;
   const isAdmin = role === 'admin' || role === 'team_leader';
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [liveNoticeCount, setLiveNoticeCount] = useState(0);
   const handleNav = useNavigationPress();
 
   const toggleMoreMenu = useCallback(() => setMoreMenuOpen((v) => !v), []);
@@ -174,19 +171,42 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
     }
   };
 
-  const headerBg = isDark ? colors.surface : colors.surface;
-  const iconTint = isDark ? themeYellow + '28' : themeBlue + '14';
-  const iconBorder = isDark ? themeYellow + '40' : themeBlue + '25';
+  const headerBg = isDark ? '#1E212A' : '#F5F7FC';
+  const iconTint = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  const iconBorder = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.10)';
+  const iconColor = colors.text;
+  const titleColor = isDark ? '#F9FAFB' : '#0F172A';
+  const titleCapColor = isDark ? 'rgba(249,250,251,0.75)' : 'rgba(15,23,42,0.75)';
+  const neutralBadgeBg = isDark ? '#E5E7EB' : '#111827';
+  const neutralBadgeText = isDark ? '#111827' : '#F9FAFB';
+  const resolvedNoticeCount = typeof notificationCount === 'number' ? notificationCount : liveNoticeCount;
+
+  useEffect(() => {
+    let cancelled = false;
+    api.communications
+      .list()
+      .then((res) => {
+        if (cancelled) return;
+        const list = Array.isArray(res?.data) ? res.data : [];
+        setLiveNoticeCount(list.length);
+      })
+      .catch(() => {
+        if (!cancelled) setLiveNoticeCount(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
 
   return (
     <View style={[styles.outer, { paddingTop, backgroundColor: headerBg }]}>
       <Modal visible={signingOut} transparent animationType="fade" statusBarTranslucent>
         <View style={[styles.logoutOverlay, { backgroundColor: colors.background + 'EE' }]}>
-          <ActivityIndicator size="large" color={themeYellow} />
+          <ActivityIndicator size="large" color={colors.text} />
           <ThemedText style={[styles.logoutOverlayText, { color: colors.text }]}>Signing out…</ThemedText>
         </View>
       </Modal>
-      <View style={[styles.bar, { borderBottomColor: colors.border }]}>
+      <View style={styles.bar}>
         {showBack ? (
           <>
             <View style={styles.headerRow}>
@@ -196,20 +216,20 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
                 accessibilityLabel="Go back"
                 accessibilityRole="button"
               >
-                <Ionicons name="chevron-back" size={Icons.header} color={isDark ? themeYellow : themeBlue} />
+                <Ionicons name="chevron-back" size={Icons.header} color={iconColor} />
               </Pressable>
               <View style={[styles.titleWrap, styles.titleWrapFull]}>
-                <View style={[styles.titleCap, { backgroundColor: isDark ? themeYellow : themeBlue }]} />
+                <View style={[styles.titleCap, { backgroundColor: titleCapColor }]} />
                 <ThemedText
                   type="titleLarge"
-                  style={[styles.title, { color: isDark ? themeYellow : themeBlue }]}
+                  style={[styles.title, { color: titleColor }]}
                   numberOfLines={1}
                 >
                   {displayTitle}
                 </ThemedText>
               </View>
             </View>
-            <View style={[styles.navRow, { borderTopColor: colors.border }]}>
+            <View style={styles.navRow}>
               <Pressable
                 onPress={() => {
                   handleNav(() => {
@@ -226,41 +246,37 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
                     const p = (pathname || '').replace(/\/$/, '');
                     if (p.includes('/admin/users')) return 'Users & Crew';
                     if (p.includes('/admin/events')) return 'Projects';
-                    return 'My Events';
+                    return getTitleFromPath(pathname) || 'Everything';
                   })()}
                 </ThemedText>
               </Pressable>
               <View style={styles.rightRow}>
-                {typeof notificationCount === 'number' && (
-                  <Pressable
-                    onPress={() => handleNav(() => router.push('/(tabs)/activity'))}
-                    style={({ pressed }) => [styles.iconBtn, styles.bellWrap, { backgroundColor: iconTint, borderColor: iconBorder }, pressed && styles.iconBtnPressed]}
-                    accessibilityLabel="Notifications"
-                    accessibilityRole="button"
-                  >
-                    <Ionicons name="notifications-outline" size={Icons.header} color={chatIconColor} />
-                    {notificationCount > 0 && (
-                      <View style={[styles.bellBadge, { backgroundColor: themeYellow }]}>
-                        <ThemedText style={styles.bellBadgeText} numberOfLines={1}>
-                          {notificationCount > 99 ? '99+' : notificationCount}
-                        </ThemedText>
-                      </View>
-                    )}
-                  </Pressable>
-                )}
+                <Pressable
+                  onPress={() => handleNav(() => router.push('/(tabs)/messages'))}
+                  style={({ pressed }) => [styles.iconBtn, styles.bellWrap, styles.bellBtn, { backgroundColor: iconTint, borderColor: iconBorder }, pressed && styles.iconBtnPressed]}
+                  accessibilityLabel="Notifications"
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="notifications-outline" size={Icons.header} color={iconColor} />
+                  <View style={[styles.bellBadge, { backgroundColor: neutralBadgeBg }]}>
+                    <ThemedText style={[styles.bellBadgeText, { color: neutralBadgeText }]} numberOfLines={1}>
+                      {resolvedNoticeCount > 99 ? '99+' : resolvedNoticeCount}
+                    </ThemedText>
+                  </View>
+                </Pressable>
                 {isAdmin ? (
                   <Pressable
                     onPress={toggleMoreMenu}
                     style={({ pressed }) => [
                       styles.iconBtn,
-                      { backgroundColor: iconTint, borderColor: moreMenuOpen ? themeYellow : iconBorder },
+                      { backgroundColor: iconTint, borderColor: iconBorder },
                       pressed && styles.iconBtnPressed,
-                      moreMenuOpen && (isDark ? { backgroundColor: themeYellow + '28' } : { backgroundColor: themeBlue + '18' }),
+                      moreMenuOpen && (isDark ? { backgroundColor: 'rgba(255,255,255,0.12)' } : { backgroundColor: 'rgba(0,0,0,0.10)' }),
                     ]}
                     accessibilityLabel="More (admin)"
                     accessibilityState={{ expanded: moreMenuOpen }}
                   >
-                    <Ionicons name="apps-outline" size={Icons.header} color={chatIconColor} />
+                    <Ionicons name="apps-outline" size={Icons.header} color={iconColor} />
                   </Pressable>
                 ) : null}
                 <Pressable
@@ -268,14 +284,14 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
                   style={({ pressed }) => [styles.iconBtn, { backgroundColor: iconTint, borderColor: iconBorder }, pressed && styles.iconBtnPressed]}
                   accessibilityLabel="Chat support"
                 >
-                  <Ionicons name="chatbubbles-outline" size={Icons.header} color={chatIconColor} />
+                  <Ionicons name="chatbubbles-outline" size={Icons.header} color={iconColor} />
                 </Pressable>
                 <Pressable
                   onPress={handleLogout}
-                  style={({ pressed }) => [styles.iconBtn, styles.logoutBtn, { backgroundColor: isDark ? themeYellow + '20' : themeBlue + '12', borderColor: isDark ? themeYellow + '50' : themeBlue + '35' }, pressed && styles.iconBtnPressed]}
+                  style={({ pressed }) => [styles.iconBtn, styles.logoutBtn, { backgroundColor: iconTint, borderColor: iconBorder }, pressed && styles.iconBtnPressed]}
                   accessibilityLabel="Sign out"
                 >
-                  <Ionicons name="log-out-outline" size={Icons.header} color={themeYellow} />
+                  <Ionicons name="log-out-outline" size={Icons.header} color={iconColor} />
                 </Pressable>
               </View>
             </View>
@@ -283,42 +299,38 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
         ) : (
           <View style={styles.barRow}>
             <View style={styles.titleWrap}>
-              <View style={[styles.titleCap, { backgroundColor: isDark ? themeYellow : themeBlue }]} />
-              <ThemedText type="titleLarge" style={[styles.title, { color: isDark ? themeYellow : themeBlue }]} numberOfLines={1}>
+              <View style={[styles.titleCap, { backgroundColor: titleCapColor }]} />
+              <ThemedText type="titleLarge" style={[styles.title, { color: titleColor }]} numberOfLines={1}>
                 {displayTitle}
               </ThemedText>
             </View>
             <View style={styles.rightRow}>
-              {typeof notificationCount === 'number' && (
-                <Pressable
-                  onPress={() => handleNav(() => router.push('/(tabs)/activity'))}
-                  style={({ pressed }) => [styles.iconBtn, styles.bellWrap, { backgroundColor: iconTint, borderColor: iconBorder }, pressed && styles.iconBtnPressed]}
-                  accessibilityLabel="Notifications"
-                  accessibilityRole="button"
-                >
-                  <Ionicons name="notifications-outline" size={Icons.header} color={chatIconColor} />
-                  {notificationCount > 0 && (
-                    <View style={[styles.bellBadge, { backgroundColor: themeYellow }]}>
-                      <ThemedText style={styles.bellBadgeText} numberOfLines={1}>
-                        {notificationCount > 99 ? '99+' : notificationCount}
-                      </ThemedText>
-                    </View>
-                  )}
-                </Pressable>
-              )}
+              <Pressable
+                onPress={() => handleNav(() => router.push('/(tabs)/messages'))}
+                style={({ pressed }) => [styles.iconBtn, styles.bellWrap, styles.bellBtn, { backgroundColor: iconTint, borderColor: iconBorder }, pressed && styles.iconBtnPressed]}
+                accessibilityLabel="Notifications"
+                accessibilityRole="button"
+              >
+                <Ionicons name="notifications-outline" size={Icons.header} color={iconColor} />
+                <View style={[styles.bellBadge, { backgroundColor: neutralBadgeBg }]}>
+                  <ThemedText style={[styles.bellBadgeText, { color: neutralBadgeText }]} numberOfLines={1}>
+                    {resolvedNoticeCount > 99 ? '99+' : resolvedNoticeCount}
+                  </ThemedText>
+                </View>
+              </Pressable>
               {isAdmin ? (
                 <Pressable
                   onPress={toggleMoreMenu}
                   style={({ pressed }) => [
                     styles.iconBtn,
-                    { backgroundColor: iconTint, borderColor: moreMenuOpen ? themeYellow : iconBorder },
+                    { backgroundColor: iconTint, borderColor: iconBorder },
                     pressed && styles.iconBtnPressed,
-                    moreMenuOpen && (isDark ? { backgroundColor: themeYellow + '28' } : { backgroundColor: themeBlue + '18' }),
+                    moreMenuOpen && (isDark ? { backgroundColor: 'rgba(255,255,255,0.12)' } : { backgroundColor: 'rgba(0,0,0,0.10)' }),
                   ]}
                   accessibilityLabel="More (admin)"
                   accessibilityState={{ expanded: moreMenuOpen }}
                 >
-                  <Ionicons name="apps-outline" size={Icons.header} color={chatIconColor} />
+                  <Ionicons name="apps-outline" size={Icons.header} color={iconColor} />
                 </Pressable>
               ) : null}
               <Pressable
@@ -326,26 +338,19 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
                 style={({ pressed }) => [styles.iconBtn, { backgroundColor: iconTint, borderColor: iconBorder }, pressed && styles.iconBtnPressed]}
                 accessibilityLabel="Chat support"
               >
-                <Ionicons name="chatbubbles-outline" size={Icons.header} color={chatIconColor} />
+                <Ionicons name="chatbubbles-outline" size={Icons.header} color={iconColor} />
               </Pressable>
               <Pressable
                 onPress={handleLogout}
-                style={({ pressed }) => [styles.iconBtn, styles.logoutBtn, { backgroundColor: isDark ? themeYellow + '20' : themeBlue + '12', borderColor: isDark ? themeYellow + '50' : themeBlue + '35' }, pressed && styles.iconBtnPressed]}
+                style={({ pressed }) => [styles.iconBtn, styles.logoutBtn, { backgroundColor: iconTint, borderColor: iconBorder }, pressed && styles.iconBtnPressed]}
                 accessibilityLabel="Sign out"
               >
-                <Ionicons name="log-out-outline" size={Icons.header} color={themeYellow} />
+                <Ionicons name="log-out-outline" size={Icons.header} color={iconColor} />
               </Pressable>
             </View>
           </View>
         )}
       </View>
-      <LinearGradient
-        colors={[themeYellow, themeYellow, isDark ? themeYellow : themeBlue, isDark ? themeYellow : themeBlue]}
-        locations={[0, 0.5, 0.52, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.accent}
-      />
 
       {isAdmin && moreMenuOpen && (
         <Modal visible transparent animationType="fade" onRequestClose={closeMoreMenu}>
@@ -364,7 +369,7 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
                     pressed && { opacity: NAV_PRESSED_OPACITY },
                   ]}
                 >
-                  <Ionicons name={item.icon} size={Icons.standard} color={themeYellow} />
+                  <Ionicons name={item.icon} size={Icons.standard} color={colors.text} />
                   <ThemedText type="body" style={[styles.moreItemLabel, { color: colors.text }]}>{item.label}</ThemedText>
                   <Ionicons name="chevron-forward" size={Icons.medium} color={colors.textSecondary} />
                 </Pressable>
@@ -391,14 +396,13 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   bar: {
-    paddingVertical: Spacing.sm + 2,
-    paddingBottom: Spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingVertical: Spacing.sm + 1,
+    paddingBottom: Spacing.sm - 1,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 44,
+    minHeight: 42,
   },
   navRow: {
     flexDirection: 'row',
@@ -406,7 +410,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingTop: Spacing.sm + 2,
     marginTop: 2,
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
   breadcrumbWrap: {
     paddingVertical: 2,
@@ -421,7 +424,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 44,
+    minHeight: 42,
   },
   titleWrapFull: {
     marginRight: 0,
@@ -451,7 +454,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1,
-    fontSize: Typography.titleLarge,
+    fontSize: Typography.titleCard,
     fontWeight: Typography.titleLargeWeight,
     letterSpacing: 0.35,
   },
@@ -476,6 +479,9 @@ const styles = StyleSheet.create({
   bellWrap: {
     position: 'relative',
   },
+  bellBtn: {
+    overflow: 'visible',
+  },
   bellBadge: {
     position: 'absolute',
     top: -2,
@@ -491,14 +497,6 @@ const styles = StyleSheet.create({
   bellBadgeText: {
     fontSize: 9,
     fontWeight: '800',
-    color: themeBlue,
-  },
-  accent: {
-    height: ACCENT_HEIGHT,
-    marginHorizontal: 0,
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
-    overflow: 'hidden',
   },
   moreOverlay: {
     flex: 1,

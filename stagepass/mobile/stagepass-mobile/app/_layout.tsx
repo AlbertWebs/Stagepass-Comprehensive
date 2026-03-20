@@ -7,7 +7,6 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 
 import { ThemePreferenceProvider } from '@/context/ThemePreferenceContext';
-import { StagepassLoader } from '@/components/StagepassLoader';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { setOnUnauthorized } from '~/services/api';
 import { store } from '~/store';
@@ -55,20 +54,20 @@ function RootLayoutNav() {
   return (
     <SafeAreaProvider>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        {isLoading ? (
-          <StagepassLoader message="Checking session…" fullScreen />
-        ) : (
-          <>
-            <Stack>
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="login" options={{ headerShown: false }} />
-              <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
-              <Stack.Screen name="events/[id]" options={{ title: 'Event details' }} />
-              <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-            </Stack>
-            {shouldRedirectToLogin && <Redirect href="/login" />}
-          </>
-        )}
+        <>
+          <Stack
+            screenOptions={{
+              animation: 'slide_from_right',
+            }}
+          >
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="login" options={{ headerShown: false }} />
+            <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
+            <Stack.Screen name="events/[id]" options={{ title: 'Event details' }} />
+            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+          </Stack>
+          {shouldRedirectToLogin && <Redirect href="/login" />}
+        </>
         <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
       </ThemeProvider>
     </SafeAreaProvider>

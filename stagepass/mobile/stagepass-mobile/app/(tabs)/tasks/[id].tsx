@@ -68,6 +68,7 @@ export default function TaskDetailScreen() {
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
+  const canManageTask = role === 'admin' || role === 'team_leader';
 
   const load = useCallback(async () => {
     if (!taskId) return;
@@ -173,8 +174,28 @@ export default function TaskDetailScreen() {
           <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.sectionHeader}>
               <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
-              <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Status</ThemedText>
+              <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>
+                {canManageTask ? 'Status control' : 'Status'}
+              </ThemedText>
             </View>
+            {canManageTask && task.status !== 'completed' && (
+              <Pressable
+                onPress={() => handleStatusChange('completed')}
+                disabled={updatingStatus}
+                style={({ pressed }) => [
+                  styles.completeBtn,
+                  {
+                    backgroundColor: themeYellow,
+                    opacity: updatingStatus ? 0.7 : pressed ? NAV_PRESSED_OPACITY : 1,
+                  },
+                ]}
+              >
+                <Ionicons name="checkmark-done" size={16} color={themeBlue} />
+                <ThemedText style={[styles.completeBtnText, { color: themeBlue }]}>
+                  {updatingStatus ? 'Updating…' : 'Mark as completed'}
+                </ThemedText>
+              </Pressable>
+            )}
             <View style={styles.statusRow}>
               {STATUS_OPTIONS.map((status) => (
                 <Pressable
@@ -245,6 +266,11 @@ export default function TaskDetailScreen() {
                 </ThemedText>
               </Pressable>
             </View>
+            <ThemedText style={[styles.commentHint, { color: colors.textSecondary }]}>
+              {canManageTask
+                ? 'As admin/team leader, use comments for updates and handover notes.'
+                : 'Add updates or blockers for your team.'}
+            </ThemedText>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -272,6 +298,17 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', gap: Spacing.lg, marginTop: Spacing.sm },
   meta: { fontSize: 13, marginTop: 4 },
   statusRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
+  completeBtn: {
+    marginBottom: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    paddingVertical: 10,
+    paddingHorizontal: Spacing.md,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  completeBtnText: { fontSize: 14, fontWeight: '700' },
   statusBtn: {
     paddingVertical: 8,
     paddingHorizontal: 14,
@@ -295,4 +332,5 @@ const styles = StyleSheet.create({
   },
   commentSubmit: { paddingVertical: 10, paddingHorizontal: Spacing.md, borderRadius: BorderRadius.md },
   commentSubmitText: { fontSize: 14, fontWeight: '700' },
+  commentHint: { fontSize: 12, marginTop: Spacing.xs },
 });

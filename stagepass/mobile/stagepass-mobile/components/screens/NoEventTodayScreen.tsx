@@ -16,7 +16,7 @@ export function NoEventTodayScreen() {
   const router = useRouter();
   const dispatch = useDispatch();
   const handleNav = useNavigationPress();
-  const { colors } = useStagePassTheme();
+  const { colors, isDark } = useStagePassTheme();
   const [signingOut, setSigningOut] = useState(false);
 
   const handleLogout = async () => {
@@ -37,7 +37,7 @@ export function NoEventTodayScreen() {
       <ThemedText style={[styles.title, { color: StagePassColors.themeBlue }]}>
         No Event Assigned Today
       </ThemedText>
-      <ThemedText style={[styles.subtitle, { color: StagePassColors.themeYellow }]}>
+      <ThemedText style={[styles.subtitle, { color: isDark ? '#F9FAFB' : '#0F172A' }]}>
         You don't have an event assigned for today. Check the Events tab for upcoming assignments or contact your team leader.
       </ThemedText>
       <StagePassButton

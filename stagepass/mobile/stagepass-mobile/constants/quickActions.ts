@@ -12,8 +12,8 @@ export type QuickAction = {
 };
 
 export const QUICK_ACTIONS: QuickAction[] = [
-  { id: 'create', label: 'Create Event', icon: 'add-circle', href: '/admin/events/create', roles: ['admin'] },
   { id: 'events', label: 'My Events', icon: 'calendar', href: '/(tabs)/events' },
+  { id: 'create', label: 'Create Event', icon: 'add-circle', href: '/admin/events/create', roles: ['admin'] },
   { id: 'checkin', label: 'Crew Check-in', icon: 'location', href: '/(tabs)/events', roles: ['crew', 'team_leader'] },
   { id: 'activity', label: 'Activities', icon: 'notifications', href: '/(tabs)/activity' },
   { id: 'tasks', label: 'Tasks', icon: 'checkbox', href: '/(tabs)/tasks', roles: ['crew', 'team_leader'] },

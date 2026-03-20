@@ -2,12 +2,14 @@
  * Report builder: filters + Generate Report + result view + Export (printable HTML).
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Linking,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -30,6 +32,7 @@ import {
   type ReportCrewPaymentsResponse,
   type ReportTasksResponse,
   type ReportFinancialResponse,
+  type ReportEndOfDayResponse,
 } from '~/services/api';
 
 const U = { sm: 8, md: 12, lg: 16, xl: 20 };
@@ -41,6 +44,7 @@ const TYPE_LABELS: Record<ReportType, string> = {
   'crew-payments': 'Crew payments',
   tasks: 'Task report',
   financial: 'Financial summary',
+  'end-of-day': 'End-of-day signed report',
 };
 
 function getDefaultDateRange(): { date_from: string; date_to: string } {
@@ -50,6 +54,18 @@ function getDefaultDateRange(): { date_from: string; date_to: string } {
     date_from: from.toISOString().slice(0, 10),
     date_to: today.toISOString().slice(0, 10),
   };
+}
+
+function parseDateInput(value: string): Date {
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? new Date() : d;
+}
+
+function formatDateInput(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 export default function AdminReportBuilderScreen() {
@@ -62,16 +78,21 @@ export default function AdminReportBuilderScreen() {
   const defaultRange = getDefaultDateRange();
   const [dateFrom, setDateFrom] = useState(defaultRange.date_from);
   const [dateTo, setDateTo] = useState(defaultRange.date_to);
+  const [showFromPicker, setShowFromPicker] = useState(false);
+  const [showToPicker, setShowToPicker] = useState(false);
   const [eventId, setEventId] = useState<string>('');
   const [userId, setUserId] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [confirmedBy, setConfirmedBy] = useState('');
+  const [signature, setSignature] = useState('');
   const [result, setResult] = useState<
     | ReportEventsResponse
     | ReportCrewAttendanceResponse
     | ReportCrewPaymentsResponse
     | ReportTasksResponse
     | ReportFinancialResponse
+    | ReportEndOfDayResponse
     | null
   >(null);
   const [events, setEvents] = useState<{ id: number; name: string }[]>([]);
@@ -92,8 +113,12 @@ export default function AdminReportBuilderScreen() {
     const f: ReportFilters = { date_from: dateFrom, date_to: dateTo };
     if (eventId.trim()) f.event_id = parseInt(eventId, 10);
     if (userId.trim()) f.user_id = parseInt(userId, 10);
+    if (reportType === 'end-of-day') {
+      if (confirmedBy.trim()) f.confirmed_by = confirmedBy.trim();
+      if (signature.trim()) f.signature = signature.trim();
+    }
     return f;
-  }, [dateFrom, dateTo, eventId, userId]);
+  }, [dateFrom, dateTo, eventId, userId, reportType, confirmedBy, signature]);
 
   const generateReport = useCallback(async () => {
     setLoading(true);
@@ -115,6 +140,9 @@ export default function AdminReportBuilderScreen() {
           break;
         case 'financial':
           setResult(await api.reports.financial(filters));
+          break;
+        case 'end-of-day':
+          setResult(await api.reports.endOfDay(filters));
           break;
         default:
           setResult(await api.reports.events(filters));
@@ -153,6 +181,16 @@ export default function AdminReportBuilderScreen() {
 
   const title = TYPE_LABELS[reportType] ?? 'Report';
   const bottomPad = insets.bottom + Spacing.xl;
+  const onFromDateChange = (_event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (Platform.OS === 'android') setShowFromPicker(false);
+    if (!selectedDate) return;
+    setDateFrom(formatDateInput(selectedDate));
+  };
+  const onToDateChange = (_event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (Platform.OS === 'android') setShowToPicker(false);
+    if (!selectedDate) return;
+    setDateTo(formatDateInput(selectedDate));
+  };
 
   return (
     <ThemedView style={styles.container}>
@@ -165,9 +203,45 @@ export default function AdminReportBuilderScreen() {
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Filters</ThemedText>
           <ThemedText style={[styles.label, { color: colors.textSecondary }]}>Date from</ThemedText>
-          <StagePassInput value={dateFrom} onChangeText={setDateFrom} placeholder="YYYY-MM-DD" style={styles.input} />
+          <Pressable
+            onPress={() => setShowFromPicker(true)}
+            style={({ pressed }) => [
+              styles.dateField,
+              { borderColor: colors.border, backgroundColor: colors.background, opacity: pressed ? 0.9 : 1 },
+            ]}
+          >
+            <ThemedText style={[styles.dateFieldValue, { color: colors.text }]}>{dateFrom}</ThemedText>
+            <Ionicons name="calendar-outline" size={18} color={colors.textSecondary} />
+          </Pressable>
+          {showFromPicker ? (
+            <DateTimePicker
+              value={parseDateInput(dateFrom)}
+              mode="date"
+              display="default"
+              onChange={onFromDateChange}
+              maximumDate={parseDateInput(dateTo)}
+            />
+          ) : null}
           <ThemedText style={[styles.label, { color: colors.textSecondary }]}>Date to</ThemedText>
-          <StagePassInput value={dateTo} onChangeText={setDateTo} placeholder="YYYY-MM-DD" style={styles.input} />
+          <Pressable
+            onPress={() => setShowToPicker(true)}
+            style={({ pressed }) => [
+              styles.dateField,
+              { borderColor: colors.border, backgroundColor: colors.background, opacity: pressed ? 0.9 : 1 },
+            ]}
+          >
+            <ThemedText style={[styles.dateFieldValue, { color: colors.text }]}>{dateTo}</ThemedText>
+            <Ionicons name="calendar-outline" size={18} color={colors.textSecondary} />
+          </Pressable>
+          {showToPicker ? (
+            <DateTimePicker
+              value={parseDateInput(dateTo)}
+              mode="date"
+              display="default"
+              onChange={onToDateChange}
+              minimumDate={parseDateInput(dateFrom)}
+            />
+          ) : null}
           <ThemedText style={[styles.label, { color: colors.textSecondary }]}>Event (optional)</ThemedText>
           <StagePassInput
             value={eventId}
@@ -184,6 +258,24 @@ export default function AdminReportBuilderScreen() {
             keyboardType="number-pad"
             style={styles.input}
           />
+          {reportType === 'end-of-day' ? (
+            <>
+              <ThemedText style={[styles.label, { color: colors.textSecondary }]}>Confirmed by (name)</ThemedText>
+              <StagePassInput
+                value={confirmedBy}
+                onChangeText={setConfirmedBy}
+                placeholder="Team leader / admin name"
+                style={styles.input}
+              />
+              <ThemedText style={[styles.label, { color: colors.textSecondary }]}>Signature</ThemedText>
+              <StagePassInput
+                value={signature}
+                onChangeText={setSignature}
+                placeholder="Type name/signature"
+                style={styles.input}
+              />
+            </>
+          ) : null}
           <StagePassButton
             title={loading ? 'Generating…' : 'Generate report'}
             onPress={generateReport}
@@ -224,7 +316,13 @@ function ReportSummary({
   colors,
 }: {
   type: ReportType;
-  result: ReportEventsResponse | ReportCrewAttendanceResponse | ReportCrewPaymentsResponse | ReportTasksResponse | ReportFinancialResponse;
+  result:
+    | ReportEventsResponse
+    | ReportCrewAttendanceResponse
+    | ReportCrewPaymentsResponse
+    | ReportTasksResponse
+    | ReportFinancialResponse
+    | ReportEndOfDayResponse;
   colors: Record<string, string>;
 }) {
   const summary = (result as any).summary || {};
@@ -256,6 +354,12 @@ function ReportSummary({
     rows.push({ label: 'Total payments', value: summary.total_payments ?? 0 });
     rows.push({ label: 'Total amount', value: summary.total_amount ?? 0 });
   }
+  if (type === 'end-of-day') {
+    rows.push({ label: 'Events', value: summary.events_count ?? 0 });
+    rows.push({ label: 'Crew allowances', value: summary.crew_allowances_total ?? 0 });
+    rows.push({ label: 'Other expenses', value: summary.other_expenses_total ?? 0 });
+    rows.push({ label: 'Grand total', value: summary.grand_total ?? 0 });
+  }
 
   return (
     <View style={styles.summaryGrid}>
@@ -275,6 +379,17 @@ const styles = StyleSheet.create({
   card: { padding: U.xl, borderRadius: CARD_RADIUS, borderWidth: 1 },
   sectionTitle: { fontSize: 18, fontWeight: '800', marginBottom: U.lg },
   label: { fontSize: 13, fontWeight: '600', marginBottom: 4 },
+  dateField: {
+    minHeight: 46,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: U.md,
+    marginBottom: U.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dateFieldValue: { fontSize: 15, fontWeight: '600' },
   input: { marginBottom: U.md },
   generateBtn: { marginTop: U.md },
   resultHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: U.md, marginBottom: U.lg },

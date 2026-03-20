@@ -2,9 +2,10 @@
  * Allowances – approved payments and today’s daily allowance for crew/team leaders.
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import Animated, { SlideInRight } from 'react-native-reanimated';
 import { HomeHeader } from '@/components/HomeHeader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -31,10 +32,12 @@ export default function AllowancesScreen() {
   const router = useRouter();
   const role = useAppRole();
   const { colors, isDark } = useStagePassTheme();
+  const [animateKey, setAnimateKey] = useState(0);
   const [approvedAllowances, setApprovedAllowances] = useState<Payment[]>([]);
   const [allowanceToday, setAllowanceToday] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  useFocusEffect(useCallback(() => { setAnimateKey((k) => k + 1); }, []));
   const cardBg = isDark ? '#1E212A' : '#F5F7FC';
   const iconColor = isDark ? themeYellow : themeBlue;
 
@@ -75,11 +78,13 @@ export default function AllowancesScreen() {
     return (
       <ThemedView style={styles.container}>
         <HomeHeader title="Allowances" showBack onBack={() => router.back()} />
+        <Animated.View key={animateKey} entering={SlideInRight.duration(320)} style={{ flex: 1 }}>
         <View style={styles.centered}>
           <ThemedText style={[styles.emptyTitle, { color: colors.textSecondary }]}>
             Allowances are available for crew and team leaders.
           </ThemedText>
         </View>
+        </Animated.View>
       </ThemedView>
     );
   }
@@ -87,6 +92,7 @@ export default function AllowancesScreen() {
   return (
     <ThemedView style={styles.container}>
       <HomeHeader title="Allowances" showBack onBack={() => router.back()} />
+      <Animated.View key={animateKey} entering={SlideInRight.duration(320)} style={{ flex: 1 }}>
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingBottom: TAB_BAR_HEIGHT + U.section }]}
         showsVerticalScrollIndicator={false}
@@ -121,7 +127,7 @@ export default function AllowancesScreen() {
         </View>
 
         <View style={styles.section}>
-          <View style={styles.sectionTitleRow}>
+          <View style={[styles.sectionTitleRow, styles.approvedSectionTitleRow]}>
             <View style={[styles.accent, { backgroundColor: StatusColors.checkedIn }]} />
             <View style={[styles.iconWrap, { backgroundColor: StatusColors.checkedIn + '28' }]}>
               <Ionicons name="checkmark-done" size={14} color={StatusColors.checkedIn} />
@@ -162,6 +168,7 @@ export default function AllowancesScreen() {
           )}
         </View>
       </ScrollView>
+      </Animated.View>
     </ThemedView>
   );
 }
@@ -174,6 +181,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: U.sm,
+  },
+  approvedSectionTitleRow: {
+    marginBottom: U.md,
   },
   accent: { width: 3, height: 16, borderRadius: 0 },
   iconWrap: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },

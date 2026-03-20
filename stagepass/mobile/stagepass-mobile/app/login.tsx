@@ -51,6 +51,8 @@ export default function LoginScreen() {
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
+    // Login should default to system appearance (auto), not forced light/dark.
+    setPreference('system');
     getLoginLockoutUntil().then((until) => {
       if (until && until > Date.now()) setLockoutUntil(until);
       else setLockoutUntil(null);
@@ -58,7 +60,7 @@ export default function LoginScreen() {
     getLastUsername().then((u) => {
       if (u) setUsername(u);
     });
-  }, []);
+  }, [setPreference]);
 
   const navigateToHome = () => router.replace('/(tabs)');
 

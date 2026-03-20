@@ -15,6 +15,7 @@ class InternalBroadcastNotification extends Notification implements ShouldQueue
         public string $subject,
         public string $body,
         public string $senderName,
+        public ?int $communicationId = null,
         public bool $sendAsMessage = true,
         public bool $sendAsEmail = false
     ) {}
@@ -48,6 +49,7 @@ class InternalBroadcastNotification extends Notification implements ShouldQueue
             'body' => $this->body,
             'sender_name' => $this->senderName,
             'type' => 'internal_broadcast',
+            'communication_id' => $this->communicationId,
         ];
     }
 }

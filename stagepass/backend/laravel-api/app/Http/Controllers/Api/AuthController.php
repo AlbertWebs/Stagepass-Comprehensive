@@ -15,6 +15,26 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    private const DEFAULT_HOMEPAGE_PREFERENCES = [
+        'visibility' => [
+            'upcoming_events' => true,
+            'my_events' => true,
+            'attendance_stats' => true,
+            'recent_activities' => true,
+            'assigned_tasks' => true,
+            'announcements' => true,
+        ],
+        'order' => [
+            'upcoming_events',
+            'my_events',
+            'attendance_stats',
+            'recent_activities',
+            'assigned_tasks',
+            'announcements',
+        ],
+        'layout' => 'comfortable',
+    ];
+
     public function login(Request $request): JsonResponse
     {
         $username = $request->input('username');
@@ -131,6 +151,7 @@ class AuthController extends Controller
         $payload['office_checked_out_today'] = $officeCheckedOutToday;
         $payload['office_checkout_time'] = $officeCheckoutTime;
         $payload['has_approved_time_off_today'] = $hasApprovedTimeOffToday;
+        $payload['homepage_preferences'] = $this->normalizeHomepagePreferences($user->homepage_preferences);
 
         Log::info('GET /me office state', [
             'user_id' => $user->id,
@@ -152,6 +173,7 @@ class AuthController extends Controller
             'current_pin' => 'required_with:new_pin|nullable|string|max:20',
             'new_pin' => 'nullable|string|min:4|max:20|confirmed',
             'fcm_token' => 'nullable|string|max:500',
+            'homepage_preferences' => 'sometimes|array',
         ];
         $validated = $request->validate($rules);
         if (! empty($validated['name'])) {
@@ -166,6 +188,9 @@ class AuthController extends Controller
         if (array_key_exists('fcm_token', $validated)) {
             $user->fcm_token = $validated['fcm_token'] ?: null;
         }
+        if (array_key_exists('homepage_preferences', $validated)) {
+            $user->homepage_preferences = $this->normalizeHomepagePreferences($validated['homepage_preferences']);
+        }
         if (! empty($validated['new_pin'])) {
             if (empty($user->pin)) {
                 throw ValidationException::withMessages(['current_pin' => ['PIN is not set for this account.']]);
@@ -177,6 +202,47 @@ class AuthController extends Controller
         }
         $user->save();
         return response()->json($user->fresh()->load('roles'));
+    }
+
+    private function normalizeHomepagePreferences(?array $prefs): array
+    {
+        $base = self::DEFAULT_HOMEPAGE_PREFERENCES;
+        if (! is_array($prefs)) {
+            return $base;
+        }
+
+        $visibility = $base['visibility'];
+        if (isset($prefs['visibility']) && is_array($prefs['visibility'])) {
+            foreach ($visibility as $key => $default) {
+                if (array_key_exists($key, $prefs['visibility'])) {
+                    $visibility[$key] = (bool) $prefs['visibility'][$key];
+                }
+            }
+        }
+
+        $allowedOrder = array_keys($base['visibility']);
+        $incomingOrder = isset($prefs['order']) && is_array($prefs['order']) ? $prefs['order'] : [];
+        $order = [];
+        foreach ($incomingOrder as $item) {
+            if (is_string($item) && in_array($item, $allowedOrder, true) && ! in_array($item, $order, true)) {
+                $order[] = $item;
+            }
+        }
+        foreach ($allowedOrder as $item) {
+            if (! in_array($item, $order, true)) {
+                $order[] = $item;
+            }
+        }
+
+        $layout = isset($prefs['layout']) && in_array($prefs['layout'], ['compact', 'comfortable'], true)
+            ? $prefs['layout']
+            : $base['layout'];
+
+        return [
+            'visibility' => $visibility,
+            'order' => $order,
+            'layout' => $layout,
+        ];
     }
 
     public function forgotPassword(Request $request): JsonResponse

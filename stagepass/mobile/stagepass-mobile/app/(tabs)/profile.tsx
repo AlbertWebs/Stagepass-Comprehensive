@@ -1,10 +1,11 @@
 import type { User } from '~/services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,6 +17,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import Animated, { SlideInRight } from 'react-native-reanimated';
 import { useDispatch, useSelector } from 'react-redux';
 import { HomeHeader } from '@/components/HomeHeader';
 import { StagePassButton } from '@/components/StagePassButton';
@@ -31,6 +33,7 @@ import { useAppRole } from '~/hooks/useAppRole';
 import { api } from '~/services/api';
 import { logout, setUser } from '~/store/authSlice';
 import { clearStoredToken } from '~/store/persistAuth';
+import { PREF_SHOW_WELCOME_STATS_CARDS } from '~/constants/preferences';
 
 /** Profile scale: all spacing and sizes proportional to card title (titleCard = 17) */
 const T = Typography.titleCard;
@@ -76,6 +79,16 @@ function getInitial(name: string): string {
 
 const TAB_BAR_HEIGHT = 58;
 
+type DayPeriod = 'morning' | 'afternoon' | 'evening' | 'night';
+
+function getDayPeriod(date: Date): DayPeriod {
+  const hour = date.getHours();
+  if (hour >= 5 && hour < 12) return 'morning';
+  if (hour >= 12 && hour < 17) return 'afternoon';
+  if (hour >= 17 && hour < 21) return 'evening';
+  return 'night';
+}
+
 /** Profile tab – premium layout with hero, cards, and clear sections. Fits within safe area. */
 export default function ProfileScreen() {
   const router = useRouter();
@@ -87,6 +100,13 @@ export default function ProfileScreen() {
   const role = useAppRole();
 
   const bottomPadding = TAB_BAR_HEIGHT;
+  const [animateKey, setAnimateKey] = useState(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      setAnimateKey((k) => k + 1);
+    }, [])
+  );
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -103,6 +123,23 @@ export default function ProfileScreen() {
   const [passportPhotoUri, setPassportPhotoUri] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [showWelcomeStatsCards, setShowWelcomeStatsCards] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    AsyncStorage.getItem(PREF_SHOW_WELCOME_STATS_CARDS)
+      .then((v) => {
+        if (!mounted) return;
+        if (v == null) setShowWelcomeStatsCards(true);
+        else setShowWelcomeStatsCards(v === '1');
+      })
+      .catch(() => {
+        if (mounted) setShowWelcomeStatsCards(true);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -276,23 +313,62 @@ export default function ProfileScreen() {
     setSigningOut(false);
   };
 
+  const toggleWelcomeStatsCards = useCallback(async () => {
+    const next = !showWelcomeStatsCards;
+    setShowWelcomeStatsCards(next);
+    try {
+      await AsyncStorage.setItem(PREF_SHOW_WELCOME_STATS_CARDS, next ? '1' : '0');
+    } catch {
+      // Keep UI responsive even if persistence fails.
+    }
+  }, [showWelcomeStatsCards]);
+
+  const cardBg = colors.surface;
+  const cardBorder = isDark ? themeYellow + '44' : themeBlue + '22';
+  const dayPeriod = getDayPeriod(new Date());
+  const heroPatternTheme = (() => {
+    const map: Record<DayPeriod, { strong: string; soft: string; filled: string }> = {
+      morning: {
+        strong: isDark ? 'rgba(250, 204, 21, 0.12)' : 'rgba(245, 158, 11, 0.14)',
+        soft: isDark ? 'rgba(250, 204, 21, 0.10)' : 'rgba(245, 158, 11, 0.10)',
+        filled: isDark ? 'rgba(250, 204, 21, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+      },
+      afternoon: {
+        strong: isDark ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.14)',
+        soft: isDark ? 'rgba(16, 185, 129, 0.10)' : 'rgba(16, 185, 129, 0.10)',
+        filled: isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.08)',
+      },
+      evening: {
+        strong: isDark ? 'rgba(99, 102, 241, 0.14)' : 'rgba(37, 99, 235, 0.12)',
+        soft: isDark ? 'rgba(99, 102, 241, 0.11)' : 'rgba(37, 99, 235, 0.10)',
+        filled: isDark ? 'rgba(99, 102, 241, 0.08)' : 'rgba(37, 99, 235, 0.08)',
+      },
+      night: {
+        strong: isDark ? 'rgba(168, 85, 247, 0.14)' : 'rgba(79, 70, 229, 0.12)',
+        soft: isDark ? 'rgba(168, 85, 247, 0.11)' : 'rgba(79, 70, 229, 0.10)',
+        filled: isDark ? 'rgba(168, 85, 247, 0.08)' : 'rgba(79, 70, 229, 0.08)',
+      },
+    };
+    return map[dayPeriod];
+  })();
+
   if (!user) {
     return (
       <ThemedView style={styles.container}>
         <HomeHeader title="Profile" />
-        <ThemedText type="subtitle" style={{ color: colors.textSecondary, padding: P.lg }}>
-          Not signed in
-        </ThemedText>
+        <Animated.View key={animateKey} entering={SlideInRight.duration(320)} style={{ flex: 1 }}>
+          <ThemedText type="subtitle" style={{ color: colors.textSecondary, padding: P.lg }}>
+            Not signed in
+          </ThemedText>
+        </Animated.View>
       </ThemedView>
     );
   }
 
-  const cardBg = colors.surface;
-  const cardBorder = isDark ? themeYellow + '44' : themeBlue + '22';
-
   return (
     <ThemedView style={styles.container}>
       <HomeHeader title="Profile" />
+      <Animated.View key={animateKey} entering={SlideInRight.duration(320)} style={{ flex: 1 }}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.keyboard}
@@ -304,6 +380,29 @@ export default function ProfileScreen() {
         >
           {/* Name & role card – subtle tint, no solid block */}
           <View style={[styles.heroCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View pointerEvents="none" style={styles.heroPatternLayer}>
+              <View
+                style={[
+                  styles.heroHexShape,
+                  styles.heroHexOne,
+                  { borderColor: heroPatternTheme.strong, backgroundColor: 'transparent' },
+                ]}
+              />
+              <View
+                style={[
+                  styles.heroHexShapeSmall,
+                  styles.heroHexTwo,
+                  { borderColor: heroPatternTheme.soft, backgroundColor: 'transparent' },
+                ]}
+              />
+              <View
+                style={[
+                  styles.heroHexShapeDot,
+                  styles.heroHexThree,
+                  { backgroundColor: heroPatternTheme.filled },
+                ]}
+              />
+            </View>
             <LinearGradient
               colors={isDark ? [themeBlue + '18', themeBlue + '08', 'transparent'] : [themeYellow + '0c', themeBlue + '06', 'transparent']}
               locations={[0, 0.5, 1]}
@@ -393,6 +492,25 @@ export default function ProfileScreen() {
                 );
               })}
             </View>
+            <Pressable
+              onPress={toggleWelcomeStatsCards}
+              style={({ pressed }) => [
+                styles.settingRow,
+                { borderTopColor: cardBorder, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
+              ]}
+            >
+              <View style={styles.settingRowTextWrap}>
+                <ThemedText style={[styles.settingRowTitle, { color: colors.text }]}>Welcome stats cards</ThemedText>
+                <ThemedText style={[styles.settingRowSub, { color: colors.textSecondary }]}>
+                  Show Events, Tasks, and Notices chips on the Home welcome card
+                </ThemedText>
+              </View>
+              <Ionicons
+                name={showWelcomeStatsCards ? 'eye-outline' : 'eye-off-outline'}
+                size={Icons.header}
+                color={showWelcomeStatsCards ? themeYellow : colors.textSecondary}
+              />
+            </Pressable>
           </View>
 
           {/* ACCOUNT DETAILS */}
@@ -489,6 +607,19 @@ export default function ProfileScreen() {
                 style={styles.passportUploadBtn}
               />
             </View>
+            <Pressable
+              onPress={() => handleNav(() => router.push('/(tabs)/preferences'))}
+              style={({ pressed }) => [
+                styles.adminLinkRow,
+                { borderBottomColor: cardBorder, marginTop: P.sm, borderBottomWidth: 0, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
+              ]}
+            >
+              <View style={[styles.adminLinkIconWrap, { backgroundColor: themeYellow + '22', borderColor: themeYellow + '55' }]}>
+                <Ionicons name="options-outline" size={Icons.header} color={themeYellow} />
+              </View>
+              <ThemedText style={[styles.adminLinkLabel, { color: colors.text }]}>Preferences</ThemedText>
+              <Ionicons name="chevron-forward" size={Icons.medium} color={colors.textSecondary} />
+            </Pressable>
           </View>
 
           {/* Personal info card */}
@@ -670,6 +801,7 @@ export default function ProfileScreen() {
 
         </ScrollView>
       </KeyboardAvoidingView>
+      </Animated.View>
     </ThemedView>
   );
 }
@@ -698,6 +830,47 @@ const styles = StyleSheet.create({
     paddingBottom: P.md,
     paddingHorizontal: P.lg,
     alignItems: 'center',
+  },
+  heroPatternLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  heroHexShape: {
+    position: 'absolute',
+    width: 56,
+    height: 56,
+    borderWidth: 1.5,
+    borderRadius: 14,
+    transform: [{ rotate: '30deg' }],
+  },
+  heroHexShapeSmall: {
+    position: 'absolute',
+    width: 38,
+    height: 38,
+    borderWidth: 1.5,
+    borderRadius: 10,
+    transform: [{ rotate: '30deg' }],
+  },
+  heroHexShapeDot: {
+    position: 'absolute',
+    width: 16,
+    height: 16,
+    borderRadius: 5,
+    transform: [{ rotate: '30deg' }],
+  },
+  heroHexOne: {
+    top: -4,
+    right: -8,
+    transform: [{ rotate: '12deg' }],
+  },
+  heroHexTwo: {
+    bottom: 10,
+    right: 44,
+    transform: [{ rotate: '-8deg' }],
+  },
+  heroHexThree: {
+    top: 22,
+    left: 18,
+    transform: [{ rotate: '10deg' }],
   },
   avatarWrap: {
     width: P.avatar,
@@ -864,6 +1037,18 @@ const styles = StyleSheet.create({
     shadowRadius: P.xs,
     elevation: 3,
   },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: P.sm,
+    marginTop: P.md,
+    paddingTop: P.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  settingRowTextWrap: { flex: 1, minWidth: 0 },
+  settingRowTitle: { fontSize: Typography.bodySmall, fontWeight: '700' },
+  settingRowSub: { fontSize: Typography.label, marginTop: 2, lineHeight: 16 },
   adminLinks: { marginTop: P.xs },
   adminLinkRow: {
     flexDirection: 'row',

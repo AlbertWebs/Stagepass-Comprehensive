@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppHeader } from '@/components/AppHeader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing, themeBlue } from '@/constants/theme';
+import { Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 import { api, type User } from '~/services/api';
@@ -21,7 +21,8 @@ import { api, type User } from '~/services/api';
 export default function AdminUsersScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { colors } = useStagePassTheme();
+  const { colors, isDark } = useStagePassTheme();
+  const accentColor = isDark ? themeYellow : themeBlue;
   const handleNav = useNavigationPress();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,14 +56,14 @@ export default function AdminUsersScreen() {
       <AppHeader title="Users & Crew" />
       {loading ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color={themeBlue} />
+          <ActivityIndicator size="large" color={accentColor} />
         </View>
       ) : (
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={themeBlue} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accentColor} />
           }
         >
           {users.length === 0 ? (
@@ -85,12 +86,12 @@ export default function AdminUsersScreen() {
                     {u.email} {u.username ? `· @${u.username}` : ''}
                   </ThemedText>
                   {u.roles?.length ? (
-                    <ThemedText style={[styles.roles, { color: themeBlue }]}>
+                    <ThemedText style={[styles.roles, { color: accentColor }]}>
                       {u.roles.map((r) => r.name).join(', ')}
                     </ThemedText>
                   ) : null}
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={themeBlue} />
+                <Ionicons name="chevron-forward" size={20} color={accentColor} />
               </Pressable>
             ))
           )}

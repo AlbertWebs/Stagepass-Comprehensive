@@ -40,6 +40,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('users', [UserController::class, 'store']);
     Route::get('users/{user}', [UserController::class, 'show']);
     Route::put('users/{user}', [UserController::class, 'update']);
+    Route::post('users/{user}/set-pin', [UserController::class, 'setPin']);
     Route::delete('users/{user}', [UserController::class, 'destroy']);
     Route::get('my-event-today', [EventController::class, 'myEventToday']);
     Route::apiResource('events', EventController::class);
@@ -98,6 +99,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('reports/crew-payments', [ReportsController::class, 'crewPayments']);
     Route::get('reports/tasks', [ReportsController::class, 'tasks']);
     Route::get('reports/financial', [ReportsController::class, 'financial']);
+    Route::get('reports/end-of-day', [ReportsController::class, 'endOfDay']);
     Route::get('reports/export', [ReportsController::class, 'export']);
     Route::get('checkins/server-date', [CheckinsController::class, 'serverDate']);
     Route::get('checkins', [CheckinsController::class, 'index']);

@@ -44,6 +44,8 @@ type EventCardProps = {
   displayStatus?: EventDisplayStatus;
   /** Optional extra action buttons (e.g. Crew, Operations) shown in same row as View */
   extraActions?: { label: string; onPress: () => void; icon?: keyof typeof Ionicons.glyphMap }[];
+  /** Use border-only surface (no shadow/elevation). */
+  borderOnly?: boolean;
 };
 
 function formatDateFull(dateStr: string): string {
@@ -85,7 +87,7 @@ function statusDisplay(status: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 }
 
-export function EventCard({ event, onPress, onEdit, extraActions, displayStatus }: EventCardProps) {
+export function EventCard({ event, onPress, onEdit, extraActions, displayStatus, borderOnly = false }: EventCardProps) {
   const { colors } = useStagePassTheme();
   const timeRange = formatTimeRange(event.start_time, event.expected_end_time);
   const useDisplayStatus = displayStatus != null;
@@ -94,7 +96,13 @@ export function EventCard({ event, onPress, onEdit, extraActions, displayStatus 
   const accentColor = useDisplayStatus ? DISPLAY_STATUS_BG[displayStatus] : VibrantColors.emerald;
 
   return (
-    <View style={[styles.cardWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+    <View
+      style={[
+        styles.cardWrap,
+        borderOnly && styles.cardWrapBorderOnly,
+        { backgroundColor: colors.surface, borderColor: colors.border },
+      ]}
+    >
       <View style={[styles.cardAccent, { backgroundColor: accentColor }]} />
       <View style={styles.cardInner}>
         <View style={styles.topRow}>
@@ -181,6 +189,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 6,
     elevation: 3,
+  },
+  cardWrapBorderOnly: {
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0,
   },
   cardAccent: {
     width: 4,

@@ -26,6 +26,7 @@ import { api, type User } from '~/services/api';
 
 const U = { sm: 8, md: 12, lg: 16, xl: 20 };
 const CARD_RADIUS = 14;
+const PIN_LENGTH = 4;
 
 function roleLabel(name: string): string {
   const map: Record<string, string> = {
@@ -56,6 +57,9 @@ export default function AdminCrewDetailScreen() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [selectedRoleIds, setSelectedRoleIds] = useState<number[]>([]);
   const [rolesList, setRolesList] = useState<{ id: number; name: string }[]>([]);
+  const [newPin, setNewPin] = useState('');
+  const [newPinConfirmation, setNewPinConfirmation] = useState('');
+  const [settingPin, setSettingPin] = useState(false);
 
   const userId = id ? parseInt(id, 10) : NaN;
 
@@ -128,6 +132,34 @@ export default function AdminCrewDetailScreen() {
     setSelectedRoleIds((prev) =>
       prev.includes(roleId) ? prev.filter((id) => id !== roleId) : [...prev, roleId]
     );
+  };
+
+  const handleSetPin = async () => {
+    const pin = newPin.replace(/\D/g, '').slice(0, PIN_LENGTH);
+    const confirm = newPinConfirmation.replace(/\D/g, '').slice(0, PIN_LENGTH);
+    if (pin.length < PIN_LENGTH) {
+      Alert.alert('Invalid', `PIN must be ${PIN_LENGTH} digits.`);
+      return;
+    }
+    if (pin !== confirm) {
+      Alert.alert('Invalid', 'PIN and confirmation do not match.');
+      return;
+    }
+    if (!Number.isFinite(userId)) return;
+    setSettingPin(true);
+    try {
+      await api.users.setPin(userId, pin, confirm);
+      setNewPin('');
+      setNewPinConfirmation('');
+      Alert.alert('PIN set', 'The user can sign in with this PIN.');
+    } catch (e) {
+      Alert.alert(
+        'Set PIN failed',
+        e instanceof Error ? e.message : 'Could not set PIN. Try again.'
+      );
+    } finally {
+      setSettingPin(false);
+    }
   };
 
   if (loading || !user) {
@@ -278,6 +310,43 @@ export default function AdminCrewDetailScreen() {
               </>
             )}
           </View>
+
+          {/* Admin: Set PIN for this user */}
+          <View style={[styles.card, styles.cardSetPin, { backgroundColor: colors.surface, borderColor: colors.border, shadowColor: isDark ? 'transparent' : '#000', shadowOffset: isDark ? undefined : { width: 0, height: 1 }, shadowOpacity: isDark ? 0 : 0.06, shadowRadius: isDark ? 0 : 4, elevation: isDark ? 0 : 1 }]}>
+            <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Set PIN</ThemedText>
+            <ThemedText style={[styles.label, { color: colors.textSecondary }]}>
+              Set or reset the 4-digit PIN for this user. They will use it to sign in.
+            </ThemedText>
+            <ThemedText style={[styles.label, { color: colors.textSecondary }]}>New PIN ({PIN_LENGTH} digits)</ThemedText>
+            <StagePassInput
+              value={newPin}
+              onChangeText={(text) => setNewPin(text.replace(/\D/g, '').slice(0, PIN_LENGTH))}
+              placeholder={`${PIN_LENGTH}-digit PIN`}
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={PIN_LENGTH}
+              style={[styles.input, styles.pinInput]}
+            />
+            <ThemedText style={[styles.label, { color: colors.textSecondary }]}>Confirm PIN</ThemedText>
+            <StagePassInput
+              value={newPinConfirmation}
+              onChangeText={(text) => setNewPinConfirmation(text.replace(/\D/g, '').slice(0, PIN_LENGTH))}
+              placeholder={`Confirm ${PIN_LENGTH}-digit PIN`}
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={PIN_LENGTH}
+              style={[styles.input, styles.pinInput]}
+            />
+            <View style={styles.setPinButton}>
+              <StagePassButton
+                title={settingPin ? 'Setting…' : 'Set PIN'}
+                onPress={handleSetPin}
+                loading={settingPin}
+                variant="primary"
+                disabled={settingPin || newPin.length < PIN_LENGTH || newPinConfirmation.length < PIN_LENGTH}
+              />
+            </View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </ThemedView>
@@ -323,4 +392,7 @@ const styles = StyleSheet.create({
   actions: { marginTop: U.xl },
   actionsRow: { flexDirection: 'row', gap: U.md },
   actionsButton: { flex: 1 },
+  cardSetPin: { marginTop: U.xl },
+  pinInput: { letterSpacing: 4 },
+  setPinButton: { marginTop: U.md },
 });

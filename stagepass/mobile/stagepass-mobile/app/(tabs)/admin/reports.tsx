@@ -22,6 +22,7 @@ const CATEGORIES: { type: ReportType; label: string; icon: keyof typeof Ionicons
   { type: 'crew-payments', label: 'Crew payments', icon: 'card', subtitle: 'Pending, completed, totals' },
   { type: 'tasks', label: 'Tasks', icon: 'checkbox', subtitle: 'Assigned, completed, pending' },
   { type: 'financial', label: 'Financials', icon: 'wallet', subtitle: 'Client/event summaries' },
+  { type: 'end-of-day', label: 'End-of-day signed report', icon: 'document-text', subtitle: 'Expenses + allowances + signature' },
 ];
 
 export default function AdminReportsHubScreen() {

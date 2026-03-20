@@ -2,9 +2,10 @@
  * Recent Activity – full-page timeline of office and event check-ins.
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import Animated, { SlideInRight } from 'react-native-reanimated';
 import { useDispatch, useSelector } from 'react-redux';
 import { HomeHeader } from '@/components/HomeHeader';
 import { ThemedText } from '@/components/themed-text';
@@ -26,8 +27,10 @@ export default function RecentActivityScreen() {
   const role = useAppRole();
   const { colors, isDark } = useStagePassTheme();
   const user = useSelector((s: { auth: { user: unknown } }) => s.auth.user) as { office_checkin_time?: string; office_checkout_time?: string } | null;
+  const [animateKey, setAnimateKey] = useState(0);
   const [eventToday, setEventToday] = useState<EventType | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  useFocusEffect(useCallback(() => { setAnimateKey((k) => k + 1); }, []));
 
   const recentCheckinActivities = useRecentCheckinActivities(user, eventToday, null);
 
@@ -54,11 +57,13 @@ export default function RecentActivityScreen() {
     return (
       <ThemedView style={styles.container}>
         <HomeHeader title="Recent activity" showBack onBack={() => router.back()} />
+        <Animated.View key={animateKey} entering={SlideInRight.duration(320)} style={{ flex: 1 }}>
         <View style={styles.centered}>
           <ThemedText style={[styles.emptyTitle, { color: colors.textSecondary }]}>
             Recent activity is available for crew and team leaders.
           </ThemedText>
         </View>
+        </Animated.View>
       </ThemedView>
     );
   }
@@ -66,6 +71,7 @@ export default function RecentActivityScreen() {
   return (
     <ThemedView style={styles.container}>
       <HomeHeader title="Recent activity" showBack onBack={() => router.back()} />
+      <Animated.View key={animateKey} entering={SlideInRight.duration(320)} style={{ flex: 1 }}>
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingBottom: TAB_BAR_HEIGHT + U.section }]}
         showsVerticalScrollIndicator={false}
@@ -123,6 +129,7 @@ export default function RecentActivityScreen() {
           )}
         </View>
       </ScrollView>
+      </Animated.View>
     </ThemedView>
   );
 }

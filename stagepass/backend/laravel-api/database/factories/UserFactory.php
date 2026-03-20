@@ -25,11 +25,23 @@ class UserFactory extends Factory
     {
         return [
             'name' => fake()->name(),
+            'username' => fake()->unique()->userName(),
             'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
+            'pin' => null,
             'remember_token' => Str::random(10),
         ];
+    }
+
+    /**
+     * With PIN for mobile login (PIN is hashed like password).
+     */
+    public function withPin(string $pin = '1234'): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'pin' => Hash::make($pin),
+        ]);
     }
 
     /**

@@ -19,8 +19,10 @@ export default function TabLayout() {
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
       <Tabs.Screen name="admin" options={{ href: null }} />
       <Tabs.Screen name="recent-activity" options={{ href: null }} />
+      <Tabs.Screen name="messages" options={{ href: null }} />
       <Tabs.Screen name="quick-actions" options={{ href: null }} />
       <Tabs.Screen name="everything" options={{ href: null }} />
+      <Tabs.Screen name="preferences" options={{ href: null }} />
       <Tabs.Screen name="allowances" options={{ href: null }} />
       <Tabs.Screen name="logout" options={{ title: 'Logout', href: null }} />
       <Tabs.Screen name="explore" options={{ href: null }} />

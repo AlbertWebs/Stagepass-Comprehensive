@@ -12,6 +12,34 @@
 
 import { Platform } from 'react-native';
 
+export const HOMEPAGE_SECTION_KEYS = [
+  'upcoming_events',
+  'my_events',
+  'attendance_stats',
+  'recent_activities',
+  'assigned_tasks',
+  'announcements',
+] as const;
+export type HomepageSectionKey = (typeof HOMEPAGE_SECTION_KEYS)[number];
+export type HomepageLayoutMode = 'compact' | 'comfortable';
+export type HomepagePreferences = {
+  visibility: Record<HomepageSectionKey, boolean>;
+  order: HomepageSectionKey[];
+  layout: HomepageLayoutMode;
+};
+export const DEFAULT_HOMEPAGE_PREFERENCES: HomepagePreferences = {
+  visibility: {
+    upcoming_events: true,
+    my_events: true,
+    attendance_stats: true,
+    recent_activities: true,
+    assigned_tasks: true,
+    announcements: true,
+  },
+  order: [...HOMEPAGE_SECTION_KEYS],
+  layout: 'comfortable',
+};
+
 function getDefaultApiBase(): string {
   const fromEnv =
     typeof process !== 'undefined' && process.env.EXPO_PUBLIC_API_URL
@@ -50,7 +78,62 @@ export function getAuthToken() {
   return authToken;
 }
 
-const LOG = true; // set to false to reduce logs
+const LOG =
+  typeof process !== 'undefined'
+    ? process.env.EXPO_PUBLIC_API_LOGS === '1'
+    : false;
+const REQUEST_TIMEOUT_MS = 15000;
+const GET_CACHE_TTL_MS = 15000;
+const GET_CACHE_MAX_ENTRIES = 120;
+
+type CachedGetEntry = {
+  expiresAt: number;
+  data: unknown;
+};
+const getResponseCache = new Map<string, CachedGetEntry>();
+const inFlightGetRequests = new Map<string, Promise<unknown>>();
+
+function isSafeGetCacheable(path: string): boolean {
+  return !/\/(backup|payments|attendance\/checkin|attendance\/checkout)/.test(path);
+}
+
+function makeCacheKey(method: string, urlStr: string): string {
+  return `${method.toUpperCase()}::${urlStr}`;
+}
+
+function pruneGetCache() {
+  const now = Date.now();
+  for (const [k, v] of getResponseCache.entries()) {
+    if (v.expiresAt <= now) getResponseCache.delete(k);
+  }
+  if (getResponseCache.size <= GET_CACHE_MAX_ENTRIES) return;
+  const keys = Array.from(getResponseCache.keys());
+  const overflow = getResponseCache.size - GET_CACHE_MAX_ENTRIES;
+  for (let i = 0; i < overflow; i += 1) getResponseCache.delete(keys[i]);
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+function getLocalDateString(date: Date = new Date()): string {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function getLocalDateTimeWithOffset(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = pad2(date.getMonth() + 1);
+  const d = pad2(date.getDate());
+  const h = pad2(date.getHours());
+  const min = pad2(date.getMinutes());
+  const s = pad2(date.getSeconds());
+  const tzMin = -date.getTimezoneOffset();
+  const sign = tzMin >= 0 ? '+' : '-';
+  const abs = Math.abs(tzMin);
+  const tzH = pad2(Math.floor(abs / 60));
+  const tzM = pad2(abs % 60);
+  return `${y}-${m}-${d}T${h}:${min}:${s}${sign}${tzH}:${tzM}`;
+}
 
 async function request<T>(
   path: string,
@@ -69,30 +152,83 @@ async function request<T>(
   if (authToken) {
     (headers as Record<string, string>)['Authorization'] = `Bearer ${authToken}`;
   }
+  const h = headers as Record<string, string>;
+  if (!h['X-Local-Date']) h['X-Local-Date'] = getLocalDateString();
+  if (!h['X-Local-DateTime']) h['X-Local-DateTime'] = getLocalDateTimeWithOffset();
+  if (!h['X-Local-Timezone']) {
+    try {
+      h['X-Local-Timezone'] = Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
+    } catch {
+      h['X-Local-Timezone'] = 'UTC';
+    }
+  }
   const urlStr = url.toString();
+  const method = (init.method ?? 'GET').toUpperCase();
+  const cacheKey = makeCacheKey(method, urlStr);
+  const cacheableGet = method === 'GET' && isSafeGetCacheable(path);
+  const forceRefresh = (params as Record<string, string> | undefined)?.refresh === '1';
+  if (cacheableGet && !forceRefresh) {
+    pruneGetCache();
+    const cached = getResponseCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data as T;
+    }
+    const inFlight = inFlightGetRequests.get(cacheKey);
+    if (inFlight) return inFlight as Promise<T>;
+  }
   if (LOG) {
-    console.warn('[Stagepass API]', init.method ?? 'GET', urlStr);
+    console.warn('[Stagepass API]', method, urlStr.replace(/token=[^&]+/g, 'token=***'));
   }
-  try {
-    const res = await fetch(urlStr, { ...init, headers });
-    const data = await res.json().catch(() => ({}));
-    if (LOG) {
-      console.warn('[Stagepass API]', res.status, path, res.ok ? 'OK' : 'FAIL', data?.message ?? '');
-    }
-    if (!res.ok) {
-      if (res.status === 401) {
-        setAuthToken(null);
-        onUnauthorized?.();
+  const run = async (): Promise<T> => {
+    let attempts = 0;
+    while (attempts < 2) {
+      attempts += 1;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      try {
+        const res = await fetch(urlStr, { ...init, headers, signal: controller.signal });
+        clearTimeout(timeout);
+        const data = await res.json().catch(() => ({}));
+        if (LOG) {
+          console.warn('[Stagepass API]', res.status, path, res.ok ? 'OK' : 'FAIL', data?.message ?? '');
+        }
+        if (!res.ok) {
+          if (res.status === 401) {
+            setAuthToken(null);
+            onUnauthorized?.();
+          }
+          throw new Error(data.message ?? data.error ?? `HTTP ${res.status}`);
+        }
+        if (cacheableGet) {
+          getResponseCache.set(cacheKey, {
+            expiresAt: Date.now() + GET_CACHE_TTL_MS,
+            data,
+          });
+        }
+        return data as T;
+      } catch (e) {
+        clearTimeout(timeout);
+        const isAbort = e instanceof Error && e.name === 'AbortError';
+        const isLikelyNetwork = isAbort || /network|timed out|failed to fetch/i.test(String(e));
+        if (attempts < 2 && method === 'GET' && isLikelyNetwork) {
+          await new Promise((r) => setTimeout(r, 300));
+          continue;
+        }
+        if (LOG) {
+          console.warn('[Stagepass API] ERROR', path, e);
+        }
+        throw e;
       }
-      throw new Error(data.message ?? data.error ?? `HTTP ${res.status}`);
     }
-    return data as T;
-  } catch (e) {
-    if (LOG) {
-      console.warn('[Stagepass API] ERROR', path, e);
-    }
-    throw e;
+    throw new Error('Request failed');
+  };
+
+  if (cacheableGet) {
+    const p = run().finally(() => inFlightGetRequests.delete(cacheKey));
+    inFlightGetRequests.set(cacheKey, p as Promise<unknown>);
+    return p;
   }
+  return run();
 }
 
 /** Multipart upload (e.g. profile photo). Do not set Content-Type so fetch sets boundary. */
@@ -106,6 +242,16 @@ async function requestMultipart<T>(
   };
   if (authToken) {
     (headers as Record<string, string>)['Authorization'] = `Bearer ${authToken}`;
+  }
+  const h = headers as Record<string, string>;
+  if (!h['X-Local-Date']) h['X-Local-Date'] = getLocalDateString();
+  if (!h['X-Local-DateTime']) h['X-Local-DateTime'] = getLocalDateTimeWithOffset();
+  if (!h['X-Local-Timezone']) {
+    try {
+      h['X-Local-Timezone'] = Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
+    } catch {
+      h['X-Local-Timezone'] = 'UTC';
+    }
   }
   const urlStr = url.toString();
   if (LOG) {
@@ -172,6 +318,7 @@ export const api = {
       new_pin?: string;
       new_pin_confirmation?: string;
       fcm_token?: string | null;
+      homepage_preferences?: HomepagePreferences;
     }) => request<User>('/me', { method: 'PATCH', body: JSON.stringify(body) }),
     /** Upload passport/profile photo. Backend: POST /me/photo with multipart file "photo". Returns updated user. */
     uploadProfilePhoto: (imageUri: string) => {
@@ -221,9 +368,52 @@ export const api = {
     /** Admin/team leader: report issue */
     eventReportIssue: (eventId: number, body: { title: string; description?: string; severity?: string; photo_url?: string }) =>
       request<unknown>(`/events/${eventId}/report-issue`, { method: 'POST', body: JSON.stringify(body) }),
-    /** Admin/team leader: send message to crew */
-    eventMessage: (eventId: number, body: { target: 'all' | 'department' | 'user'; department?: string; user_id?: number; message: string }) =>
-      request<unknown>(`/events/${eventId}/message`, { method: 'POST', body: JSON.stringify(body) }),
+    /**
+     * Admin/team leader: send message to crew.
+     * Preferred endpoint: /events/{id}/message (if backend supports it).
+     * Fallback: /communications (currently available in backend routes).
+     */
+    eventMessage: async (
+      eventId: number,
+      body: { target: 'all' | 'department' | 'user'; department?: string; user_id?: number; message: string }
+    ) => {
+      try {
+        return await request<unknown>(`/events/${eventId}/message`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        const notFound = /not found|could not be found|404/i.test(msg);
+        if (!notFound) throw err;
+
+        // Fallback to communications API so mobile flow still works.
+        const recipientScope =
+          body.target === 'all' || body.target === 'user'
+            ? 'event_crew'
+            : body.target === 'department'
+              ? 'crew'
+              : 'all_staff';
+        const subjectSuffix =
+          body.target === 'all'
+            ? 'All crew'
+            : body.target === 'department'
+              ? `Department: ${body.department ?? 'Crew'}`
+              : `User #${body.user_id ?? 'Crew'}`;
+
+        return request<unknown>('/communications', {
+          method: 'POST',
+          body: JSON.stringify({
+            subject: `Event #${eventId}: ${subjectSuffix}`,
+            body: body.message,
+            recipient_scope: recipientScope,
+            event_id: recipientScope === 'event_crew' ? eventId : undefined,
+            send_as_message: true,
+            send_as_email: false,
+          }),
+        });
+      }
+    },
   },
   /** Optional: two-step auth verify PIN (if backend supports POST /verify-pin) */
   authVerifyPin: (pin: string) =>
@@ -249,7 +439,7 @@ export const api = {
           event_id: eventId,
           latitude,
           longitude,
-          timestamp: new Date().toISOString(),
+          timestamp: getLocalDateTimeWithOffset(),
         }),
       }),
     /** Admin/team leader: check in a crew member on their behalf (manual check-in) */
@@ -266,11 +456,18 @@ export const api = {
     officeCheckin: (latitude: number, longitude: number) =>
       request<{ checkin_time: string }>('/attendance/office-checkin', {
         method: 'POST',
-        body: JSON.stringify({ latitude, longitude, timestamp: new Date().toISOString() }),
+        body: JSON.stringify({ latitude, longitude, timestamp: getLocalDateTimeWithOffset() }),
       }),
-    /** Daily office check-out. Backend must implement POST /attendance/office-checkout. */
-    officeCheckout: () =>
-      request<{ checkout_time: string }>('/attendance/office-checkout', { method: 'POST' }),
+    /** Daily office check-out. Sends timestamp and optional location for audit. */
+    officeCheckout: (latitude?: number, longitude?: number) =>
+      request<{ checkout_time: string }>('/attendance/office-checkout', {
+        method: 'POST',
+        body: JSON.stringify({
+          latitude,
+          longitude,
+          timestamp: getLocalDateTimeWithOffset(),
+        }),
+      }),
   },
   timeOff: {
     request: (startDate: string, endDate: string, reason?: string, notes?: string) =>
@@ -347,6 +544,12 @@ export const api = {
     update: (id: number, body: Partial<User>) =>
       request<User>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (id: number) => request<unknown>(`/users/${id}`, { method: 'DELETE' }),
+    /** Admin: set/reset PIN for a user (no current PIN required). */
+    setPin: (userId: number, newPin: string, newPinConfirmation: string) =>
+      request<User>(`/users/${userId}/set-pin`, {
+        method: 'POST',
+        body: JSON.stringify({ new_pin: newPin, new_pin_confirmation: newPinConfirmation }),
+      }),
   },
   clients: {
     list: () => request<{ data: Client[] }>('/clients'),
@@ -385,6 +588,9 @@ export const api = {
     /** Financial summary report */
     financial: (params?: ReportFilters) =>
       request<ReportFinancialResponse>('/reports/financial', { params: reportParams(params) }),
+    /** End-of-day signed report */
+    endOfDay: (params?: ReportFilters) =>
+      request<ReportEndOfDayResponse>('/reports/end-of-day', { params: reportParams(params) }),
     /** Export as printable HTML (open in browser / share as PDF) */
     exportUrl: (type: ReportType, params?: ReportFilters): string => {
       const base = typeof getApiBase === 'function' ? getApiBase() : '';
@@ -413,8 +619,34 @@ export const api = {
   },
   communications: {
     list: () => request<{ data: Communication[] }>('/communications'),
-    create: (body: { title: string; body?: string; target?: string }) =>
-      request<Communication>('/communications', { method: 'POST', body: JSON.stringify(body) }),
+    get: (id: number) => request<Communication>(`/communications/${id}`),
+    create: (body: {
+      title?: string;
+      subject?: string;
+      body?: string;
+      target?: string;
+      recipient_scope?: 'all_staff' | 'crew' | 'event_crew';
+      event_id?: number;
+      send_as_message?: boolean;
+      send_as_email?: boolean;
+    }) => {
+      const mappedScope: 'all_staff' | 'crew' | 'event_crew' =
+        body.recipient_scope
+          ?? (body.target === 'all' || body.target === 'all_staff'
+            ? 'all_staff'
+            : body.target === 'crew'
+              ? 'crew'
+              : 'event_crew');
+      const payload = {
+        subject: body.subject ?? body.title ?? 'Message',
+        body: body.body ?? '',
+        recipient_scope: mappedScope,
+        event_id: mappedScope === 'event_crew' ? body.event_id : undefined,
+        send_as_message: body.send_as_message ?? true,
+        send_as_email: body.send_as_email ?? false,
+      };
+      return request<Communication>('/communications', { method: 'POST', body: JSON.stringify(payload) });
+    },
     delete: (id: number) => request<unknown>(`/communications/${id}`, { method: 'DELETE' }),
   },
   backup: {
@@ -579,6 +811,7 @@ export interface User {
   office_checkout_time?: string;
   /** Set by backend when user has approved time off that includes today */
   has_approved_time_off_today?: boolean;
+  homepage_preferences?: HomepagePreferences;
 }
 
 /** Resolve app role from backend role names. */
@@ -610,7 +843,7 @@ export interface Event {
   status: string;
   team_leader?: { id: number; name: string };
   teamLeader?: { id: number; name: string };
-  crew?: { id: number; name: string; pivot?: { checkin_time?: string; checkout_time?: string } }[];
+  crew?: { id: number; name: string; pivot?: { checkin_time?: string; checkout_time?: string; role_in_event?: string | null } }[];
 }
 
 export interface TimeOffRequestAttachment {
@@ -666,17 +899,37 @@ export interface Payment {
 
 export interface Communication {
   id: number;
-  title: string;
+  title?: string;
+  subject?: string;
   body?: string;
   target?: string;
+  recipient_scope?: 'all_staff' | 'crew' | 'event_crew';
+  event_id?: number | null;
+  sent_at?: string | null;
   created_at?: string;
+  send_as_message?: boolean;
+  send_as_email?: boolean;
+  sent_by_id?: number | null;
+  sent_by?: { id: number; name: string; email?: string } | null;
+  sentBy?: { id: number; name: string; email?: string } | null;
+  event?: { id: number; name: string; date?: string } | null;
+  recipient_count?: number;
+  opened_count?: number;
+  unopened_count?: number;
+  recipients_status?: {
+    user_id: number;
+    name: string;
+    email?: string;
+    opened: boolean;
+    opened_at?: string | null;
+  }[];
 }
 
 export interface ReportsData {
   [key: string]: unknown;
 }
 
-export type ReportType = 'events' | 'crew-attendance' | 'crew-payments' | 'tasks' | 'financial';
+export type ReportType = 'events' | 'crew-attendance' | 'crew-payments' | 'tasks' | 'financial' | 'end-of-day';
 
 export interface ReportFilters {
   date_from?: string;
@@ -688,6 +941,8 @@ export interface ReportFilters {
   user_id?: number;
   per_page?: number;
   page?: number;
+  confirmed_by?: string;
+  signature?: string;
 }
 
 function reportParams(f?: ReportFilters | null): Record<string, string> | undefined {
@@ -702,6 +957,8 @@ function reportParams(f?: ReportFilters | null): Record<string, string> | undefi
   if (f.user_id != null) out.user_id = String(f.user_id);
   if (f.per_page != null) out.per_page = String(f.per_page);
   if (f.page != null) out.page = String(f.page);
+  if (f.confirmed_by) out.confirmed_by = f.confirmed_by;
+  if (f.signature) out.signature = f.signature;
   return Object.keys(out).length ? out : undefined;
 }
 
@@ -751,6 +1008,23 @@ export interface ReportFinancialResponse {
   by_day: { date: string; count: number; total: number }[];
   data?: unknown[];
   pagination?: { current_page: number; last_page: number; per_page: number; total: number };
+}
+
+export interface ReportEndOfDayResponse {
+  summary: {
+    events_count: number;
+    crew_allowances_total: number;
+    other_expenses_total: number;
+    grand_total: number;
+  };
+  data: {
+    event_id: number;
+    event_name: string;
+    date: string;
+    crew_allowances: number;
+    other_expenses: number;
+    total: number;
+  }[];
 }
 
 export interface AuditLogEntry {

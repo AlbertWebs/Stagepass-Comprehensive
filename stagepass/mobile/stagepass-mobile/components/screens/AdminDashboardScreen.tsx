@@ -11,14 +11,14 @@ import { useNavigationPress } from '@/src/utils/navigationPress';
 export function AdminDashboardScreen() {
   const router = useRouter();
   const handleNav = useNavigationPress();
-  const { colors } = useStagePassTheme();
+  const { colors, isDark } = useStagePassTheme();
 
   return (
     <ThemedView style={styles.container}>
       <ThemedText type="title" style={[styles.title, { color: StagePassColors.themeBlue }]}>
         Admin Dashboard
       </ThemedText>
-      <ThemedText style={[styles.subtitle, { color: StagePassColors.themeYellow }]}>
+      <ThemedText style={[styles.subtitle, { color: isDark ? '#F9FAFB' : '#0F172A' }]}>
         Today's events · Active events · Crew & check-in · Reported issues
       </ThemedText>
       <StagePassButton

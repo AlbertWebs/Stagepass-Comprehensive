@@ -124,4 +124,25 @@ class UserController extends Controller
         $user->delete();
         return response()->json(null, 204);
     }
+
+    /**
+     * Admin: set or reset another user's PIN (no current PIN required).
+     */
+    public function setPin(Request $request, User $user): JsonResponse
+    {
+        $admin = $request->user();
+        if (! $admin->hasRole('super_admin') && ! $admin->hasRole('director') && ! $admin->hasRole('admin')) {
+            return response()->json(['message' => 'Only admins can set a user\'s PIN.'], 403);
+        }
+
+        $validated = $request->validate([
+            'new_pin' => 'required|string|min:4|max:20',
+            'new_pin_confirmation' => 'required|string|same:new_pin',
+        ]);
+
+        $user->pin = $validated['new_pin'];
+        $user->save();
+
+        return response()->json($user->fresh()->load('roles'));
+    }
 }

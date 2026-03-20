@@ -2,9 +2,10 @@
  * Quick Actions – full-page grid of all quick actions for the current role.
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, { FadeIn, SlideInRight } from 'react-native-reanimated';
 import { HomeHeader } from '@/components/HomeHeader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -23,6 +24,8 @@ export default function QuickActionsScreen() {
   const role = useAppRole();
   const { colors, isDark } = useStagePassTheme();
   const handleNav = useNavigationPress();
+  const [animateKey, setAnimateKey] = useState(0);
+  useFocusEffect(useCallback(() => { setAnimateKey((k) => k + 1); }, []));
   const iconColor = isDark ? themeYellow : themeBlue;
   const cardBg = isDark ? '#1E212A' : '#F5F7FC';
 
@@ -36,6 +39,7 @@ export default function QuickActionsScreen() {
   return (
     <ThemedView style={styles.container}>
       <HomeHeader title="Quick actions" showBack onBack={() => router.back()} />
+      <Animated.View key={animateKey} entering={SlideInRight.duration(320)} style={{ flex: 1 }}>
       <View style={[styles.scrollContent, { paddingBottom: TAB_BAR_HEIGHT + U.section }]}>
         <View style={styles.quickGrid}>
           {visibleQuickActions.map((action, index) => {
@@ -65,6 +69,7 @@ export default function QuickActionsScreen() {
           })}
         </View>
       </View>
+      </Animated.View>
     </ThemedView>
   );
 }

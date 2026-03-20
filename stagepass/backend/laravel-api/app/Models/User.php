@@ -29,6 +29,7 @@ class User extends Authenticatable
         'fcm_token',
         'avatar_url',
         'is_permanent_employee',
+        'homepage_preferences',
     ];
 
     /**
@@ -95,6 +96,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'pin' => 'hashed',
             'is_permanent_employee' => 'boolean',
+            'homepage_preferences' => 'array',
         ];
     }
 }

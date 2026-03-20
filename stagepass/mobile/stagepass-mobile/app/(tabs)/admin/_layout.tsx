@@ -28,6 +28,7 @@ export default function AdminLayout() {
     <Stack
       screenOptions={{
         headerShown: false,
+        animation: 'slide_from_right',
       }}
     />
   );

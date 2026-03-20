@@ -1,9 +1,8 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
-import Animated, { FadeInUp } from 'react-native-reanimated';
+import Animated, { SlideInRight } from 'react-native-reanimated';
 import { HomeDashboardScreen } from '@/components/screens/HomeDashboardScreen';
-import { StagepassLoader } from '@/components/StagepassLoader';
 import { useAppRole } from '~/hooks/useAppRole';
 import { api, type Event as EventType, type Payment } from '~/services/api';
 import { setUser } from '~/store/authSlice';
@@ -35,13 +34,13 @@ function isPastEvent(event: EventType): boolean {
 export default function HomeScreen() {
   const dispatch = useDispatch();
   const role = useAppRole();
+  const [animateKey, setAnimateKey] = useState(0);
   const [eventToday, setEventToday] = useState<EventType | null | undefined>(undefined);
   const [pastEvents, setPastEvents] = useState<EventType[]>([]);
   const [eventsTodayList, setEventsTodayList] = useState<EventType[]>([]);
   const [taskCount, setTaskCount] = useState(0);
   const [equipmentCount, setEquipmentCount] = useState(0);
   const [approvedAllowances, setApprovedAllowances] = useState<Payment[]>([]);
-  const [loading, setLoading] = useState(true);
 
   const fetchMyEventToday = useCallback(async () => {
     const today = todayDateString();
@@ -78,9 +77,13 @@ export default function HomeScreen() {
 
   const fetchTaskCount = useCallback(async () => {
     try {
-      const res = await api.tasks.list({ per_page: 1 });
-      const total = 'total' in res && typeof res.total === 'number' ? res.total : 0;
-      setTaskCount(total);
+      const [pendingRes, inProgressRes] = await Promise.all([
+        api.tasks.list({ status: 'pending', per_page: 1 }),
+        api.tasks.list({ status: 'in_progress', per_page: 1 }),
+      ]);
+      const pendingTotal = 'total' in pendingRes && typeof pendingRes.total === 'number' ? pendingRes.total : 0;
+      const inProgressTotal = 'total' in inProgressRes && typeof inProgressRes.total === 'number' ? inProgressRes.total : 0;
+      setTaskCount(pendingTotal + inProgressTotal);
     } catch {
       setTaskCount(0);
     }
@@ -120,30 +123,25 @@ export default function HomeScreen() {
   }, []);
 
   const loadAll = useCallback(async () => {
-    setLoading(true);
+    // Refresh user first so office check-in state is correct after login (login response has no office_* fields).
     try {
-      // Refresh user first so office check-in state is correct after login (login response has no office_* fields).
-      try {
-        const me = await api.auth.me();
-        dispatch(setUser(me));
-      } catch {
-        // keep existing user
-      }
-      if (role === 'admin') {
-        await Promise.all([fetchPastEventsForAdmin(), fetchEventsTodayList()]);
-      } else {
-        await fetchMyEventToday();
-        await fetchEventsTodayList();
-      }
-      await fetchTaskCount();
-      await fetchEquipmentCount();
-      await fetchApprovedAllowances();
-      getDevicePushTokenAsync().then((token) => {
-        if (token) api.auth.updateProfile({ fcm_token: token }).catch(() => {});
-      });
-    } finally {
-      setLoading(false);
+      const me = await api.auth.me();
+      dispatch(setUser(me));
+    } catch {
+      // keep existing user
     }
+    if (role === 'admin') {
+      await Promise.all([fetchPastEventsForAdmin(), fetchEventsTodayList()]);
+    } else {
+      await fetchMyEventToday();
+      await fetchEventsTodayList();
+    }
+    await fetchTaskCount();
+    await fetchEquipmentCount();
+    await fetchApprovedAllowances();
+    getDevicePushTokenAsync().then((token) => {
+      if (token) api.auth.updateProfile({ fcm_token: token }).catch(() => {});
+    });
   }, [role, dispatch, fetchMyEventToday, fetchPastEventsForAdmin, fetchEventsTodayList, fetchTaskCount, fetchEquipmentCount, fetchApprovedAllowances]);
 
   useEffect(() => {
@@ -152,6 +150,7 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setAnimateKey((k) => k + 1);
       if (role !== 'admin') {
         fetchMyEventToday();
         fetchEventsTodayList();
@@ -189,16 +188,8 @@ export default function HomeScreen() {
     });
   }, [role, dispatch, fetchMyEventToday, fetchPastEventsForAdmin, fetchEventsTodayList, fetchTaskCount, fetchEquipmentCount, fetchApprovedAllowances]);
 
-  if (loading) {
-    return (
-      <Animated.View entering={FadeInUp.duration(400)} style={{ flex: 1 }}>
-        <StagepassLoader message="Loading…" fullScreen />
-      </Animated.View>
-    );
-  }
-
   return (
-    <Animated.View entering={FadeInUp.duration(400)} style={{ flex: 1 }}>
+    <Animated.View key={animateKey} entering={SlideInRight.duration(320)} style={{ flex: 1 }}>
       <HomeDashboardScreen
       eventToday={eventToday ?? null}
       allowanceToday={eventToday?.daily_allowance ?? null}

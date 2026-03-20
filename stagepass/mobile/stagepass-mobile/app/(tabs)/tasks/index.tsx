@@ -2,8 +2,8 @@
  * Tasks list: crew sees assigned tasks, admin sees all. Card layout with status, priority, deadline.
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -12,10 +12,12 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
+import Animated, { SlideInRight } from 'react-native-reanimated';
 import { api, type TaskItem, type TaskStatus } from '~/services/api';
 import { AppHeader } from '@/components/AppHeader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { Cards, Icons, Typography } from '@/constants/ui';
 import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
@@ -24,15 +26,9 @@ import { useAppRole } from '~/hooks/useAppRole';
 const TAB_BAR_HEIGHT = 58;
 
 const PRIORITY_COLOR: Record<string, string> = {
-  low: '#22c55e',
+  low: '#16A34A',
   medium: themeYellow,
-  high: '#ef4444',
-};
-
-const STATUS_COLOR: Record<TaskStatus, string> = {
-  pending: '#94a3b8',
-  in_progress: themeYellow,
-  completed: '#22c55e',
+  high: '#DC2626',
 };
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
@@ -54,12 +50,24 @@ function formatDueDate(d?: string | null): string {
 export default function TasksListScreen() {
   const router = useRouter();
   const handleNav = useNavigationPress();
-  const { colors } = useStagePassTheme();
+  const { colors, isDark } = useStagePassTheme();
   const role = useAppRole();
+  const [animateKey, setAnimateKey] = useState(0);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const scrollBottomPadding = TAB_BAR_HEIGHT;
+  const statusColor: Record<TaskStatus, string> = {
+    pending: colors.textSecondary,
+    in_progress: themeYellow,
+    completed: colors.success,
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      setAnimateKey((k) => k + 1);
+    }, [])
+  );
 
   const load = useCallback(async () => {
     try {
@@ -83,6 +91,13 @@ export default function TasksListScreen() {
     load();
   }, [load]);
 
+  const summary = useMemo(() => {
+    const pending = tasks.filter((t) => t.status === 'pending').length;
+    const inProgress = tasks.filter((t) => t.status === 'in_progress').length;
+    const completed = tasks.filter((t) => t.status === 'completed').length;
+    return { total: tasks.length, pending, inProgress, completed };
+  }, [tasks]);
+
   if (loading && tasks.length === 0) {
     return (
       <ThemedView style={styles.container}>
@@ -98,6 +113,7 @@ export default function TasksListScreen() {
   return (
     <ThemedView style={styles.container}>
       <AppHeader title="Tasks" />
+      <Animated.View key={animateKey} entering={SlideInRight.duration(320)} style={{ flex: 1 }}>
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: scrollBottomPadding }]}
         refreshControl={
@@ -105,6 +121,39 @@ export default function TasksListScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
+        <View style={[styles.hero, { backgroundColor: isDark ? '#1E212A' : '#F5F7FC', borderColor: colors.border }]}>
+          <View style={[styles.heroIconWrap, { backgroundColor: themeBlue + '18' }]}>
+            <Ionicons name="checkbox" size={Icons.header} color={isDark ? themeYellow : themeBlue} />
+          </View>
+          <View style={styles.heroTextWrap}>
+            <ThemedText style={[styles.heroTitle, { color: colors.text }]}>Tasks</ThemedText>
+            <ThemedText style={[styles.heroSub, { color: colors.textSecondary }]}>
+              {role === 'admin' ? 'Track and manage team work items' : 'Your assigned tasks and progress'}
+            </ThemedText>
+          </View>
+        </View>
+
+        {tasks.length > 0 && (
+          <View style={styles.statsRow}>
+            <View style={[styles.statChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <ThemedText style={[styles.statValue, { color: colors.text }]}>{summary.total}</ThemedText>
+              <ThemedText style={[styles.statLabel, { color: colors.textSecondary }]}>Total</ThemedText>
+            </View>
+            <View style={[styles.statChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <ThemedText style={[styles.statValue, { color: colors.text }]}>{summary.pending}</ThemedText>
+              <ThemedText style={[styles.statLabel, { color: colors.textSecondary }]}>Pending</ThemedText>
+            </View>
+            <View style={[styles.statChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <ThemedText style={[styles.statValue, { color: colors.text }]}>{summary.inProgress}</ThemedText>
+              <ThemedText style={[styles.statLabel, { color: colors.textSecondary }]}>In progress</ThemedText>
+            </View>
+            <View style={[styles.statChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <ThemedText style={[styles.statValue, { color: colors.text }]}>{summary.completed}</ThemedText>
+              <ThemedText style={[styles.statLabel, { color: colors.textSecondary }]}>Done</ThemedText>
+            </View>
+          </View>
+        )}
+
         {tasks.length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Ionicons name="checkbox-outline" size={40} color={colors.textSecondary} />
@@ -127,19 +176,25 @@ export default function TasksListScreen() {
                 <ThemedText style={[styles.title, { color: colors.text }]} numberOfLines={1}>
                   {task.title}
                 </ThemedText>
-                <View style={[styles.statusBadge, { backgroundColor: STATUS_COLOR[task.status] + '22' }]}>
-                  <ThemedText style={[styles.statusText, { color: STATUS_COLOR[task.status] }]}>
+                <View style={[styles.statusBadge, { backgroundColor: statusColor[task.status] + '1F', borderColor: statusColor[task.status] + '55' }]}>
+                  <ThemedText style={[styles.statusText, { color: statusColor[task.status] }]}>
                     {STATUS_LABEL[task.status]}
                   </ThemedText>
                 </View>
               </View>
               {task.event?.name ? (
-                <ThemedText style={[styles.meta, { color: colors.textSecondary }]} numberOfLines={1}>
+                <View style={styles.metaRow}>
+                  <Ionicons name="calendar-outline" size={Icons.small} color={colors.textSecondary} />
+                  <ThemedText style={[styles.meta, { color: colors.textSecondary }]} numberOfLines={1}>
                   {task.event.name}
-                </ThemedText>
+                  </ThemedText>
+                </View>
               ) : null}
               <View style={styles.footer}>
                 <View style={[styles.priorityDot, { backgroundColor: PRIORITY_COLOR[task.priority] || themeYellow }]} />
+                <ThemedText style={[styles.priorityText, { color: PRIORITY_COLOR[task.priority] || themeYellow }]}>
+                  {(task.priority || 'medium').replace('_', ' ')}
+                </ThemedText>
                 <ThemedText style={[styles.due, { color: colors.textSecondary }]}>
                   Due {formatDueDate(task.due_date)}
                 </ThemedText>
@@ -153,6 +208,7 @@ export default function TasksListScreen() {
           ))
         )}
       </ScrollView>
+      </Animated.View>
     </ThemedView>
   );
 }
@@ -162,6 +218,40 @@ const styles = StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: Spacing.md },
   loadingText: { fontSize: 15 },
   scroll: { padding: Spacing.lg },
+  hero: {
+    borderRadius: Cards.borderRadius,
+    borderWidth: 1,
+    padding: Spacing.lg,
+    marginBottom: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  heroIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroTextWrap: { flex: 1 },
+  heroTitle: { fontSize: Typography.titleCard, fontWeight: Typography.titleCardWeight },
+  heroSub: { fontSize: Typography.bodySmall },
+  statsRow: {
+    flexDirection: 'row',
+    gap: Spacing.xs,
+    marginBottom: Spacing.md,
+  },
+  statChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statValue: { fontSize: Typography.bodySemiBold, fontWeight: Typography.bodySemiBoldWeight },
+  statLabel: { fontSize: Typography.titleSection, textTransform: 'uppercase' },
   emptyCard: {
     padding: Spacing.xl,
     borderRadius: BorderRadius.lg,
@@ -176,14 +266,21 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
     marginBottom: Spacing.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   cardRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
   title: { fontSize: 16, fontWeight: '700', flex: 1 },
-  statusBadge: { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: BorderRadius.sm },
+  statusBadge: { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: BorderRadius.sm, borderWidth: 1 },
   statusText: { fontSize: 11, fontWeight: '700' },
-  meta: { fontSize: 13, marginTop: 4 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
+  meta: { fontSize: 13, flex: 1 },
   footer: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.sm, gap: 6 },
   priorityDot: { width: 8, height: 8, borderRadius: 4 },
+  priorityText: { fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
   due: { fontSize: 12 },
   assignees: { fontSize: 12, flex: 1 },
 });

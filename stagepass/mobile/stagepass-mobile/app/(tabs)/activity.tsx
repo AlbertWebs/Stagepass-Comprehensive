@@ -3,7 +3,7 @@
  * Uses theme colors (themeBlue, themeYellow) and semantic colors (success, error).
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   Pressable,
@@ -12,7 +12,8 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { api, type Event } from '~/services/api';
+import Animated, { SlideInRight } from 'react-native-reanimated';
+import { api, type Communication, type Event } from '~/services/api';
 import { HomeHeader } from '@/components/HomeHeader';
 import { EventCard } from '@/components/EventCard';
 import { StagepassLoader } from '@/components/StagepassLoader';
@@ -73,11 +74,19 @@ export default function ActivityScreen() {
   const handleNav = useNavigationPress();
   const { colors, isDark } = useStagePassTheme();
   const role = useAppRole();
+  const [animateKey, setAnimateKey] = useState(0);
   const [eventToday, setEventToday] = useState<Event | null | undefined>(undefined);
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [communications, setCommunications] = useState<Communication[]>([]);
   const scrollBottomPadding = TAB_BAR_HEIGHT;
+
+  useFocusEffect(
+    useCallback(() => {
+      setAnimateKey((k) => k + 1);
+    }, [])
+  );
 
   const load = useCallback(async () => {
     try {
@@ -88,9 +97,17 @@ export default function ActivityScreen() {
       setEventToday(todayRes.event ?? null);
       const list = Array.isArray(listRes?.data) ? listRes.data : [];
       setEvents(list.sort(sortByDate));
+      try {
+        const commRes = await api.communications.list();
+        const commList = Array.isArray(commRes?.data) ? commRes.data : [];
+        setCommunications(commList.slice(0, 8));
+      } catch {
+        setCommunications([]);
+      }
     } catch {
       setEventToday(null);
       setEvents([]);
+      setCommunications([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -130,6 +147,7 @@ export default function ActivityScreen() {
   return (
     <ThemedView style={styles.container}>
       <HomeHeader title="Activities" />
+      <Animated.View key={animateKey} entering={SlideInRight.duration(320)} style={{ flex: 1 }}>
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollBottomPadding }]}
         showsVerticalScrollIndicator={false}
@@ -295,6 +313,41 @@ export default function ActivityScreen() {
             </View>
           )}
 
+          {/* Crew messages */}
+          {(role === 'crew' || role === 'team_leader') && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                <ThemedText style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+                  Crew messages
+                </ThemedText>
+              </View>
+              {communications.length === 0 ? (
+                <View style={[styles.messageCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <ThemedText style={[styles.messageBody, { color: colors.textSecondary }]}>
+                    No crew messages yet.
+                  </ThemedText>
+                </View>
+              ) : (
+                communications.map((msg) => (
+                  <View key={msg.id} style={[styles.messageCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <ThemedText style={[styles.messageSubject, { color: colors.text }]} numberOfLines={1}>
+                      {msg.subject || 'Message'}
+                    </ThemedText>
+                    <ThemedText style={[styles.messageBody, { color: colors.textSecondary }]} numberOfLines={3}>
+                      {msg.body || ''}
+                    </ThemedText>
+                    {!!msg.created_at && (
+                      <ThemedText style={[styles.messageTime, { color: colors.textSecondary }]}>
+                        {new Date(msg.created_at).toLocaleString()}
+                      </ThemedText>
+                    )}
+                  </View>
+                ))
+              )}
+            </View>
+          )}
+
           {/* Empty state */}
           {!hasAnyEvents && (
             <View style={styles.emptyWrap}>
@@ -321,6 +374,7 @@ export default function ActivityScreen() {
         </View>
         <View style={styles.bottomSpacer} />
       </ScrollView>
+      </Animated.View>
     </ThemedView>
   );
 }
@@ -419,6 +473,25 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   quickLabel: { fontSize: Typography.label, fontWeight: '600', textAlign: 'center' },
+  messageCard: {
+    borderRadius: Cards.borderRadius,
+    borderWidth: 1,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  messageSubject: {
+    fontSize: Typography.bodySmall,
+    fontWeight: Typography.buttonTextWeight,
+    marginBottom: 4,
+  },
+  messageBody: {
+    fontSize: Typography.bodySmall,
+    lineHeight: 18,
+  },
+  messageTime: {
+    marginTop: 6,
+    fontSize: Typography.titleSection,
+  },
   emptyWrap: {
     alignItems: 'center',
     paddingVertical: Spacing.xxl * 2,

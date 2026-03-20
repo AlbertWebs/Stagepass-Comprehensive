@@ -7,6 +7,7 @@ use App\Models\Communication;
 use App\Models\Event;
 use App\Models\User;
 use App\Notifications\InternalBroadcastNotification;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -67,6 +68,7 @@ class CommunicationController extends Controller
                 $comm->subject,
                 $comm->body,
                 $user->name,
+                $comm->id,
                 $sendAsMessage,
                 $sendAsEmail
             );
@@ -88,7 +90,42 @@ class CommunicationController extends Controller
     public function show(Communication $communication): JsonResponse
     {
         $communication->load(['sentBy:id,name,email', 'event:id,name,date']);
-        return response()->json($communication);
+        $recipients = $this->resolveRecipients(
+            $communication->recipient_scope,
+            $communication->event_id
+        )->values();
+
+        $notifications = DatabaseNotification::query()
+            ->where('type', InternalBroadcastNotification::class)
+            ->where('data->communication_id', $communication->id)
+            ->whereIn('notifiable_id', $recipients->pluck('id')->all())
+            ->get(['notifiable_id', 'read_at']);
+
+        $byUser = [];
+        foreach ($notifications as $n) {
+            $byUser[(int) $n->notifiable_id] = $n;
+        }
+
+        $recipientStatus = $recipients->map(function (User $u) use ($byUser) {
+            $row = $byUser[(int) $u->id] ?? null;
+            $openedAt = $row?->read_at;
+            return [
+                'user_id' => $u->id,
+                'name' => $u->name,
+                'email' => $u->email,
+                'opened' => $openedAt !== null,
+                'opened_at' => $openedAt?->toISOString(),
+            ];
+        });
+
+        $openedCount = $recipientStatus->where('opened', true)->count();
+
+        return response()->json(array_merge($communication->toArray(), [
+            'recipient_count' => $recipientStatus->count(),
+            'opened_count' => $openedCount,
+            'unopened_count' => max(0, $recipientStatus->count() - $openedCount),
+            'recipients_status' => $recipientStatus->values(),
+        ]));
     }
 
     public function destroy(Communication $communication): JsonResponse

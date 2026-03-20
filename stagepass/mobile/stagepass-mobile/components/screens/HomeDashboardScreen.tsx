@@ -4,9 +4,10 @@
  * Enhanced UX: staggered entrance animations, smooth scroll, refined visuals.
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Platform,
@@ -44,15 +45,33 @@ import { getActivityAccentColor, useRecentCheckinActivities } from '~/hooks/useR
 import { useGeofence } from '~/hooks/useGeofence';
 import { api, type User as ApiUser, type Payment } from '~/services/api';
 import type { Event as EventType } from '~/services/api';
+import {
+  DEFAULT_HOMEPAGE_PREFERENCES,
+  HOMEPAGE_SECTION_KEYS,
+  type HomepagePreferences,
+  type HomepageSectionKey,
+} from '~/services/api';
 import { isWithinGeofence } from '~/utils/geofence';
+import { PREF_HOMEPAGE_PREFERENCES_LOCAL, PREF_SHOW_WELCOME_STATS_CARDS } from '~/constants/preferences';
 
 const TAB_BAR_HEIGHT = 58;
+const OFFICE_CHECKIN_EARLIEST_HOUR = 6;
 
-function getGreeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
+type DayPeriod = 'morning' | 'afternoon' | 'evening' | 'night';
+
+function getDayPeriod(date: Date): DayPeriod {
+  const hour = date.getHours();
+  if (hour >= 5 && hour < 12) return 'morning';
+  if (hour >= 12 && hour < 17) return 'afternoon';
+  if (hour >= 17 && hour < 21) return 'evening';
+  return 'night';
+}
+
+function getGreeting(period: DayPeriod): string {
+  if (period === 'morning') return 'Good morning';
+  if (period === 'afternoon') return 'Good afternoon';
+  if (period === 'evening') return 'Good evening';
+  return 'Good night';
 }
 
 function formatTime(timeStr?: string): string {
@@ -68,6 +87,14 @@ function formatTime(timeStr?: string): string {
   }
 }
 
+function isSameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
 function roleLabel(role: string): string {
   const map: Record<string, string> = {
     admin: 'Admin',
@@ -78,6 +105,16 @@ function roleLabel(role: string): string {
     crew: 'Crew',
   };
   return map[role] ?? role;
+}
+
+function toLocalDateString(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function eventDateOnly(event?: { date?: string | null }): string {
+  const raw = typeof event?.date === 'string' ? event.date.trim() : '';
+  if (!raw) return '';
+  return raw.length >= 10 ? raw.slice(0, 10) : raw;
 }
 
 type Props = {
@@ -122,12 +159,39 @@ export function HomeDashboardScreen({
   const { colors, isDark } = useStagePassTheme();
   const iconColor = isDark ? themeYellow : themeBlue;
   const iconOutlineColor = isDark ? themeYellow : themeBlue;
-  /** Light mode: yellow torches for welcome card and key accents. */
-  const welcomeCardBg = isDark ? '#1E212A' : '#FEFCE8';
+  /** Light mode: match Everything page card background. */
+  const welcomeCardBg = isDark ? '#1E212A' : '#F5F7FC';
   const cardBg = isDark ? '#1E212A' : '#F5F7FC';
+  const quickCardBg = isDark ? '#1E212A' : '#F5F7FC';
+  const homeBorderColor = isDark ? colors.border : themeBlue + '33';
+  const welcomeChipAccent = isDark ? '#93C5FD' : themeBlue;
+  const welcomeChipBg = isDark ? 'rgba(147, 197, 253, 0.14)' : themeBlue + '16';
+  const welcomeChipBorder = isDark ? 'rgba(147, 197, 253, 0.34)' : themeBlue + '38';
   const dispatch = useDispatch();
   const user = useSelector((s: { auth: { user: ApiUser | null } }) => s.auth.user);
   const userName = (user?.name ?? '').trim();
+  const [localHomepagePrefs, setLocalHomepagePrefs] = useState<HomepagePreferences | null>(null);
+  const normalizeHomepagePrefs = (prefs?: HomepagePreferences | null): HomepagePreferences => {
+    const base = DEFAULT_HOMEPAGE_PREFERENCES;
+    if (!prefs) return base;
+    const visibility = { ...base.visibility, ...(prefs.visibility ?? {}) } as HomepagePreferences['visibility'];
+    const incoming = Array.isArray(prefs.order) ? prefs.order : [];
+    const order: HomepageSectionKey[] = [];
+    incoming.forEach((k) => {
+      if (HOMEPAGE_SECTION_KEYS.includes(k) && !order.includes(k)) order.push(k);
+    });
+    HOMEPAGE_SECTION_KEYS.forEach((k) => {
+      if (!order.includes(k)) order.push(k);
+    });
+    return {
+      visibility,
+      order,
+      layout: prefs.layout === 'compact' ? 'compact' : 'comfortable',
+    };
+  };
+  const homepagePrefs = normalizeHomepagePrefs(user?.homepage_preferences ?? localHomepagePrefs ?? null);
+  const isCompactLayout = homepagePrefs.layout === 'compact';
+  const sectionVisible = homepagePrefs.visibility;
 
   // Ensure office check-in state is fresh after login (login response has no office_* fields).
   useEffect(() => {
@@ -135,7 +199,33 @@ export function HomeDashboardScreen({
   }, [dispatch]);
   const displayName = userName ? userName.split(/\s+/)[0] : '';
   const currentTime = useCurrentTime(30_000);
+  const dayPeriod = getDayPeriod(currentTime);
   const timeLabel = currentTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  const welcomePatternTheme = useMemo(() => {
+    const map: Record<DayPeriod, { strong: string; soft: string; filled: string }> = {
+      morning: {
+        strong: isDark ? 'rgba(250, 204, 21, 0.12)' : 'rgba(245, 158, 11, 0.14)',
+        soft: isDark ? 'rgba(250, 204, 21, 0.10)' : 'rgba(245, 158, 11, 0.10)',
+        filled: isDark ? 'rgba(250, 204, 21, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+      },
+      afternoon: {
+        strong: isDark ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.14)',
+        soft: isDark ? 'rgba(16, 185, 129, 0.10)' : 'rgba(16, 185, 129, 0.10)',
+        filled: isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.08)',
+      },
+      evening: {
+        strong: isDark ? 'rgba(99, 102, 241, 0.14)' : 'rgba(37, 99, 235, 0.12)',
+        soft: isDark ? 'rgba(99, 102, 241, 0.11)' : 'rgba(37, 99, 235, 0.10)',
+        filled: isDark ? 'rgba(99, 102, 241, 0.08)' : 'rgba(37, 99, 235, 0.08)',
+      },
+      night: {
+        strong: isDark ? 'rgba(168, 85, 247, 0.14)' : 'rgba(79, 70, 229, 0.12)',
+        soft: isDark ? 'rgba(168, 85, 247, 0.11)' : 'rgba(79, 70, 229, 0.10)',
+        filled: isDark ? 'rgba(168, 85, 247, 0.08)' : 'rgba(79, 70, 229, 0.08)',
+      },
+    };
+    return map[dayPeriod];
+  }, [dayPeriod, isDark]);
   const [refreshing, setRefreshing] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [checkInLoading, setCheckInLoading] = useState(false);
@@ -146,6 +236,7 @@ export function HomeDashboardScreen({
   const [optimisticOfficeCheckedIn, setOptimisticOfficeCheckedIn] = useState(false);
   const [optimisticOfficeCheckinTime, setOptimisticOfficeCheckinTime] = useState<string | null>(null);
   const [dismissedCheckedOutCard, setDismissedCheckedOutCard] = useState(false);
+  const [showWelcomeStatsCards, setShowWelcomeStatsCards] = useState(true);
   const scrollBottomPadding = TAB_BAR_HEIGHT;
   const { checkCanCheckIn } = useGeofence();
   const officeConfig = officeConfigFromApi ?? getOfficeCheckinConfig();
@@ -159,7 +250,7 @@ export function HomeDashboardScreen({
     if (officeCheckoutStep === 'checking_out') return { label: 'Checking out..', sub: '' };
     if (officeCheckoutStep === 'success_thankyou') return { label: 'Success, Thank You', sub: '' };
     if (officeCheckoutStep === 'see_you') return { label: getSeeYouMessage(), sub: '' };
-    if (showCheckoutCta && officeCheckoutStep === 'idle') return { label: 'Checkout now!', sub: 'Tap to end your shift' };
+    if (showCheckoutCta && officeCheckoutStep === 'idle') return { label: 'Office checkout', sub: 'Tap to end office shift' };
     if (officeCheckinStep === 'checking_in') return { label: 'Checking in…', sub: 'Getting location' };
     if (officeCheckinStep === 'location_confirmed') return { label: 'Location confirmed', sub: 'Confirming check-in…' };
     if (officeCheckinStep === 'you_made_it') return { label: 'You made it in !!', sub: 'Welcome to the office' };
@@ -168,7 +259,7 @@ export function HomeDashboardScreen({
   const officeCheckinSecondaryCta = officeCheckoutStep !== 'idle'
     ? (officeCheckoutStep === 'checking_out' ? 'Checking out..' : officeCheckoutStep === 'success_thankyou' ? 'Success, Thank You' : getSeeYouMessage())
     : showCheckoutCta
-      ? 'Checkout now!'
+      ? 'Office checkout'
       : officeCheckinStep === 'checking_in'
         ? 'Checking in…'
         : officeCheckinStep === 'location_confirmed'
@@ -199,6 +290,53 @@ export function HomeDashboardScreen({
     }).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+    AsyncStorage.getItem(PREF_HOMEPAGE_PREFERENCES_LOCAL)
+      .then((v) => {
+        if (!mounted || !v) return;
+        try {
+          const parsed = JSON.parse(v) as HomepagePreferences;
+          setLocalHomepagePrefs(normalizeHomepagePrefs(parsed));
+        } catch {
+          // ignore malformed local cache
+        }
+      })
+      .catch(() => {});
+
+    AsyncStorage.getItem(PREF_SHOW_WELCOME_STATS_CARDS)
+      .then((v) => {
+        if (!mounted) return;
+        if (v == null) setShowWelcomeStatsCards(true);
+        else setShowWelcomeStatsCards(v === '1');
+      })
+      .catch(() => {
+        if (mounted) setShowWelcomeStatsCards(true);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Re-read local UI preference whenever Home gains focus.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      AsyncStorage.getItem(PREF_SHOW_WELCOME_STATS_CARDS)
+        .then((v) => {
+          if (!active) return;
+          if (v == null) setShowWelcomeStatsCards(true);
+          else setShowWelcomeStatsCards(v === '1');
+        })
+        .catch(() => {
+          if (active) setShowWelcomeStatsCards(true);
+        });
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
+
   const currentUserId = user?.id;
   const myAssignment = currentUserId != null
     ? eventToday?.crew?.find((c: { id?: number }) => c.id === currentUserId)
@@ -208,6 +346,14 @@ export function HomeDashboardScreen({
     : undefined;
   const hasEventCheckedIn = !!(pivotData?.checkin_time);
   const hasEventCheckedOut = !!(pivotData?.checkout_time);
+  const showEventCheckedOutCard = (() => {
+    if (!hasEventCheckedOut || !pivotData?.checkout_time) return false;
+    try {
+      return isSameLocalDay(new Date(pivotData.checkout_time), new Date());
+    } catch {
+      return false;
+    }
+  })();
   const hasCheckedIn = hasEventCheckedIn || officeCheckedInToday;
   const checkinTimeStr = (() => {
     if (pivotData?.checkin_time) {
@@ -286,6 +432,11 @@ export function HomeDashboardScreen({
   /** Office check-in only: confirm user has entered the office (geofence from admin settings). */
   const handleOfficeCheckIn = useCallback(async () => {
     if (checkInLoading) return;
+    const nowHour = new Date().getHours();
+    if (nowHour < OFFICE_CHECKIN_EARLIEST_HOUR) {
+      Alert.alert('Too early', 'Office check-in starts at 6:00 AM.');
+      return;
+    }
     let location = userLocation;
     setCheckInLoading(true);
     setOfficeCheckinStep('checking_in');
@@ -365,29 +516,52 @@ export function HomeDashboardScreen({
 
   const handleOfficeCheckOut = useCallback(async () => {
     if (checkInLoading) return;
-    setCheckInLoading(true);
-    setOfficeCheckoutStep('checking_out');
-    try {
-      await api.attendance.officeCheckout();
-      setOfficeCheckoutStep('success_thankyou');
-      await new Promise((r) => setTimeout(r, 1200));
-      setOfficeCheckoutStep('see_you');
-      await new Promise((r) => setTimeout(r, 1600));
-      await onRefresh?.();
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : 'Try again.';
-      const notCheckedIn = /not checked in|have not checked in/i.test(String(message));
-      setOptimisticOfficeCheckedIn(false);
-      setOptimisticOfficeCheckinTime(null);
-      await onRefresh?.();
-      Alert.alert(
-        notCheckedIn ? 'Check in first' : 'Checkout failed',
-        notCheckedIn ? 'You haven\'t checked in at the office today. Tap "Check in office" when you\'re at the office to start your shift, then you can checkout.' : message
-      );
-    } finally {
-      setCheckInLoading(false);
-      setOfficeCheckoutStep('idle');
-    }
+    Alert.alert(
+      'Confirm checkout',
+      'Are you sure you want to check out now?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Check out',
+          onPress: async () => {
+            setCheckInLoading(true);
+            setOfficeCheckoutStep('checking_out');
+            try {
+              let latitude: number | undefined;
+              let longitude: number | undefined;
+              try {
+                const loc = await Location.getCurrentPositionAsync({});
+                latitude = loc.coords.latitude;
+                longitude = loc.coords.longitude;
+                setUserLocation({ latitude, longitude });
+              } catch {
+                // Continue checkout even if location capture fails.
+              }
+
+              await api.attendance.officeCheckout(latitude, longitude);
+              setOfficeCheckoutStep('success_thankyou');
+              await new Promise((r) => setTimeout(r, 1200));
+              setOfficeCheckoutStep('see_you');
+              await new Promise((r) => setTimeout(r, 1600));
+              await onRefresh?.();
+            } catch (e: unknown) {
+              const message = e instanceof Error ? e.message : 'Try again.';
+              const notCheckedIn = /not checked in|have not checked in/i.test(String(message));
+              setOptimisticOfficeCheckedIn(false);
+              setOptimisticOfficeCheckinTime(null);
+              await onRefresh?.();
+              Alert.alert(
+                notCheckedIn ? 'Check in first' : 'Checkout failed',
+                notCheckedIn ? 'You haven\'t checked in at the office today. Tap "Check in office" when you\'re at the office to start your shift, then you can checkout.' : message
+              );
+            } finally {
+              setCheckInLoading(false);
+              setOfficeCheckoutStep('idle');
+            }
+          },
+        },
+      ]
+    );
   }, [checkInLoading, onRefresh]);
 
   const handleCheckOut = useCallback(() => {
@@ -512,10 +686,30 @@ export function HomeDashboardScreen({
   }, [hasEventCheckedOut]);
 
   const todayLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
-  const eventsTodayCount = eventsTodayList.length;
+  const eventsTodayCount = (() => {
+    // For crew/team leader, count only today's events that are still active for this user.
+    if ((role === 'crew' || role === 'team_leader') && currentUserId != null) {
+      return eventsTodayList.filter((e) => {
+        const me = e.crew?.find((c: { id?: number; pivot?: { checkout_time?: string | null } }) => c.id === currentUserId);
+        const checkedOut = Boolean(me?.pivot?.checkout_time);
+        return !checkedOut;
+      }).length;
+    }
+    return eventsTodayList.length;
+  })();
+  const todayLocalDate = toLocalDateString(currentTime);
+  const hasAssignedEventTodayForUser = (() => {
+    if (!currentUserId) return false;
+    return eventsTodayList.some((e) => {
+      if (eventDateOnly(e) !== todayLocalDate) return false;
+      return Boolean(e.crew?.some((c: { id?: number }) => c.id === currentUserId));
+    });
+  })();
 
   const visibleQuickActions = QUICK_ACTIONS.filter((a) => {
     if (a.id === 'everything') return false;
+    if (!sectionVisible.my_events && a.id === 'events') return false;
+    if (!sectionVisible.assigned_tasks && (a.id === 'tasks' || a.id === 'checklist')) return false;
     if (!a.roles) return true;
     if (a.id === 'checkin' && eventToday && !hasEventCheckedIn) return a.roles.includes(role);
     return a.roles.includes(role);
@@ -527,8 +721,16 @@ export function HomeDashboardScreen({
   const RIPPLE_DURATION = 4800;
 
   const showEventCheckInRipple = Boolean(eventToday && !hasEventCheckedIn);
-  const showOfficeRipple = !eventToday;
-  const rippleActive = showEventCheckInRipple || showOfficeRipple;
+  const showEventCheckOutRipple = Boolean(eventToday && hasEventCheckedIn && !hasEventCheckedOut);
+  // Keep ripple for office CTA in all states where office CTA may be visible.
+  const showOfficeRipple = Boolean(
+    (role === 'crew' || role === 'team_leader' || role === 'admin') &&
+    !hasApprovedTimeOffToday &&
+    isOfficeOpenToday &&
+    !officeCheckedOutToday &&
+    (!eventToday || hasEventCheckedOut || !hasEventCheckedIn)
+  );
+  const rippleActive = showEventCheckInRipple || showEventCheckOutRipple || showOfficeRipple;
 
   useEffect(() => {
     if (!rippleActive) {
@@ -614,12 +816,50 @@ export function HomeDashboardScreen({
           entering={FadeInDown.duration(420).delay(0)}
           style={[
             styles.welcomeCard,
-            { backgroundColor: welcomeCardBg, borderColor: colors.border },
-            !isDark && { borderLeftWidth: 4, borderLeftColor: themeYellow },
+            isCompactLayout ? styles.welcomeCardCompact : null,
+            { backgroundColor: welcomeCardBg },
+            isDark
+              ? {
+                  shadowColor: '#000',
+                  shadowOpacity: 0.25,
+                  shadowRadius: 16,
+                  shadowOffset: { width: 0, height: 8 },
+                  elevation: 8,
+                }
+              : {
+                  shadowColor: themeBlue,
+                  shadowOpacity: 0.14,
+                  shadowRadius: 16,
+                  shadowOffset: { width: 0, height: 8 },
+                  elevation: 7,
+                },
           ]}
         >
+          <View pointerEvents="none" style={styles.welcomePatternLayer}>
+            <View
+              style={[
+                styles.welcomeHexShape,
+                styles.welcomeHexOne,
+                { borderColor: welcomePatternTheme.strong, backgroundColor: 'transparent' },
+              ]}
+            />
+            <View
+              style={[
+                styles.welcomeHexShapeSmall,
+                styles.welcomeHexTwo,
+                { borderColor: welcomePatternTheme.soft, backgroundColor: 'transparent' },
+              ]}
+            />
+            <View
+              style={[
+                styles.welcomeHexShapeDot,
+                styles.welcomeHexThree,
+                { backgroundColor: welcomePatternTheme.filled },
+              ]}
+            />
+          </View>
           <ThemedText style={[styles.welcomeGreeting, { color: colors.text }]}>
-            {getGreeting()}{displayName ? `, ${displayName}` : ''}
+            {getGreeting(dayPeriod)}{displayName ? `, ${displayName}` : ''}
           </ThemedText>
           <ThemedText style={[styles.welcomeMeta, { color: colors.textSecondary }]}>
             {eventsTodayCount === 0
@@ -629,26 +869,43 @@ export function HomeDashboardScreen({
           <ThemedText style={[styles.welcomeMetaBold, { color: colors.text }]}>
             {roleLabel(role)} · {todayLabel} · {timeLabel}
           </ThemedText>
+          {showWelcomeStatsCards ? (
           <View style={styles.statusRow}>
-            <View style={[styles.statusChip, { backgroundColor: (isDark ? VibrantColors.sky : themeYellow) + '22', borderColor: (isDark ? VibrantColors.sky : themeYellow) + '55' }]}>
-              <Ionicons name="calendar" size={Icons.xs} color={isDark ? VibrantColors.sky : themeYellow} />
-              <ThemedText style={[styles.statusChipText, { color: isDark ? VibrantColors.sky : themeYellow }]} numberOfLines={1} ellipsizeMode="tail">
-                {eventsTodayCount} event{eventsTodayCount !== 1 ? 's' : ''}
-              </ThemedText>
-            </View>
-            <View style={[styles.statusChip, { backgroundColor: VibrantColors.amber + '22', borderColor: VibrantColors.amber + '55' }]}>
-              <Ionicons name="checkbox" size={Icons.xs} color={VibrantColors.amber} />
-              <ThemedText style={[styles.statusChipText, { color: VibrantColors.amber }]} numberOfLines={1} ellipsizeMode="tail">
-                {taskCount} task{taskCount !== 1 ? 's' : ''}
-              </ThemedText>
-            </View>
-            <View style={[styles.statusChip, { backgroundColor: (isDark ? VibrantColors.violet : themeBlue) + '22', borderColor: (isDark ? VibrantColors.violet : themeBlue) + '55' }]}>
-              <Ionicons name="notifications-outline" size={Icons.xs} color={isDark ? VibrantColors.violet : themeBlue} />
-              <ThemedText style={[styles.statusChipText, { color: isDark ? VibrantColors.violet : themeBlue }]} numberOfLines={1} ellipsizeMode="tail">
-                {notificationCount} notice{notificationCount !== 1 ? 's' : ''}
-              </ThemedText>
-            </View>
+            {homepagePrefs.order.filter((k) => ['upcoming_events', 'assigned_tasks', 'announcements'].includes(k)).map((key) => {
+              if (key === 'upcoming_events' && sectionVisible.upcoming_events) {
+                return (
+                  <View key={key} style={[styles.statusChip, { backgroundColor: welcomeChipBg, borderColor: welcomeChipBorder }]}>
+                    <Ionicons name="calendar" size={Icons.xs} color={welcomeChipAccent} />
+                    <ThemedText style={[styles.statusChipText, { color: welcomeChipAccent }]} numberOfLines={1} ellipsizeMode="tail">
+                      {eventsTodayCount} event{eventsTodayCount !== 1 ? 's' : ''}
+                    </ThemedText>
+                  </View>
+                );
+              }
+              if (key === 'assigned_tasks' && sectionVisible.assigned_tasks) {
+                return (
+                  <View key={key} style={[styles.statusChip, { backgroundColor: welcomeChipBg, borderColor: welcomeChipBorder }]}>
+                    <Ionicons name="checkbox" size={Icons.xs} color={welcomeChipAccent} />
+                    <ThemedText style={[styles.statusChipText, { color: welcomeChipAccent }]} numberOfLines={1} ellipsizeMode="tail">
+                      {taskCount} task{taskCount !== 1 ? 's' : ''}
+                    </ThemedText>
+                  </View>
+                );
+              }
+              if (key === 'announcements' && sectionVisible.announcements) {
+                return (
+                  <View key={key} style={[styles.statusChip, { backgroundColor: welcomeChipBg, borderColor: welcomeChipBorder }]}>
+                    <Ionicons name="notifications-outline" size={Icons.xs} color={welcomeChipAccent} />
+                    <ThemedText style={[styles.statusChipText, { color: welcomeChipAccent }]} numberOfLines={1} ellipsizeMode="tail">
+                      {notificationCount} notice{notificationCount !== 1 ? 's' : ''}
+                    </ThemedText>
+                  </View>
+                );
+              }
+              return null;
+            })}
           </View>
+          ) : null}
         </AnimatedReanimated.View>
 
         {/* Main CTA: Event check-in / check-out (when event today), or Daily (office) check-in. Daily check-in hidden when user has approved time off today. */}
@@ -657,30 +914,72 @@ export function HomeDashboardScreen({
             {eventToday ? (
               /* Event day: Check-in → Check-out (with confirm) → Checked out */
               <>
-              {hasEventCheckedOut && !dismissedCheckedOutCard ? (
-                <View style={[styles.dailyCheckInStatus, styles.dailyCheckInStatusDismissible, { backgroundColor: StatusColors.checkedIn + '18', borderColor: StatusColors.checkedIn + '44' }]}>
-                  <View style={styles.dailyCheckInStatusContent}>
-                    <Ionicons name="checkmark-done-circle" size={Icons.xl} color={StatusColors.checkedIn} />
-                    <View style={styles.dailyCheckInStatusTextWrap}>
-                      <ThemedText style={[styles.dailyCheckInStatusText, { color: StatusColors.checkedIn }]}>
-                        Checked out
-                      </ThemedText>
-                      {checkoutTimeStr && (
-                        <ThemedText style={[styles.dailyCheckInTime, { color: colors.textSecondary }]}>{checkoutTimeStr}</ThemedText>
-                      )}
+              {hasEventCheckedOut ? (
+                <>
+                  {showEventCheckedOutCard && !dismissedCheckedOutCard ? (
+                    <View style={[styles.dailyCheckInStatus, styles.dailyCheckInStatusDismissible, { backgroundColor: StatusColors.checkedIn + '18', borderColor: StatusColors.checkedIn + '44' }]}>
+                      <View style={styles.dailyCheckInStatusContent}>
+                        <Ionicons name="checkmark-done-circle" size={Icons.xl} color={StatusColors.checkedIn} />
+                        <View style={styles.dailyCheckInStatusTextWrap}>
+                          <ThemedText style={[styles.dailyCheckInStatusText, { color: StatusColors.checkedIn }]}>
+                            Checked out
+                          </ThemedText>
+                          {checkoutTimeStr && (
+                            <ThemedText style={[styles.dailyCheckInTime, { color: colors.textSecondary }]}>{checkoutTimeStr}</ThemedText>
+                          )}
+                        </View>
+                      </View>
+                      <Pressable
+                        onPress={() => setDismissedCheckedOutCard(true)}
+                        hitSlop={12}
+                        style={({ pressed }) => [styles.checkedOutCloseBtn, { opacity: pressed ? 0.7 : 1 }]}
+                      >
+                        <Ionicons name="close" size={Icons.header} color={colors.textSecondary} />
+                      </Pressable>
                     </View>
-                  </View>
-                  <Pressable
-                    onPress={() => setDismissedCheckedOutCard(true)}
-                    hitSlop={12}
-                    style={({ pressed }) => [styles.checkedOutCloseBtn, { opacity: pressed ? 0.7 : 1 }]}
-                  >
-                    <Ionicons name="close" size={Icons.header} color={colors.textSecondary} />
-                  </Pressable>
-                </View>
+                  ) : null}
+                  {(role === 'crew' || role === 'team_leader' || role === 'admin') && !hasApprovedTimeOffToday && isOfficeOpenToday && !officeCheckedOutToday ? (
+                    <View style={[styles.roundCheckInWrap, styles.officeAfterEventCheckoutWrap]}>
+                      <AnimatedReanimated.View style={[styles.roundCheckInButtonWrap, showCheckoutCta ? checkoutButtonAnimatedStyle : undefined]}>
+                        <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle]} pointerEvents="none" />
+                        <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle2]} pointerEvents="none" />
+                        <Pressable
+                          onPress={showCheckoutCta ? handleOfficeCheckOut : handleOfficeCheckIn}
+                          disabled={checkInLoading}
+                          style={({ pressed }) => [
+                            styles.roundCheckInButton,
+                            styles.roundCheckInButtonOffice,
+                            checkInLoading && styles.roundCheckInButtonDisabled,
+                            (checkInLoading || officeCheckinStep !== 'idle' || officeCheckoutStep !== 'idle') && { backgroundColor: themeYellow + '35' },
+                            pressed && !checkInLoading && styles.roundCheckInButtonPressed,
+                          ]}
+                        >
+                          {(checkInLoading || officeCheckinStep !== 'idle' || officeCheckoutStep !== 'idle') ? (
+                            <View style={styles.roundCheckInInner}>
+                              <Ionicons name={officeCheckinStep === 'you_made_it' || officeCheckoutStep === 'success_thankyou' || officeCheckoutStep === 'see_you' ? 'checkmark-circle' : showCheckoutCta ? 'exit' : 'location'} size={Icons.standard} color={officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary} />
+                              <ThemedText style={[styles.roundCheckInLabel, styles.roundCheckInLabelDisabled, { color: officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary }]} numberOfLines={1}>{officeCheckinButtonLabel.label}</ThemedText>
+                              <ThemedText style={[styles.roundCheckInSub, { color: officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary }]} numberOfLines={1}>OFFICE SHIFT</ThemedText>
+                            </View>
+                          ) : (
+                            <LinearGradient
+                              colors={showCheckoutCta ? [themeBlue, '#1e3a5f', '#0f1838'] : ['#facc15', themeYellow, '#b89107']}
+                              style={styles.roundCheckInGradient}
+                            >
+                              <Ionicons name={showCheckoutCta ? 'exit' : 'location'} size={Icons.standard} color={showCheckoutCta ? '#fff' : themeBlue} />
+                              <ThemedText style={[styles.roundCheckInLabel, { color: showCheckoutCta ? '#fff' : themeBlue }]} numberOfLines={1}>{officeCheckinButtonLabel.label}</ThemedText>
+                              <ThemedText style={[styles.roundCheckInSub, { color: showCheckoutCta ? '#fff' : themeBlue }]} numberOfLines={1}>OFFICE SHIFT</ThemedText>
+                            </LinearGradient>
+                          )}
+                        </Pressable>
+                      </AnimatedReanimated.View>
+                    </View>
+                  ) : null}
+                </>
               ) : hasEventCheckedIn ? (
                 <View style={styles.roundCheckInWrap}>
                   <AnimatedReanimated.View style={styles.roundCheckInButtonWrap}>
+                    <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: themeBlue }, rippleStyle]} pointerEvents="none" />
+                    <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: themeBlue }, rippleStyle2]} pointerEvents="none" />
                     <Pressable
                       onPress={handleCheckOut}
                       disabled={checkInLoading}
@@ -692,100 +991,116 @@ export function HomeDashboardScreen({
                       ]}
                     >
                       <LinearGradient colors={[themeBlue, '#1e3a5f', '#0f1838']} style={styles.roundCheckInGradient}>
-                        <Ionicons name="exit-outline" size={Icons.large} color="#fff" />
+                        <Ionicons name="exit-outline" size={Icons.standard} color="#fff" />
                         <ThemedText style={[styles.roundCheckInLabel, { color: '#fff' }]}>
-                          {checkInLoading ? 'Checking out…' : 'Check out'}
+                          {checkInLoading ? 'Checking out…' : 'Event checkout'}
                         </ThemedText>
                         <ThemedText style={[styles.roundCheckInSub, { color: 'rgba(255,255,255,0.95)' }]}>
-                          TAP TO END SHIFT
+                          END EVENT SHIFT
                         </ThemedText>
                       </LinearGradient>
                     </Pressable>
                   </AnimatedReanimated.View>
                 </View>
               ) : (
-                <View style={styles.roundCheckInWrap}>
-                  <AnimatedReanimated.View style={styles.roundCheckInButtonWrap}>
-                    <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: VibrantColors.emerald }, rippleStyle]} pointerEvents="none" />
-                    <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: VibrantColors.emerald }, rippleStyle2]} pointerEvents="none" />
-                    <Pressable
-                      onPress={handleCheckIn}
-                      disabled={checkInLoading}
-                      style={({ pressed }) => [
-                        styles.roundCheckInButton,
-                        styles.roundCheckInButtonEvent,
-                        checkInLoading && styles.roundCheckInButtonDisabled,
-                        checkInLoading && { backgroundColor: isDark ? VibrantColors.emerald + '35' : VibrantColors.emerald + '22' },
-                        pressed && !checkInLoading && styles.roundCheckInButtonPressed,
-                      ]}
-                    >
-                      {checkInLoading ? (
-                        <View style={styles.roundCheckInInner}>
-                          <Ionicons name="location" size={Icons.large} color={colors.textSecondary} />
-                          <ThemedText style={[styles.roundCheckInLabel, styles.roundCheckInLabelDisabled, { color: colors.textSecondary }]}>Checking in…</ThemedText>
-                          <ThemedText style={[styles.roundCheckInSub, { color: colors.textSecondary }]}>TAP TO START SHIFT</ThemedText>
-                        </View>
-                      ) : (
-                        <LinearGradient colors={['#34d399', VibrantColors.emerald, '#059669']} style={styles.roundCheckInGradient}>
-                          <Ionicons name="location" size={Icons.large} color="#fff" />
-                          <ThemedText style={[styles.roundCheckInLabel, { color: '#fff' }]}>Check in</ThemedText>
-                          <ThemedText style={[styles.roundCheckInSub, { color: 'rgba(255,255,255,0.95)' }]}>TAP TO START SHIFT</ThemedText>
-                        </LinearGradient>
-                      )}
-                    </Pressable>
-                  </AnimatedReanimated.View>
+                /* Event check-in is on the event details page; home shows office only or a link to event */
+                <View style={styles.roundCheckInRow}>
+                  {(role === 'crew' || role === 'team_leader' || role === 'admin') && !hasApprovedTimeOffToday && isOfficeOpenToday && !officeCheckedOutToday ? (
+                    <View style={styles.roundCheckInWrap}>
+                        <AnimatedReanimated.View style={[styles.roundCheckInButtonWrap, showCheckoutCta ? checkoutButtonAnimatedStyle : undefined]}>
+                          <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle]} pointerEvents="none" />
+                          <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle2]} pointerEvents="none" />
+                          <Pressable
+                            onPress={showCheckoutCta ? handleOfficeCheckOut : handleOfficeCheckIn}
+                            disabled={checkInLoading}
+                            style={({ pressed }) => [
+                              styles.roundCheckInButton,
+                              styles.roundCheckInButtonOffice,
+                              checkInLoading && styles.roundCheckInButtonDisabled,
+                              (checkInLoading || officeCheckinStep !== 'idle' || officeCheckoutStep !== 'idle') && { backgroundColor: themeYellow + '35' },
+                              pressed && !checkInLoading && styles.roundCheckInButtonPressed,
+                            ]}
+                          >
+                            {(checkInLoading || officeCheckinStep !== 'idle' || officeCheckoutStep !== 'idle') ? (
+                              <View style={styles.roundCheckInInner}>
+                                <Ionicons name={officeCheckinStep === 'you_made_it' || officeCheckoutStep === 'success_thankyou' || officeCheckoutStep === 'see_you' ? 'checkmark-circle' : showCheckoutCta ? 'exit' : 'location'} size={Icons.standard} color={officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary} />
+                                <ThemedText style={[styles.roundCheckInLabel, styles.roundCheckInLabelDisabled, { color: officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary }]} numberOfLines={1}>{officeCheckinButtonLabel.label}</ThemedText>
+                                <ThemedText style={[styles.roundCheckInSub, { color: officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary }]} numberOfLines={1}>OFFICE SHIFT</ThemedText>
+                              </View>
+                            ) : (
+                              <LinearGradient
+                                colors={showCheckoutCta ? [themeBlue, '#1e3a5f', '#0f1838'] : ['#facc15', themeYellow, '#b89107']}
+                                style={styles.roundCheckInGradient}
+                              >
+                                <Ionicons name={showCheckoutCta ? 'exit' : 'location'} size={Icons.standard} color={showCheckoutCta ? '#fff' : themeBlue} />
+                                <ThemedText style={[styles.roundCheckInLabel, { color: showCheckoutCta ? '#fff' : themeBlue }]} numberOfLines={1}>{officeCheckinButtonLabel.label}</ThemedText>
+                                <ThemedText style={[styles.roundCheckInSub, { color: showCheckoutCta ? '#fff' : themeBlue }]} numberOfLines={1}>OFFICE SHIFT</ThemedText>
+                              </LinearGradient>
+                            )}
+                          </Pressable>
+                        </AnimatedReanimated.View>
+                    </View>
+                  ) : (
+                    <View style={styles.roundCheckInWrap}>
+                        <Pressable
+                          onPress={() => eventToday && handleNav(() => router.push(`/events/${eventToday.id}`))}
+                          style={({ pressed }) => [styles.roundCheckInButton, styles.roundCheckInButtonEvent, pressed && styles.roundCheckInButtonPressed]}
+                        >
+                          <LinearGradient colors={['#2563eb', '#1e3a5f', themeBlue]} style={styles.roundCheckInGradient}>
+                            <Ionicons name="location" size={Icons.standard} color="#fff" />
+                            <ThemedText style={[styles.roundCheckInLabel, { color: '#fff' }]} numberOfLines={1}>Check in at event</ThemedText>
+                            <ThemedText style={[styles.roundCheckInSub, { color: 'rgba(255,255,255,0.95)' }]} numberOfLines={1}>OPEN EVENT</ThemedText>
+                          </LinearGradient>
+                        </Pressable>
+                    </View>
+                  )}
                 </View>
               )}
 
-              {/* Daily check-in (office): show when event today and office open (Mon–Fri); hide when user has approved time off today or weekend */}
-              {(isPermanentEmployee || role === 'team_leader' || role === 'admin') && !hasApprovedTimeOffToday && isOfficeOpenToday && (
-                <View style={[styles.dailyCheckInSecondary, { backgroundColor: cardBg, borderColor: colors.border }]}>
+              {/* Daily check-in (office): done or checkout row when event today */}
+              {(role === 'crew' || role === 'team_leader' || role === 'admin') && !hasApprovedTimeOffToday && isOfficeOpenToday && (officeCheckedOutToday || showCheckoutCta) && (
+                <View style={[styles.dailyCheckInSecondary, { backgroundColor: cardBg, borderColor: homeBorderColor }]}>
                   {officeCheckedOutToday ? (
                     <View style={styles.dailyCheckInSecondaryRow}>
                       <Ionicons name="checkmark-done-circle" size={Icons.standard} color={StatusColors.checkedIn} />
                       <ThemedText style={[styles.dailyCheckInSecondaryLabel, { color: colors.textSecondary }]}>Daily check-in done</ThemedText>
                       <ThemedText style={[styles.dailyCheckInSecondaryTime, { color: colors.textSecondary }]}>{officeCheckinTimeStr && officeCheckoutTimeStr ? `${officeCheckinTimeStr} – ${officeCheckoutTimeStr}` : 'Done'}</ThemedText>
                     </View>
-                  ) : showCheckoutCta ? (
+                  ) : (
                     <Pressable
                       onPress={handleOfficeCheckOut}
                       disabled={checkInLoading}
                       style={({ pressed }) => [styles.dailyCheckInSecondaryRow, styles.dailyCheckInSecondaryButton, { opacity: pressed && !checkInLoading ? 0.8 : 1 }]}
                     >
                       <Ionicons name="exit-outline" size={Icons.standard} color={iconColor} />
-                      <ThemedText style={[styles.dailyCheckInSecondaryLabel, { color: colors.text }]}>Daily check-in</ThemedText>
+                      <ThemedText style={[styles.dailyCheckInSecondaryLabel, { color: colors.text }]}>Office shift</ThemedText>
                       <ThemedText style={[styles.dailyCheckInSecondaryCta, { color: iconColor }]}>{officeCheckinSecondaryCta}</ThemedText>
                     </Pressable>
-                  ) : (
-                    <Pressable
-                      onPress={handleOfficeCheckIn}
-                      disabled={checkInLoading}
-                      style={({ pressed }) => [styles.dailyCheckInSecondaryRow, styles.dailyCheckInSecondaryButton, { opacity: pressed && !checkInLoading ? 0.8 : 1 }]}
-                    >
-                      <Ionicons name="location-outline" size={Icons.standard} color={iconColor} />
-                      <ThemedText style={[styles.dailyCheckInSecondaryLabel, { color: colors.text }]}>Daily check-in</ThemedText>
-                      <ThemedText style={[styles.dailyCheckInSecondaryCta, { color: iconColor }]}>{officeCheckinSecondaryCta}</ThemedText>
-                    </Pressable>
+                  )}
+                  {false && (
+                    <ThemedText style={[styles.dailyCheckInHint, { color: colors.textSecondary }]}>
+                      Check in at office first if you’re there, then tap the green button above when you arrive at the event.
+                    </ThemedText>
                   )}
                 </View>
               )}
               </>
             ) : hasApprovedTimeOffToday ? (
               /* Approved time off today: no daily check-in button */
-              <View style={[styles.dailyCheckInStatus, { backgroundColor: cardBg, borderColor: colors.border }]}>
+              <View style={[styles.dailyCheckInStatus, { backgroundColor: cardBg, borderColor: homeBorderColor }]}>
                 <Ionicons name="calendar-outline" size={Icons.xl} color={colors.textSecondary} />
                 <ThemedText style={[styles.dailyCheckInStatusText, { color: colors.textSecondary }]}>You're on time off today</ThemedText>
               </View>
             ) : !isOfficeOpenToday ? (
               /* Weekend: office closed, no check-in button – compact to match other inline items */
-              <View style={[styles.dailyCheckInStatus, styles.dailyCheckInStatusCompact, { backgroundColor: cardBg, borderColor: colors.border }]}>
+              <View style={[styles.dailyCheckInStatus, styles.dailyCheckInStatusCompact, { backgroundColor: cardBg, borderColor: homeBorderColor }]}>
                 <Ionicons name="business-outline" size={Icons.standard} color={colors.textSecondary} />
                 <ThemedText style={[styles.dailyCheckInStatusTextCompact, { color: colors.textSecondary }]}>Office closed (weekend)</ThemedText>
               </View>
             ) : (isPermanentEmployee || role === 'team_leader' || role === 'admin') ? (
               /* No event today: Daily (office) check-in for permanent crew, team leaders, and admin. After checkout, hide button until next day. */
               hasCheckedIn && officeCheckedOutToday ? (
-                <View style={[styles.dailyCheckInStatus, { backgroundColor: cardBg, borderColor: colors.border }]}>
+                <View style={[styles.dailyCheckInStatus, { backgroundColor: cardBg, borderColor: homeBorderColor }]}>
                   <Ionicons name="checkmark-done-circle" size={Icons.xl} color={StatusColors.checkedIn} />
                   <ThemedText style={[styles.dailyCheckInStatusText, { color: colors.textSecondary }]}>Done for today</ThemedText>
                   <ThemedText style={[styles.dailyCheckInTime, { color: colors.textSecondary }]}>{getSeeYouMessage()}</ThemedText>
@@ -808,7 +1123,7 @@ export function HomeDashboardScreen({
                     >
                       {(checkInLoading || officeCheckinStep !== 'idle' || officeCheckoutStep !== 'idle') ? (
                         <View style={styles.roundCheckInInner}>
-                          <Ionicons name={officeCheckinStep === 'you_made_it' || officeCheckoutStep === 'success_thankyou' || officeCheckoutStep === 'see_you' ? 'checkmark-circle' : showCheckoutCta ? 'exit' : 'location'} size={Icons.large} color={officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary} />
+                          <Ionicons name={officeCheckinStep === 'you_made_it' || officeCheckoutStep === 'success_thankyou' || officeCheckoutStep === 'see_you' ? 'checkmark-circle' : showCheckoutCta ? 'exit' : 'location'} size={Icons.standard} color={officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary} />
                           <ThemedText style={[styles.roundCheckInLabel, styles.roundCheckInLabelDisabled, { color: officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary }]}>{officeCheckinButtonLabel.label}</ThemedText>
                           <ThemedText style={[styles.roundCheckInSub, { color: officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary }]}>{officeCheckinButtonLabel.sub}</ThemedText>
                         </View>
@@ -817,7 +1132,7 @@ export function HomeDashboardScreen({
                           colors={showCheckoutCta ? [themeBlue, '#1e3a5f', '#0f1838'] : ['#facc15', themeYellow, '#b89107']}
                           style={styles.roundCheckInGradient}
                         >
-                          <Ionicons name={showCheckoutCta ? 'exit' : 'location'} size={Icons.large} color={showCheckoutCta ? '#fff' : themeBlue} />
+                          <Ionicons name={showCheckoutCta ? 'exit' : 'location'} size={Icons.standard} color={showCheckoutCta ? '#fff' : themeBlue} />
                           <ThemedText style={[styles.roundCheckInLabel, { color: showCheckoutCta ? '#fff' : themeBlue }]}>{officeCheckinButtonLabel.label}</ThemedText>
                           <ThemedText style={[styles.roundCheckInSub, { color: showCheckoutCta ? '#fff' : themeBlue }]}>{officeCheckinButtonLabel.sub}</ThemedText>
                         </LinearGradient>
@@ -828,7 +1143,7 @@ export function HomeDashboardScreen({
               )
             ) : officeCheckedOutToday ? (
               /* Temporary crew, no event today, but already checked out: hide button until next day */
-              <View style={[styles.dailyCheckInStatus, { backgroundColor: cardBg, borderColor: colors.border }]}>
+              <View style={[styles.dailyCheckInStatus, { backgroundColor: cardBg, borderColor: homeBorderColor }]}>
                 <Ionicons name="checkmark-done-circle" size={Icons.xl} color={StatusColors.checkedIn} />
                 <ThemedText style={[styles.dailyCheckInStatusText, { color: colors.textSecondary }]}>Done for today</ThemedText>
                 <ThemedText style={[styles.dailyCheckInTime, { color: colors.textSecondary }]}>{getSeeYouMessage()}</ThemedText>
@@ -852,7 +1167,7 @@ export function HomeDashboardScreen({
                   >
                     {(checkInLoading || officeCheckinStep !== 'idle' || officeCheckoutStep !== 'idle') ? (
                       <View style={styles.roundCheckInInner}>
-                        <Ionicons name={officeCheckinStep === 'you_made_it' || officeCheckoutStep === 'success_thankyou' || officeCheckoutStep === 'see_you' ? 'checkmark-circle' : showCheckoutCta ? 'exit' : 'location'} size={Icons.large} color={officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary} />
+                        <Ionicons name={officeCheckinStep === 'you_made_it' || officeCheckoutStep === 'success_thankyou' || officeCheckoutStep === 'see_you' ? 'checkmark-circle' : showCheckoutCta ? 'exit' : 'location'} size={Icons.standard} color={officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary} />
                         <ThemedText style={[styles.roundCheckInLabel, styles.roundCheckInLabelDisabled, { color: officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary }]}>{officeCheckinButtonLabel.label}</ThemedText>
                         <ThemedText style={[styles.roundCheckInSub, { color: officeCheckinStep === 'you_made_it' || officeCheckoutStep !== 'idle' ? StatusColors.checkedIn : colors.textSecondary }]}>{officeCheckinButtonLabel.sub}</ThemedText>
                       </View>
@@ -861,7 +1176,7 @@ export function HomeDashboardScreen({
                         colors={showCheckoutCta ? [themeBlue, '#1e3a5f', '#0f1838'] : ['#facc15', themeYellow, '#b89107']}
                         style={styles.roundCheckInGradient}
                       >
-                        <Ionicons name={showCheckoutCta ? 'exit' : 'location'} size={Icons.large} color={showCheckoutCta ? '#fff' : themeBlue} />
+                        <Ionicons name={showCheckoutCta ? 'exit' : 'location'} size={Icons.standard} color={showCheckoutCta ? '#fff' : themeBlue} />
                         <ThemedText style={[styles.roundCheckInLabel, { color: showCheckoutCta ? '#fff' : themeBlue }]}>{officeCheckinButtonLabel.label}</ThemedText>
                         <ThemedText style={[styles.roundCheckInSub, { color: showCheckoutCta ? '#fff' : themeBlue }]}>{officeCheckinButtonLabel.sub}</ThemedText>
                       </LinearGradient>
@@ -873,124 +1188,15 @@ export function HomeDashboardScreen({
           </AnimatedReanimated.View>
         )}
 
-        {/* Today's Event card – clean, scannable (hide once user has checked out) */}
-        {eventToday && (role === 'crew' || role === 'team_leader') && !hasEventCheckedOut && (
-          <AnimatedReanimated.View entering={FadeInDown.duration(360).delay(80)} style={styles.section}>
-            <View style={[styles.todayEventCard, { backgroundColor: cardBg, borderColor: colors.border }]}>
-              <View style={styles.todayEventHeader}>
-                <Ionicons name="calendar" size={Icons.standard} color={isDark ? iconColor : themeBlue} />
-                <ThemedText style={[styles.todayEventTitle, { color: colors.text }]}>Today&apos;s Event</ThemedText>
-                <View style={[styles.confirmedBadge, { backgroundColor: StatusColors.checkedIn + '22' }]}>
-                  <ThemedText style={[styles.confirmedBadgeText, { color: StatusColors.checkedIn }]}>CONFIRMED</ThemedText>
-                </View>
-              </View>
-              <Pressable onPress={() => handleNav(() => router.push(`/events/${eventToday.id}`))} style={({ pressed }) => [{ opacity: pressed ? NAV_PRESSED_OPACITY : 1 }]}>
-                <ThemedText style={[styles.todayEventName, { color: colors.text }]} numberOfLines={2}>{eventToday.name}</ThemedText>
-                {eventToday.start_time && (
-                  <View style={styles.todayEventRow}>
-                    <Ionicons name="time-outline" size={Icons.small} color={colors.textSecondary} />
-                    <ThemedText style={[styles.todayEventMeta, { color: colors.textSecondary }]}>
-                      {formatTime(eventToday.start_time)}
-                      {eventToday.expected_end_time ? ` — ${formatTime(eventToday.expected_end_time)}` : ''}
-                    </ThemedText>
-                  </View>
-                )}
-                {eventToday.location_name && (
-                  <View style={styles.todayEventRow}>
-                    <Ionicons name="location-outline" size={Icons.small} color={colors.textSecondary} />
-                    <ThemedText style={[styles.todayEventMeta, { color: colors.textSecondary }]} numberOfLines={1}>{eventToday.location_name}</ThemedText>
-                  </View>
-                )}
-                {(eventToday.team_leader ?? eventToday.teamLeader) && (
-                  <View style={styles.todayEventRow}>
-                    <Ionicons name="people-outline" size={Icons.small} color={colors.textSecondary} />
-                    <ThemedText style={[styles.todayEventMeta, { color: colors.textSecondary }]}>
-                      {(eventToday.team_leader ?? eventToday.teamLeader)!.name}
-                    </ThemedText>
-                  </View>
-                )}
-                <ThemedText style={[styles.viewDetailsLink, { color: isDark ? colors.brandText : themeBlue }]}>View Details →</ThemedText>
-              </Pressable>
-            </View>
-          </AnimatedReanimated.View>
-        )}
-
-        {/* Crew / Team leader: Daily Allowance + Approved allowances – only when user is event crew for today */}
-        {(role === 'crew' || role === 'team_leader') && eventsTodayList.length > 0 && (
-          <AnimatedReanimated.View entering={FadeInDown.duration(360).delay(100)} style={styles.allowancesSection}>
-            <View style={[styles.sectionTitleRow, styles.allowanceSectionHeader]}>
-              <View style={[styles.sectionTitleAccent, styles.sectionTitleAccentVibe, { backgroundColor: themeYellow }]} />
-              <View style={[styles.sectionTitleIconWrap, { backgroundColor: themeYellow + '28' }]}>
-                <Ionicons name="wallet-outline" size={Icons.small} color={themeYellow} />
-              </View>
-              <ThemedText style={[styles.allowanceSectionTitle, { color: isDark ? themeYellow + 'dd' : colors.text, flex: 1 }]}>Daily allowance</ThemedText>
-            </View>
-            <View style={styles.summaryCardsRow}>
-              <View style={[styles.summaryCard, styles.summaryCardAllowanceEnhanced, { backgroundColor: cardBg, borderColor: colors.border }]}>
-              <View style={[styles.summaryCardIconWrap, { backgroundColor: themeYellow + '18', borderColor: themeYellow + '35' }]}>
-                <Ionicons name="wallet-outline" size={Icons.xl} color={themeYellow} />
-              </View>
-              <ThemedText style={[styles.summaryCardValue, { color: colors.text }]}>
-                {allowanceToday != null
-                  ? `KES ${Number(allowanceToday).toLocaleString()}`
-                  : '0.00 KES'}
-              </ThemedText>
-              <ThemedText style={[styles.summaryCardLabel, { color: colors.textSecondary }]}>Today&apos;s rate</ThemedText>
-              </View>
-            </View>
-            {approvedAllowances.length > 0 && (
-              <>
-                <View style={styles.sectionTitleRow}>
-                  <View style={[styles.sectionTitleAccent, styles.sectionTitleAccentVibe, { backgroundColor: StatusColors.checkedIn }]} />
-                  <View style={[styles.sectionTitleIconWrap, { backgroundColor: StatusColors.checkedIn + '28' }]}>
-                    <Ionicons name="checkmark-done" size={Icons.small} color={StatusColors.checkedIn} />
-                  </View>
-                  <ThemedText style={[styles.sectionTitle, { color: isDark ? themeYellow + 'dd' : colors.text }]}>
-                    Approved allowances
-                  </ThemedText>
-                </View>
-                <View style={[styles.activityCard, { backgroundColor: cardBg, borderColor: colors.border }]}>
-                  {approvedAllowances.slice(0, 10).map((p) => {
-                    const eventName = p.event?.name ?? 'Event';
-                    const amount = Number(p.total_amount);
-                    const purpose = p.purpose ?? '';
-                    const dateStr = p.payment_date
-                      ? new Date(String(p.payment_date)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                      : '';
-                    return (
-                      <View key={p.id} style={styles.allowanceRow}>
-                        <View style={[styles.activityDot, { backgroundColor: StatusColors.checkedIn }]} />
-                        <View style={styles.activityContent}>
-                          <ThemedText style={[styles.activityTitle, { color: colors.text }]} numberOfLines={1}>
-                            {eventName}{purpose ? ` · ${purpose}` : ''}
-                          </ThemedText>
-                          <ThemedText style={[styles.activitySub, { color: colors.textSecondary }]}>
-                            KES {amount.toLocaleString('en-GB', { minimumFractionDigits: 2 })}
-                            {dateStr ? ` · ${dateStr}` : ''}
-                          </ThemedText>
-                        </View>
-                      </View>
-                    );
-                  })}
-                  {approvedAllowances.length > 10 && (
-                    <ThemedText style={[styles.activityTime, { color: colors.textSecondary, marginTop: Spacing.sm }]}>
-                      +{approvedAllowances.length - 10} more
-                    </ThemedText>
-                  )}
-                </View>
-              </>
-            )}
-          </AnimatedReanimated.View>
-        )}
-
         {/* Quick Actions – 3 per row */}
-        <AnimatedReanimated.View entering={FadeInDown.duration(400).delay(140)} style={styles.section}>
+        {sectionVisible.my_events || sectionVisible.assigned_tasks ? (
+        <AnimatedReanimated.View entering={FadeInDown.duration(400).delay(140)} style={[styles.section, isCompactLayout ? styles.sectionCompact : null]}>
           <View style={styles.sectionTitleRow}>
             <View style={[styles.sectionTitleAccent, styles.sectionTitleAccentVibe, { backgroundColor: themeYellow }]} />
-            <View style={[styles.sectionTitleIconWrap, { backgroundColor: themeYellow + '28' }]}>
-              <Ionicons name="flash" size={Icons.small} color={themeYellow} />
+            <View style={[styles.sectionTitleIconWrap, { backgroundColor: isDark ? 'rgba(249,250,251,0.12)' : themeYellow + '28' }]}>
+              <Ionicons name="flash" size={Icons.small} color={isDark ? '#F9FAFB' : themeYellow} />
             </View>
-            <ThemedText style={[styles.sectionTitle, { color: isDark ? themeYellow + 'dd' : colors.text }]}>
+            <ThemedText style={[styles.sectionTitle, { color: isDark ? '#F9FAFB' : '#0F172A' }]}>
               Quick actions
             </ThemedText>
             <Pressable onPress={() => handleNav(() => router.push('/(tabs)/everything'))} style={({ pressed }) => ({ opacity: pressed ? NAV_PRESSED_OPACITY : 1 })}>
@@ -1008,6 +1214,7 @@ export function HomeDashboardScreen({
                 <View key={rowIndex} style={styles.quickGridRow}>
                   {row.map((action, colIndex) => {
                     const href = action.id === 'checkin' && eventToday ? `/events/${eventToday.id}` : action.href;
+                    const showEventDot = hasAssignedEventTodayForUser && (action.id === 'events' || action.id === 'checkin');
                     const index = rowIndex * COLS + colIndex;
                     return (
                       <AnimatedReanimated.View
@@ -1019,9 +1226,12 @@ export function HomeDashboardScreen({
                           onPress={() => href && handleNav(() => router.push(href as any))}
                           style={({ pressed }) => [
                             styles.quickCard,
-                            { backgroundColor: cardBg, borderColor: colors.border, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
+                            { backgroundColor: quickCardBg, borderColor: homeBorderColor, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
                           ]}
                         >
+                          {showEventDot ? (
+                            <View style={styles.quickCardEventDot} />
+                          ) : null}
                           <View style={[styles.quickIconWrap, { backgroundColor: themeYellow + '1a', borderColor: themeYellow + '38' }]}>
                             <Ionicons name={action.icon as any} size={Icons.standard} color={themeYellow} />
                           </View>
@@ -1037,16 +1247,18 @@ export function HomeDashboardScreen({
             })()}
           </View>
         </AnimatedReanimated.View>
+        ) : null}
+        <View style={[styles.softSectionBreak, { backgroundColor: isDark ? colors.border + '99' : '#D1D5DB' }]} />
 
         {/* Admin: Past events */}
         {role === 'admin' && pastEvents.length > 0 && (
           <AnimatedReanimated.View entering={FadeIn.duration(400).delay(220)} style={styles.section}>
             <View style={styles.sectionTitleRow}>
               <View style={[styles.sectionTitleAccent, styles.sectionTitleAccentVibe, { backgroundColor: isDark ? themeYellow : themeBlue }]} />
-              <View style={[styles.sectionTitleIconWrap, { backgroundColor: (isDark ? themeYellow : themeBlue) + '28' }]}>
-                <Ionicons name="calendar-outline" size={Icons.small} color={isDark ? themeYellow : themeBlue} />
+              <View style={[styles.sectionTitleIconWrap, { backgroundColor: isDark ? 'rgba(249,250,251,0.12)' : themeBlue + '28' }]}>
+                <Ionicons name="calendar-outline" size={Icons.small} color={isDark ? '#F9FAFB' : themeBlue} />
               </View>
-              <ThemedText style={[styles.sectionTitle, { color: isDark ? themeYellow + 'dd' : colors.text }]}>
+              <ThemedText style={[styles.sectionTitle, { color: isDark ? '#F9FAFB' : '#0F172A' }]}>
                 Past events
               </ThemedText>
             </View>
@@ -1060,7 +1272,7 @@ export function HomeDashboardScreen({
                   onPress={() => handleNav(() => router.push({ pathname: '/admin/events/[id]/operations', params: { id: String(event.id) } }))}
                   style={({ pressed }) => [
                     styles.eventCard,
-                    { backgroundColor: cardBg, borderColor: colors.border, borderLeftWidth: 3, borderLeftColor: isDark ? themeYellow : themeBlue, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
+                    { backgroundColor: cardBg, borderColor: homeBorderColor, borderLeftWidth: 3, borderLeftColor: isDark ? themeYellow : themeBlue, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
                   ]}
                 >
                   <View style={styles.eventCardMain}>
@@ -1085,21 +1297,21 @@ export function HomeDashboardScreen({
         )}
 
         {/* Recent Activity – at bottom of page */}
-        {(role === 'crew' || role === 'team_leader') && (
+        {(role === 'crew' || role === 'team_leader') && sectionVisible.recent_activities && (
           <AnimatedReanimated.View entering={FadeInDown.duration(360).delay(120)} style={styles.section}>
             <View style={styles.sectionTitleRow}>
               <View style={[styles.sectionTitleAccent, styles.sectionTitleAccentVibe, { backgroundColor: isDark ? VibrantColors.amber : themeBlue }]} />
-              <View style={[styles.sectionTitleIconWrap, { backgroundColor: (isDark ? VibrantColors.amber : themeBlue) + '28' }]}>
-                <Ionicons name="pulse" size={Icons.small} color={isDark ? VibrantColors.amber : themeBlue} />
+              <View style={[styles.sectionTitleIconWrap, { backgroundColor: isDark ? 'rgba(249,250,251,0.12)' : themeBlue + '28' }]}>
+                <Ionicons name="pulse" size={Icons.small} color={isDark ? '#F9FAFB' : themeBlue} />
               </View>
-              <ThemedText style={[styles.sectionTitle, { color: isDark ? themeYellow + 'dd' : colors.text }]}>
+              <ThemedText style={[styles.sectionTitle, { color: isDark ? '#F9FAFB' : '#0F172A' }]}>
                 Recent activity
               </ThemedText>
               <Pressable onPress={() => handleNav(() => router.push('/(tabs)/recent-activity'))} style={({ pressed }) => ({ opacity: pressed ? NAV_PRESSED_OPACITY : 1 })}>
                 <ThemedText style={[styles.seeAllLink, { color: isDark ? colors.brandText : themeBlue }]}>See all</ThemedText>
               </Pressable>
             </View>
-            <View style={[styles.activityCard, { backgroundColor: cardBg, borderColor: isDark ? colors.border : '#E4E4E7' }]}>
+            <View style={[styles.activityCard, { backgroundColor: cardBg, borderColor: homeBorderColor }]}>
               {recentCheckinActivities.length === 0 ? (
                 <View style={styles.activityItem}>
                   <View style={[styles.activityDotLarge, { backgroundColor: (isDark ? VibrantColors.amber : themeBlue) + '22', borderColor: isDark ? VibrantColors.amber : themeBlue }]}>
@@ -1122,7 +1334,7 @@ export function HomeDashboardScreen({
                           <View style={[styles.activityDotLarge, { backgroundColor: accent + '28', borderColor: accent }]}>
                             <Ionicons name={item.icon} size={Icons.small} color={accent} />
                           </View>
-                          {!isLast && <View style={[styles.activityTimelineLine, { backgroundColor: isDark ? colors.border : '#E4E4E7' }]} />}
+                          {!isLast && <View style={[styles.activityTimelineLine, { backgroundColor: isDark ? colors.border : themeBlue + '33' }]} />}
                         </View>
                         <View style={styles.activityContent}>
                           <ThemedText style={[styles.activityTitle, { color: colors.text }]}>{item.title}</ThemedText>
@@ -1142,24 +1354,29 @@ export function HomeDashboardScreen({
             </View>
           </AnimatedReanimated.View>
         )}
+        {(role === 'crew' || role === 'team_leader') && sectionVisible.recent_activities && (
+          <View style={[styles.softSectionBreak, { backgroundColor: isDark ? colors.border + '99' : '#D1D5DB' }]} />
+        )}
 
-        {/* Active Streak (Pull Up Rate) – crew/team_leader only, just before footer */}
-        {(role === 'crew' || role === 'team_leader') && (
-          <AnimatedReanimated.View entering={FadeInDown.duration(360).delay(80)} style={[styles.section, styles.sectionLast]}>
-            <View style={styles.sectionTitleRow}>
-              <View style={[styles.sectionTitleAccent, styles.sectionTitleAccentVibe, { backgroundColor: StatusColors.checkedIn }]} />
-              <View style={[styles.sectionTitleIconWrap, { backgroundColor: StatusColors.checkedIn + '28' }]}>
-                <Ionicons name="trending-up" size={Icons.small} color={StatusColors.checkedIn} />
+        {/* Active Streak (Pull Up Rate) – crew/team_leader only (keep as last item) */}
+        {(role === 'crew' || role === 'team_leader') && sectionVisible.attendance_stats && (
+          <>
+            <AnimatedReanimated.View entering={FadeInDown.duration(360).delay(80)} style={[styles.section, styles.sectionLast]}>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.sectionTitleAccent, styles.sectionTitleAccentVibe, { backgroundColor: StatusColors.checkedIn }]} />
+                <View style={[styles.sectionTitleIconWrap, { backgroundColor: isDark ? 'rgba(249,250,251,0.12)' : StatusColors.checkedIn + '28' }]}>
+                  <Ionicons name="trending-up" size={Icons.small} color={isDark ? '#F9FAFB' : StatusColors.checkedIn} />
+                </View>
+                <ThemedText style={[styles.sectionTitle, { color: isDark ? '#F9FAFB' : '#0F172A' }]}>
+                  Active Streak
+                </ThemedText>
               </View>
-              <ThemedText style={[styles.sectionTitle, { color: isDark ? themeYellow + 'dd' : colors.text }]}>
-                Active Streak
-              </ThemedText>
-            </View>
-            <CrewAttendanceStatistic
-              key={`attendance-${user?.office_checkin_time ?? optimisticOfficeCheckinTime ?? 'none'}-ev-${pivotData?.checkin_time ?? 'no'}`}
-              refreshTrigger={user?.office_checkin_time ?? optimisticOfficeCheckinTime ?? pivotData?.checkin_time ?? undefined}
-            />
-          </AnimatedReanimated.View>
+              <CrewAttendanceStatistic
+                key={`attendance-${user?.office_checkin_time ?? optimisticOfficeCheckinTime ?? 'none'}-ev-${pivotData?.checkin_time ?? 'no'}`}
+                refreshTrigger={user?.office_checkin_time ?? optimisticOfficeCheckinTime ?? pivotData?.checkin_time ?? undefined}
+              />
+            </AnimatedReanimated.View>
+          </>
         )}
 
         </ScrollView>
@@ -1182,12 +1399,56 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.lg + 4,
     marginBottom: Spacing.lg,
     borderRadius: Cards.borderRadius,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
+    borderWidth: 0,
+    overflow: 'hidden',
+  },
+  welcomePatternLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  welcomeHex: {
+    position: 'absolute',
+  },
+  welcomeHexShape: {
+    position: 'absolute',
+    width: 58,
+    height: 58,
+    borderWidth: 1.5,
+    borderRadius: 14,
+    transform: [{ rotate: '30deg' }],
+  },
+  welcomeHexShapeSmall: {
+    position: 'absolute',
+    width: 40,
+    height: 40,
+    borderWidth: 1.5,
+    borderRadius: 10,
+    transform: [{ rotate: '30deg' }],
+  },
+  welcomeHexShapeDot: {
+    position: 'absolute',
+    width: 18,
+    height: 18,
+    borderRadius: 5,
+    transform: [{ rotate: '30deg' }],
+  },
+  welcomeHexOne: {
+    top: -4,
+    right: -8,
+    transform: [{ rotate: '12deg' }],
+  },
+  welcomeHexTwo: {
+    bottom: 10,
+    right: 44,
+    transform: [{ rotate: '-8deg' }],
+  },
+  welcomeHexThree: {
+    top: 20,
+    left: 16,
+    transform: [{ rotate: '10deg' }],
+  },
+  welcomeCardCompact: {
+    paddingVertical: Spacing.md + 2,
+    marginBottom: Spacing.md,
   },
   welcomeGreeting: {
     fontSize: Typography.titleHero,
@@ -1244,6 +1505,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.lg,
   },
+  officeAfterEventCheckoutWrap: {
+    marginTop: Spacing.md,
+  },
+  roundCheckInRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xxl,
+  },
   roundCheckInWrap: {
     position: 'relative',
     alignItems: 'center',
@@ -1251,8 +1521,8 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   roundCheckInButtonWrap: {
-    width: 136,
-    height: 136,
+    width: 96,
+    height: 96,
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1260,18 +1530,18 @@ const styles = StyleSheet.create({
   },
   rippleRing: {
     position: 'absolute',
-    width: 136,
-    height: 136,
-    borderRadius: 68,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     left: 0,
     top: 0,
     borderWidth: 3,
     backgroundColor: 'transparent',
   },
   roundCheckInButton: {
-    width: 136,
-    height: 136,
-    borderRadius: 68,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     backgroundColor: themeYellow,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1288,7 +1558,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
   },
   roundCheckInButtonEvent: {
-    shadowColor: VibrantColors.emerald,
+    shadowColor: themeBlue,
     shadowOpacity: 0.4,
   },
   roundCheckInButtonOffice: {
@@ -1297,7 +1567,7 @@ const styles = StyleSheet.create({
   },
   roundCheckInInner: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: 68,
+    borderRadius: 48,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1307,17 +1577,18 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     bottom: 0,
-    borderRadius: 68,
+    borderRadius: 48,
     justifyContent: 'center',
     alignItems: 'center',
     flexDirection: 'column',
   },
   roundCheckInSub: {
-    fontSize: Typography.statLabel,
+    fontSize: 7,
     fontWeight: Typography.statLabelWeight,
-    marginTop: 2,
-    letterSpacing: 0.6,
+    marginTop: 1,
+    letterSpacing: 0.2,
     textAlign: 'center',
+    paddingHorizontal: 8,
   },
   roundCheckInButtonPressed: {
     opacity: 0.9,
@@ -1328,11 +1599,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
   },
   roundCheckInLabel: {
-    fontSize: Typography.buttonText,
+    fontSize: 12,
     fontWeight: Typography.titleCardWeight,
     color: themeBlue,
-    marginTop: 6,
-    letterSpacing: 0.3,
+    marginTop: 4,
+    letterSpacing: 0.2,
     textAlign: 'center',
   },
   roundCheckInLabelDisabled: {
@@ -1415,17 +1686,17 @@ const styles = StyleSheet.create({
     fontSize: Typography.bodySmall,
     fontWeight: Typography.buttonTextWeight,
   },
+  dailyCheckInHint: {
+    fontSize: Typography.label,
+    marginTop: Spacing.xs,
+    lineHeight: 16,
+  },
   todayEventCard: {
     padding: Spacing.lg,
     borderRadius: Cards.borderRadius,
     borderWidth: 1,
     marginBottom: Spacing.lg,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 2,
   },
   todayEventHeader: {
     flexDirection: 'row',
@@ -1533,8 +1804,18 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: Spacing.xxl,
   },
+  sectionCompact: {
+    marginBottom: Spacing.lg,
+  },
   sectionLast: {
     marginBottom: Spacing.sm,
+  },
+  softSectionBreak: {
+    height: 1,
+    opacity: 0.55,
+    marginTop: -Spacing.lg,
+    marginBottom: Spacing.lg + 2,
+    borderRadius: 999,
   },
   sectionTitleRow: {
     flexDirection: 'row',
@@ -1687,11 +1968,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 76,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+  },
+  quickCardEventDot: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#22C55E',
+    shadowColor: '#22C55E',
+    shadowOpacity: 0.9,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 3,
   },
   quickIconWrap: {
     width: 40,

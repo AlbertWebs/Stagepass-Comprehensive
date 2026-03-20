@@ -1,27 +1,29 @@
 /**
  * Everything – hub of all operations in the mobile app (role-based).
- * Squared icon tiles grouped by category; minimal scrolling.
+ * Uses same card design as homepage: Cards.borderRadius, soft shadows, section accents.
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Dimensions, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import Animated, { SlideInRight } from 'react-native-reanimated';
 import { HomeHeader } from '@/components/HomeHeader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { QUICK_ACTIONS } from '@/constants/quickActions';
+import { Cards, Icons, Typography } from '@/constants/ui';
+import { Spacing } from '@/constants/theme';
 import { themeBlue, themeYellow, VibrantColors } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 import { useAppRole } from '~/hooks/useAppRole';
 
-const U = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, section: 20 };
-const CARD_RADIUS = 12;
 const TAB_BAR_HEIGHT = 58;
 
 /** Number of columns in the grid (squared tiles). */
 const COLS = 3;
-const GAP = U.sm;
-const PADDING_H = U.lg;
+const GAP = Spacing.sm;
+const PADDING_H = Spacing.lg;
 
 type LinkItem = { label: string; href: string; icon: string };
 
@@ -57,6 +59,8 @@ export default function EverythingScreen() {
   const role = useAppRole();
   const { colors, isDark } = useStagePassTheme();
   const handleNav = useNavigationPress();
+  const [animateKey, setAnimateKey] = useState(0);
+  useFocusEffect(useCallback(() => { setAnimateKey((k) => k + 1); }, []));
   const iconColor = isDark ? themeYellow : themeBlue;
   const cardBg = isDark ? '#1E212A' : '#F5F7FC';
   const tileSize = useTileSize();
@@ -72,10 +76,10 @@ export default function EverythingScreen() {
 
   /** Accent color per section for titles and variety */
   const sectionAccent = (title: string) => {
-    if (title === 'Quick actions') return isDark ? themeYellow : themeBlue;
+    if (title === 'Quick actions') return isDark ? '#F9FAFB' : '#0F172A';
     if (title === 'Activity & history') return VibrantColors.sky;
     if (title === 'Tasks & work') return VibrantColors.emerald;
-    return isDark ? themeYellow : themeBlue; // Admin
+    return isDark ? '#F9FAFB' : '#0F172A'; // Admin
   };
 
   const sections: { title: string; links: LinkItem[]; icon?: string }[] = [];
@@ -128,14 +132,15 @@ export default function EverythingScreen() {
   return (
     <ThemedView style={styles.container}>
       <HomeHeader title="Everything" showBack onBack={() => router.back()} />
+      <Animated.View key={animateKey} entering={SlideInRight.duration(320)} style={{ flex: 1 }}>
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: TAB_BAR_HEIGHT + U.section }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: TAB_BAR_HEIGHT + Spacing.section }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Compact hero */}
-        <View style={[styles.hero, { backgroundColor: (isDark ? themeYellow : themeBlue) + '18', borderColor: (isDark ? themeYellow : themeBlue) + '40' }]}>
-          <View style={[styles.heroIconWrap, { backgroundColor: (isDark ? themeYellow : themeBlue) + '30' }]}>
-            <Ionicons name="apps" size={24} color={iconColor} />
+        {/* Hero card – same style as homepage welcome card */}
+        <View style={[styles.hero, { backgroundColor: cardBg, borderColor: colors.border }]}>
+          <View style={[styles.heroIconWrap, { backgroundColor: (isDark ? themeYellow : themeBlue) + '28' }]}>
+            <Ionicons name="apps" size={Icons.xl} color={iconColor} />
           </View>
           <View style={styles.heroTextWrap}>
             <ThemedText style={[styles.heroTitle, { color: colors.text }]}>Everything</ThemedText>
@@ -151,7 +156,7 @@ export default function EverythingScreen() {
               <View style={[styles.sectionAccent, { backgroundColor: accent }]} />
               {section.icon ? (
                 <View style={[styles.sectionIconWrap, { backgroundColor: accent + '28' }]}>
-                  <Ionicons name={section.icon as any} size={14} color={accent} />
+                  <Ionicons name={section.icon as any} size={Icons.small} color={accent} />
                 </View>
               ) : null}
               <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>
@@ -171,16 +176,11 @@ export default function EverythingScreen() {
                       backgroundColor: cardBg,
                       borderColor: colors.border,
                       opacity: pressed ? NAV_PRESSED_OPACITY : 1,
-                      shadowColor: '#000',
-                      shadowOffset: { width: 0, height: 1 },
-                      shadowOpacity: isDark ? 0.2 : 0.06,
-                      shadowRadius: 3,
-                      elevation: 2,
                     },
                   ]}
                 >
-                  <View style={[styles.tileIconWrap, { backgroundColor: (isDark ? themeYellow : themeBlue) + '22' }]}>
-                    <Ionicons name={link.icon as any} size={22} color={iconColor} />
+                  <View style={[styles.tileIconWrap, { backgroundColor: themeYellow + '1a', borderColor: themeYellow + '38' }]}>
+                    <Ionicons name={link.icon as any} size={Icons.standard} color={themeYellow} />
                   </View>
                   <ThemedText style={[styles.tileLabel, { color: colors.text }]} numberOfLines={2}>
                     {link.label}
@@ -192,22 +192,28 @@ export default function EverythingScreen() {
           );
         })}
       </ScrollView>
+      </Animated.View>
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  scrollContent: { paddingHorizontal: PADDING_H, paddingTop: U.md },
+  scrollContent: { paddingHorizontal: PADDING_H, paddingTop: Spacing.lg },
   hero: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: U.lg,
-    paddingVertical: U.lg,
-    paddingHorizontal: U.lg,
-    marginBottom: U.section,
-    borderRadius: CARD_RADIUS,
-    borderWidth: 1,
+    gap: Spacing.lg,
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    marginBottom: Spacing.lg,
+    borderRadius: Cards.borderRadius,
+    borderWidth: Cards.borderWidth,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    elevation: 2,
   },
   heroIconWrap: {
     width: 44,
@@ -217,31 +223,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   heroTextWrap: { flex: 1, minWidth: 0 },
-  heroTitle: { fontSize: 17, fontWeight: '800', marginBottom: 2 },
-  heroSub: { fontSize: 13 },
-  section: { marginBottom: U.section },
+  heroTitle: { fontSize: Typography.titleCard, fontWeight: Typography.titleCardWeight, marginBottom: 2 },
+  heroSub: { fontSize: Typography.bodySmall },
+  section: { marginBottom: Spacing.xxl },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: U.sm,
-    gap: U.sm,
+    marginBottom: Spacing.lg,
+    gap: Spacing.sm,
   },
   sectionAccent: {
-    width: 4,
-    height: 20,
-    borderRadius: 2,
+    width: 3,
+    height: 16,
+    borderRadius: 0,
   },
   sectionIconWrap: {
-    width: 28,
-    height: 28,
+    width: 26,
+    height: 26,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   sectionTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    letterSpacing: 0.3,
+    fontSize: Typography.titleSection,
+    fontWeight: Typography.titleSectionWeight,
+    letterSpacing: Typography.titleSectionLetterSpacing,
+    textTransform: 'uppercase',
     flex: 1,
   },
   grid: {
@@ -250,24 +257,33 @@ const styles = StyleSheet.create({
     gap: GAP,
   },
   tile: {
-    borderRadius: CARD_RADIUS,
-    borderWidth: 1,
-    padding: U.xs,
+    borderRadius: Cards.borderRadius,
+    borderWidth: Cards.borderWidth,
+    padding: Spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   tileIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 11,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: U.xs,
+    marginBottom: Spacing.xs,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   tileLabel: {
-    fontSize: 10,
-    fontWeight: '700',
+    fontSize: Typography.label,
+    fontWeight: Typography.labelWeight,
     textAlign: 'center',
-    lineHeight: 13,
+    lineHeight: 16,
+    letterSpacing: 0.2,
   },
 });

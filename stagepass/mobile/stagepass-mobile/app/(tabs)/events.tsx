@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -9,10 +9,10 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
+import Animated, { SlideInRight } from 'react-native-reanimated';
 import { useSelector } from 'react-redux';
 import { api, type Event } from '~/services/api';
 import { HomeHeader } from '@/components/HomeHeader';
-import { DateStrip } from '@/components/DateStrip';
 import { EventCard, type EventDisplayStatus } from '@/components/EventCard';
 import { StagepassLoader } from '@/components/StagepassLoader';
 import { ThemedText } from '@/components/themed-text';
@@ -24,6 +24,31 @@ import { useNavigationPress } from '@/src/utils/navigationPress';
 import { useAppRole } from '~/hooks/useAppRole';
 
 const TAB_BAR_HEIGHT = 58;
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function startOfWeekLocal(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - d.getDay());
+  return d;
+}
+
+function addDays(date: Date, days: number): Date {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function addMonths(date: Date, months: number): Date {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + months);
+  return d;
+}
+
+function dateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
 
 function eventMatchesDate(event: Event, date: Date): boolean {
   try {
@@ -68,9 +93,23 @@ export default function EventsTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const [calendarView, setCalendarView] = useState<'week' | 'month'>('week');
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
   const [eventFilter, setEventFilter] = useState<'all' | 'upcoming' | 'completed'>('upcoming');
   const [dailyAllowance, setDailyAllowance] = useState<string | number | null>(null);
+  const [animateKey, setAnimateKey] = useState(0);
   const scrollBottomPadding = TAB_BAR_HEIGHT;
+
+  useFocusEffect(
+    useCallback(() => {
+      setAnimateKey((k) => k + 1);
+    }, [])
+  );
   const isCrewOrTeamLeader = role === 'crew' || role === 'team_leader';
   const canAccessSettings = role === 'super_admin' || role === 'director' || role === 'admin';
 
@@ -126,6 +165,30 @@ export default function EventsTab() {
 
   const displayDailyAllowance = canAccessSettings ? dailyAllowance : dailyAllowanceFromEvents;
 
+  const weekDays = useMemo(() => {
+    const start = startOfWeekLocal(selectedDate);
+    return Array.from({ length: 7 }, (_, i) => addDays(start, i));
+  }, [selectedDate]);
+
+  const monthCells = useMemo(() => {
+    const year = visibleMonth.getFullYear();
+    const month = visibleMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const monthStartOffset = firstDay.getDay();
+    const gridStart = addDays(firstDay, -monthStartOffset);
+    return Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
+  }, [visibleMonth]);
+
+  const selectedDateKey = dateKey(selectedDate);
+
+  const selectDate = useCallback((date: Date) => {
+    setSelectedDate(date);
+    const m = new Date(date);
+    m.setDate(1);
+    m.setHours(0, 0, 0, 0);
+    setVisibleMonth(m);
+  }, []);
+
   if (loading) {
     return <StagepassLoader message="Loading events…" fullScreen />;
   }
@@ -138,13 +201,135 @@ export default function EventsTab() {
     if (d.getTime() === today.getTime()) return "Today's Events";
     return 'Events';
   })();
+  const isTodaySelected = sectionTitle === "Today's Events";
 
   return (
     <ThemedView style={styles.container}>
       <HomeHeader title="My Events" />
+      <Animated.View
+        key={animateKey}
+        entering={SlideInRight.duration(320)}
+        style={{ flex: 1 }}
+      >
       <View style={[styles.content, { backgroundColor: colors.background }]}>
         <View style={[styles.dateStripWrap, { backgroundColor: colors.surface }]}>
-          <DateStrip selectedDate={selectedDate} onSelectDate={setSelectedDate} />
+          <View style={styles.calendarModeRow}>
+            <View style={[styles.calendarModeWrap, { backgroundColor: colors.background, borderColor: colors.border }]}>
+              {(['week', 'month'] as const).map((mode) => {
+                const active = calendarView === mode;
+                return (
+                  <Pressable
+                    key={mode}
+                    onPress={() => setCalendarView(mode)}
+                    style={[
+                      styles.calendarModeBtn,
+                      active && { backgroundColor: themeYellow + '22', borderColor: themeYellow, borderWidth: 1 },
+                    ]}
+                  >
+                    <ThemedText style={[styles.calendarModeText, { color: active ? colors.text : colors.textSecondary }]}>
+                      {mode === 'week' ? 'Week' : 'Month'}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          {calendarView === 'week' ? (
+            <View style={styles.weekWrap}>
+              <View style={styles.calendarHeaderRow}>
+                <Pressable
+                  onPress={() => selectDate(addDays(selectedDate, -7))}
+                  style={[styles.calendarNavBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
+                >
+                  <Ionicons name="chevron-back" size={Icons.medium} color={colors.textSecondary} />
+                </Pressable>
+                <ThemedText style={[styles.calendarLabel, { color: colors.text }]}>
+                  {MONTH_LABELS[selectedDate.getMonth()]} {selectedDate.getFullYear()}
+                </ThemedText>
+                <Pressable
+                  onPress={() => selectDate(addDays(selectedDate, 7))}
+                  style={[styles.calendarNavBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
+                >
+                  <Ionicons name="chevron-forward" size={Icons.medium} color={colors.textSecondary} />
+                </Pressable>
+              </View>
+              <View style={styles.weekDaysRow}>
+                {weekDays.map((d) => {
+                  const isSelected = dateKey(d) === selectedDateKey;
+                  return (
+                    <Pressable
+                      key={dateKey(d)}
+                      onPress={() => selectDate(d)}
+                      style={[
+                        styles.weekDayChip,
+                        { borderColor: colors.border, backgroundColor: isSelected ? themeYellow : colors.background },
+                      ]}
+                    >
+                      <ThemedText style={[styles.weekDayLabel, { color: isSelected ? themeBlue : colors.textSecondary }]}>
+                        {DAY_LABELS[d.getDay()]}
+                      </ThemedText>
+                      <ThemedText style={[styles.weekDayNum, { color: isSelected ? themeBlue : colors.text }]}>
+                        {d.getDate()}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : (
+            <View style={styles.monthWrap}>
+              <View style={styles.calendarHeaderRow}>
+                <Pressable
+                  onPress={() => setVisibleMonth((m) => addMonths(m, -1))}
+                  style={[styles.calendarNavBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
+                >
+                  <Ionicons name="chevron-back" size={Icons.medium} color={colors.textSecondary} />
+                </Pressable>
+                <ThemedText style={[styles.calendarLabel, { color: colors.text }]}>
+                  {MONTH_LABELS[visibleMonth.getMonth()]} {visibleMonth.getFullYear()}
+                </ThemedText>
+                <Pressable
+                  onPress={() => setVisibleMonth((m) => addMonths(m, 1))}
+                  style={[styles.calendarNavBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
+                >
+                  <Ionicons name="chevron-forward" size={Icons.medium} color={colors.textSecondary} />
+                </Pressable>
+              </View>
+              <View style={styles.monthWeekdayRow}>
+                {DAY_LABELS.map((label) => (
+                  <ThemedText key={label} style={[styles.monthWeekdayText, { color: colors.textSecondary }]}>
+                    {label}
+                  </ThemedText>
+                ))}
+              </View>
+              <View style={styles.monthGrid}>
+                {monthCells.map((d) => {
+                  const key = dateKey(d);
+                  const isSelected = key === selectedDateKey;
+                  const inCurrentMonth = d.getMonth() === visibleMonth.getMonth();
+                  return (
+                    <Pressable
+                      key={key}
+                      onPress={() => selectDate(d)}
+                      style={[
+                        styles.monthCell,
+                        {
+                          borderColor: colors.border,
+                          backgroundColor: isSelected ? themeYellow : colors.background,
+                          opacity: inCurrentMonth ? 1 : 0.55,
+                        },
+                      ]}
+                    >
+                      <ThemedText style={[styles.monthCellText, { color: isSelected ? themeBlue : colors.text }]}>
+                        {d.getDate()}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
         </View>
 
         <View style={styles.filterRow}>
@@ -263,12 +448,14 @@ export default function EventsTab() {
                   status: item.status,
                 }}
                 displayStatus={getEventDisplayStatus(item, userId)}
+                borderOnly={isTodaySelected}
                 onPress={() => handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(item.id) } }))}
               />
             ))}
           </ScrollView>
         )}
       </View>
+      </Animated.View>
     </ThemedView>
   );
 }
@@ -284,6 +471,103 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(234, 179, 8, 0.2)',
+  },
+  calendarModeRow: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+  },
+  calendarModeWrap: {
+    flexDirection: 'row',
+    borderRadius: Cards.borderRadius,
+    borderWidth: 1,
+    padding: 4,
+    gap: 4,
+  },
+  calendarModeBtn: {
+    flex: 1,
+    paddingVertical: Spacing.xs + 2,
+    borderRadius: Cards.borderRadius,
+    alignItems: 'center',
+  },
+  calendarModeText: {
+    fontSize: Typography.label,
+    fontWeight: Typography.labelWeight,
+  },
+  weekWrap: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.sm,
+  },
+  monthWrap: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.sm,
+  },
+  calendarHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+  },
+  calendarNavBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarLabel: {
+    fontSize: Typography.bodySmall,
+    fontWeight: Typography.titleCardWeight,
+  },
+  weekDaysRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  weekDayChip: {
+    flex: 1,
+    minWidth: 0,
+    borderRadius: Cards.borderRadiusSmall,
+    borderWidth: 1,
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  weekDayLabel: {
+    fontSize: 10,
+    fontWeight: Typography.labelWeight,
+  },
+  weekDayNum: {
+    fontSize: 14,
+    fontWeight: Typography.titleCardWeight,
+    marginTop: 2,
+  },
+  monthWeekdayRow: {
+    flexDirection: 'row',
+    marginBottom: 6,
+  },
+  monthWeekdayText: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 11,
+    fontWeight: Typography.labelWeight,
+  },
+  monthGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  monthCell: {
+    width: '13.3%',
+    aspectRatio: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthCellText: {
+    fontSize: 12,
+    fontWeight: Typography.buttonTextWeight,
   },
   filterRow: {
     flexDirection: 'row',

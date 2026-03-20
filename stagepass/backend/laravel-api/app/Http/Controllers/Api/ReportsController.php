@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\DailyOfficeCheckin;
 use App\Models\Event;
+use App\Models\EventExpense;
 use App\Models\EventPayment;
 use App\Models\EventUser;
 use App\Models\Task;
@@ -14,7 +15,7 @@ use Illuminate\Http\Request;
 
 class ReportsController extends Controller
 {
-    private const REPORT_TYPES = ['events', 'crew-attendance', 'crew-payments', 'tasks', 'financial'];
+    private const REPORT_TYPES = ['events', 'crew-attendance', 'crew-payments', 'tasks', 'financial', 'end-of-day'];
 
     private function canAccessReports(Request $request): bool
     {
@@ -346,6 +347,21 @@ class ReportsController extends Controller
     }
 
     /**
+     * GET /reports/end-of-day - End-of-day operations and expense report.
+     */
+    public function endOfDay(Request $request): JsonResponse
+    {
+        if (! $this->canAccessReports($request)) {
+            return response()->json(['message' => 'You do not have access to reports.'], 403);
+        }
+
+        [$from, $to] = $this->parseDateRange($request);
+        $eventId = $request->filled('event_id') ? (int) $request->event_id : null;
+        $data = $this->endOfDayReportData($from, $to, $eventId);
+        return response()->json($data);
+    }
+
+    /**
      * GET /reports/export - Export report as printable HTML (for PDF via browser print).
      */
     public function export(Request $request)
@@ -369,10 +385,20 @@ class ReportsController extends Controller
             'crew-payments' => 'Crew Payment Report',
             'tasks' => 'Task Report',
             'financial' => 'Financial Summary Report',
+            'end-of-day' => 'End-of-Day Signed Report',
             default => 'Report',
         };
 
-        $html = $this->buildExportHtml($type, $title, $from, $to, $eventId, $userId);
+        $html = $this->buildExportHtml(
+            $type,
+            $title,
+            $from,
+            $to,
+            $eventId,
+            $userId,
+            trim((string) $request->input('confirmed_by', '')),
+            trim((string) $request->input('signature', ''))
+        );
 
         if ($request->wantsJson() || $request->input('format') === 'json') {
             return response()->json(['html' => $html, 'title' => $title]);
@@ -384,13 +410,23 @@ class ReportsController extends Controller
         ]);
     }
 
-    private function buildExportHtml(string $type, string $title, Carbon $from, Carbon $to, ?int $eventId, ?int $userId): string
+    private function buildExportHtml(
+        string $type,
+        string $title,
+        Carbon $from,
+        Carbon $to,
+        ?int $eventId,
+        ?int $userId,
+        string $confirmedBy = '',
+        string $signature = ''
+    ): string
     {
         $period = $from->format('M j, Y') . ' – ' . $to->format('M j, Y');
         $generatedAt = now()->format('M j, Y g:i A');
 
         $summaryHtml = '';
         $tableRows = '';
+        $signatureHtml = '';
 
         switch ($type) {
             case 'events':
@@ -446,6 +482,32 @@ class ReportsController extends Controller
                 $tableRows = $tableRows ?: '<tr><td colspan="3">No data</td></tr>';
                 $tableHeader = '<tr><th>Date</th><th>Count</th><th>Total</th></tr>';
                 break;
+            case 'end-of-day':
+                $data = $this->endOfDayReportData($from, $to, $eventId);
+                $summaryHtml = '<div class="kpi-grid">'
+                    . '<div class="kpi"><span class="k">Events</span><span class="v">' . $data['summary']['events_count'] . '</span></div>'
+                    . '<div class="kpi"><span class="k">Crew allowances</span><span class="v">KES ' . number_format((float) $data['summary']['crew_allowances_total'], 2) . '</span></div>'
+                    . '<div class="kpi"><span class="k">Other expenses</span><span class="v">KES ' . number_format((float) $data['summary']['other_expenses_total'], 2) . '</span></div>'
+                    . '<div class="kpi"><span class="k">Grand total</span><span class="v">KES ' . number_format((float) $data['summary']['grand_total'], 2) . '</span></div>'
+                    . '</div>';
+
+                foreach ($data['data'] as $row) {
+                    $tableRows .= '<tr>'
+                        . '<td>' . e((string) ($row['date'] ?? '—')) . '</td>'
+                        . '<td>' . e((string) ($row['event_name'] ?? '—')) . '</td>'
+                        . '<td style="text-align:right;">' . number_format((float) ($row['crew_allowances'] ?? 0), 2) . '</td>'
+                        . '<td style="text-align:right;">' . number_format((float) ($row['other_expenses'] ?? 0), 2) . '</td>'
+                        . '<td style="text-align:right;font-weight:700;">' . number_format((float) ($row['total'] ?? 0), 2) . '</td>'
+                        . '</tr>';
+                }
+                $tableRows = $tableRows ?: '<tr><td colspan="5">No records for selected range.</td></tr>';
+                $tableHeader = '<tr><th>Date</th><th>Event</th><th style="text-align:right;">Crew allowances (KES)</th><th style="text-align:right;">Other expenses (KES)</th><th style="text-align:right;">Total (KES)</th></tr>';
+                $signatureHtml = '<div class="sig-wrap">'
+                    . '<div class="sig-card"><div class="sig-label">Confirmed by</div><div class="sig-value">' . e($confirmedBy !== '' ? $confirmedBy : '________________________') . '</div></div>'
+                    . '<div class="sig-card"><div class="sig-label">Signature</div><div class="sig-value">' . e($signature !== '' ? $signature : '________________________') . '</div></div>'
+                    . '<div class="sig-card"><div class="sig-label">Date</div><div class="sig-value">' . e(now()->format('Y-m-d H:i')) . '</div></div>'
+                    . '</div>';
+                break;
         }
 
         if (! isset($tableHeader)) {
@@ -464,12 +526,21 @@ h1{font-size:1.5rem;margin-bottom:4px;}
 table{border-collapse:collapse;width:100%;margin-top:16px;}
 th,td{border:1px solid #ddd;padding:8px 12px;text-align:left;}
 th{background:#f5f5f5;font-weight:600;}
+.kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;margin-bottom:8px;}
+.kpi{border:1px solid #ddd;border-radius:10px;padding:10px 12px;background:#fbfbfb;}
+.kpi .k{display:block;color:#555;font-size:12px;margin-bottom:4px;}
+.kpi .v{display:block;font-size:18px;font-weight:700;color:#0f1838;}
+.sig-wrap{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:10px;margin-top:18px;}
+.sig-card{border:1px solid #ddd;border-radius:10px;padding:10px 12px;min-height:72px;}
+.sig-label{font-size:12px;color:#666;margin-bottom:8px;}
+.sig-value{font-size:14px;font-weight:600;}
 @media print{body{margin:12px;} .no-print{display:none;}}
 </style></head><body>
 <h1>' . e($title) . '</h1>
 <p class="meta">Period: ' . e($period) . ' | Generated: ' . e($generatedAt) . '</p>
 <div class="summary">' . $summaryHtml . '</div>
 <table><thead>' . $tableHeader . '</thead><tbody>' . $tableRows . '</tbody></table>
+' . ($signatureHtml ?? '') . '
 <p class="meta" style="margin-top:24px;">Stagepass Reports – ' . e($generatedAt) . '</p>
 </body></html>';
     }
@@ -547,6 +618,78 @@ th{background:#f5f5f5;font-weight:600;}
                 'by_status' => $byStatus,
             ],
             'by_day' => array_values($byDay),
+        ];
+    }
+
+    private function endOfDayReportData(Carbon $from, Carbon $to, ?int $eventId): array
+    {
+        $events = Event::query()
+            ->spansRange($from->toDateString(), $to->toDateString())
+            ->when($eventId, fn ($q) => $q->where('id', $eventId))
+            ->orderBy('date')
+            ->get(['id', 'name', 'date']);
+
+        $eventIds = $events->pluck('id')->all();
+
+        $payments = EventPayment::query()
+            ->whereIn('event_id', $eventIds)
+            ->where('status', EventPayment::STATUS_APPROVED)
+            ->get(['event_id', 'allowances', 'per_diem', 'total_amount']);
+
+        $expenses = EventExpense::query()
+            ->whereIn('event_id', $eventIds)
+            ->get(['event_id', 'cab_amount', 'parking_fee']);
+
+        $paymentsByEvent = [];
+        foreach ($payments as $p) {
+            $eid = (int) $p->event_id;
+            if (! isset($paymentsByEvent[$eid])) {
+                $paymentsByEvent[$eid] = ['allowances' => 0.0, 'per_diem' => 0.0, 'total_amount' => 0.0];
+            }
+            $paymentsByEvent[$eid]['allowances'] += (float) ($p->allowances ?? 0);
+            $paymentsByEvent[$eid]['per_diem'] += (float) ($p->per_diem ?? 0);
+            $paymentsByEvent[$eid]['total_amount'] += (float) ($p->total_amount ?? 0);
+        }
+
+        $expensesByEvent = [];
+        foreach ($expenses as $x) {
+            $eid = (int) $x->event_id;
+            if (! isset($expensesByEvent[$eid])) {
+                $expensesByEvent[$eid] = ['cab' => 0.0, 'parking' => 0.0];
+            }
+            $expensesByEvent[$eid]['cab'] += (float) ($x->cab_amount ?? 0);
+            $expensesByEvent[$eid]['parking'] += (float) ($x->parking_fee ?? 0);
+        }
+
+        $rows = [];
+        $allowancesTotal = 0.0;
+        $otherExpensesTotal = 0.0;
+
+        foreach ($events as $e) {
+            $eid = (int) $e->id;
+            $crewAllowances = (float) (($paymentsByEvent[$eid]['allowances'] ?? 0) + ($paymentsByEvent[$eid]['per_diem'] ?? 0));
+            $otherExpenses = (float) (($expensesByEvent[$eid]['cab'] ?? 0) + ($expensesByEvent[$eid]['parking'] ?? 0));
+            $total = $crewAllowances + $otherExpenses;
+            $allowancesTotal += $crewAllowances;
+            $otherExpensesTotal += $otherExpenses;
+            $rows[] = [
+                'event_id' => $eid,
+                'event_name' => $e->name,
+                'date' => $e->date?->format('Y-m-d'),
+                'crew_allowances' => round($crewAllowances, 2),
+                'other_expenses' => round($otherExpenses, 2),
+                'total' => round($total, 2),
+            ];
+        }
+
+        return [
+            'summary' => [
+                'events_count' => count($rows),
+                'crew_allowances_total' => round($allowancesTotal, 2),
+                'other_expenses_total' => round($otherExpensesTotal, 2),
+                'grand_total' => round($allowancesTotal + $otherExpensesTotal, 2),
+            ],
+            'data' => $rows,
         ];
     }
 
