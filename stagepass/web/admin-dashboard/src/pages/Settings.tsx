@@ -65,6 +65,7 @@ const DEFAULTS: AppSettings = {
   require_geofence_for_checkin: true,
   payment_currency: 'KES',
   allow_time_off_requests: true,
+  allow_biometric_mobile_login: true,
   office_location_name: '',
   office_latitude: '',
   office_longitude: '',
@@ -760,6 +761,22 @@ export default function Settings() {
                         Allow crew to submit time-off requests from the app
                       </label>
                     </div>
+                    <div className="form-field flex items-center gap-2 sm:col-span-2">
+                      <input
+                        id="allow_biometric_mobile_login"
+                        type="checkbox"
+                        checked={getBool(appSettings.allow_biometric_mobile_login)}
+                        onChange={(e) => updateSetting('allow_biometric_mobile_login', e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-brand-accent focus:ring-brand-accent"
+                        disabled={!canEditSettings}
+                      />
+                      <label htmlFor="allow_biometric_mobile_login" className="text-sm text-slate-700">
+                        Allow biometric login on the mobile app (Face ID / fingerprint)
+                      </label>
+                    </div>
+                    <p className="text-xs text-slate-500 sm:col-span-2 -mt-2">
+                      When off, the app hides biometric sign-in; users still sign in with username and PIN. Enrollment stays on each device.
+                    </p>
                   </div>
                 </div>
 

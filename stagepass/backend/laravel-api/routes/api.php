@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\DangerZoneController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
+Route::get('/settings/public-app', [SettingsController::class, 'publicAppConfig']);
 Route::get('/login-display-name', [AuthController::class, 'loginDisplayName']);
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');

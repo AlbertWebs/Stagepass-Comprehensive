@@ -65,6 +65,7 @@ export type ApiConfig = {
 
 let authToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
+let unauthorizedSuppressedUntil = 0;
 
 export function setAuthToken(token: string | null) {
   authToken = token;
@@ -76,6 +77,11 @@ export function setOnUnauthorized(callback: (() => void) | null) {
 
 export function getAuthToken() {
   return authToken;
+}
+
+/** Temporarily suppress global logout triggered by 401 (helps during biometric flows). */
+export function suppressUnauthorizedForMs(ms: number) {
+  unauthorizedSuppressedUntil = Date.now() + ms;
 }
 
 const LOG =
@@ -94,11 +100,17 @@ const getResponseCache = new Map<string, CachedGetEntry>();
 const inFlightGetRequests = new Map<string, Promise<unknown>>();
 
 function isSafeGetCacheable(path: string): boolean {
+  if (path.includes('/settings/public-app')) return false;
   return !/\/(backup|payments|attendance\/checkin|attendance\/checkout)/.test(path);
 }
 
-function makeCacheKey(method: string, urlStr: string): string {
-  return `${method.toUpperCase()}::${urlStr}`;
+/**
+ * Include auth in the key so GET /me and other authenticated reads are not shared across
+ * sessions/tokens (otherwise biometric login could hit a stale 401 or wrong in-flight request).
+ */
+function makeCacheKey(method: string, urlStr: string, bearerToken: string | null): string {
+  const fp = bearerToken ? `t${bearerToken.length}:${bearerToken.slice(-24)}` : 'noauth';
+  return `${method.toUpperCase()}::${urlStr}::${fp}`;
 }
 
 function pruneGetCache() {
@@ -164,7 +176,13 @@ async function request<T>(
   }
   const urlStr = url.toString();
   const method = (init.method ?? 'GET').toUpperCase();
-  const cacheKey = makeCacheKey(method, urlStr);
+  const bearerForCache =
+    authToken ??
+    (() => {
+      const raw = h['Authorization']?.replace(/^Bearer\s+/i, '').trim();
+      return raw || null;
+    })();
+  const cacheKey = makeCacheKey(method, urlStr, bearerForCache);
   const cacheableGet = method === 'GET' && isSafeGetCacheable(path);
   const forceRefresh = (params as Record<string, string> | undefined)?.refresh === '1';
   if (cacheableGet && !forceRefresh) {
@@ -192,13 +210,23 @@ async function request<T>(
         if (LOG) {
           console.warn('[Stagepass API]', res.status, path, res.ok ? 'OK' : 'FAIL', data?.message ?? '');
         }
-        if (!res.ok) {
-          if (res.status === 401) {
+      if (!res.ok) {
+        if (res.status === 401) {
+          // Some flows (e.g. biometric login checking /me) want to handle 401 locally
+          // without triggering the global logout handler.
+          const suppressGlobal =
+            h['X-Suppress-Unauthorized'] === '1' || Date.now() < unauthorizedSuppressedUntil;
+          // Helpful breadcrumb during debugging (shown when EXPO_PUBLIC_API_LOGS=1).
+          if (LOG) {
+            console.warn('[Stagepass API] 401 ->', method.toUpperCase(), path);
+          }
+          if (!suppressGlobal) {
             setAuthToken(null);
             onUnauthorized?.();
           }
-          throw new Error(data.message ?? data.error ?? `HTTP ${res.status}`);
         }
+        throw new Error(data.message ?? data.error ?? `HTTP ${res.status}`);
+      }
         if (cacheableGet) {
           getResponseCache.set(cacheKey, {
             expiresAt: Date.now() + GET_CACHE_TTL_MS,
@@ -265,8 +293,14 @@ async function requestMultipart<T>(
     }
     if (!res.ok) {
       if (res.status === 401) {
-        setAuthToken(null);
-        onUnauthorized?.();
+        if (LOG) {
+          console.warn('[Stagepass API] 401 (multipart) ->', path);
+        }
+        const suppressGlobal = Date.now() < unauthorizedSuppressedUntil;
+        if (!suppressGlobal) {
+          setAuthToken(null);
+          onUnauthorized?.();
+        }
       }
       throw new Error(data.message ?? data.error ?? `HTTP ${res.status}`);
     }
@@ -305,6 +339,8 @@ export const api = {
       }),
     logout: () => request<{ message: string }>('/logout', { method: 'POST' }),
     me: () => request<User>('/me'),
+    /** Like me(), but does not trigger global logout on 401 (caller handles). */
+    meLocal401: () => request<User>('/me', { headers: { 'X-Suppress-Unauthorized': '1' } }),
     /** Update current user profile (name, email, phone, address, optional password, optional PIN) */
     updateProfile: (body: {
       name?: string;
@@ -320,6 +356,26 @@ export const api = {
       fcm_token?: string | null;
       homepage_preferences?: HomepagePreferences;
     }) => request<User>('/me', { method: 'PATCH', body: JSON.stringify(body) }),
+    /** Like updateProfile(), but suppress global logout on 401. */
+    updateProfileLocal401: (body: {
+      name?: string;
+      email?: string;
+      phone_number?: string;
+      address?: string;
+      emergency_contact?: string;
+      password?: string;
+      password_confirmation?: string;
+      current_pin?: string;
+      new_pin?: string;
+      new_pin_confirmation?: string;
+      fcm_token?: string | null;
+      homepage_preferences?: HomepagePreferences;
+    }) =>
+      request<User>('/me', {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+        headers: { 'X-Suppress-Unauthorized': '1' },
+      }),
     /** Upload passport/profile photo. Backend: POST /me/photo with multipart file "photo". Returns updated user. */
     uploadProfilePhoto: (imageUri: string) => {
       const formData = new FormData();
@@ -655,6 +711,9 @@ export const api = {
   },
   settings: {
     get: () => request<Record<string, unknown>>('/settings'),
+    /** Unauthenticated — org policy for login screen (e.g. biometric allowed). */
+    getPublicAppConfig: () =>
+      request<{ allow_biometric_mobile_login: boolean }>('/settings/public-app'),
     /** Office check-in location + time window; available to all authenticated users (crew see admin-configured office). */
     getOfficeCheckinConfig: () =>
       request<{
@@ -812,6 +871,8 @@ export interface User {
   /** Set by backend when user has approved time off that includes today */
   has_approved_time_off_today?: boolean;
   homepage_preferences?: HomepagePreferences;
+  /** From GET /me — mirrors system setting; when false, mobile hides biometric login. */
+  allow_biometric_mobile_login?: boolean;
 }
 
 /** Resolve app role from backend role names. */

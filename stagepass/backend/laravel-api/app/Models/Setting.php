@@ -23,6 +23,16 @@ class Setting extends Model
         return $all[$key] ?? $default;
     }
 
+    public static function getBool(string $key, bool $default = false): bool
+    {
+        $v = self::get($key, $default);
+        if (is_bool($v)) {
+            return $v;
+        }
+
+        return $v === '1' || $v === 1 || $v === 'true';
+    }
+
     public static function set(string $key, mixed $value): void
     {
         self::updateOrCreate(['key' => $key], ['value' => self::serialize($value)]);

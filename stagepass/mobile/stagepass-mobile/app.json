@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "StagePass uses Face ID so you can sign in quickly and securely."
+      }
     },
     "android": {
       "adaptiveIcon": {

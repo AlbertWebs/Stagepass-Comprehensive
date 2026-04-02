@@ -37,6 +37,8 @@ class SettingsSeeder extends Seeder
         'office_radius_m' => 30,
         'payment_currency' => 'KES',
         'allow_time_off_requests' => '1',
+        /** When false, mobile app hides biometric login (Face ID / fingerprint). */
+        'allow_biometric_mobile_login' => '1',
     ];
 
     public function run(): void

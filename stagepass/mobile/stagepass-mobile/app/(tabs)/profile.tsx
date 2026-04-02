@@ -32,7 +32,15 @@ import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationP
 import { useAppRole } from '~/hooks/useAppRole';
 import { api } from '~/services/api';
 import { logout, setUser } from '~/store/authSlice';
-import { clearStoredToken } from '~/store/persistAuth';
+import {
+  clearBiometricLogin,
+  enforceServerBiometricPolicyAsync,
+  getBiometricLabel,
+  getBiometricLoginEnabled,
+  isBiometricHardwareAvailable,
+  saveBiometricCredential,
+} from '~/store/biometricLogin';
+import { clearStoredToken, loadStoredToken } from '~/store/persistAuth';
 import { PREF_SHOW_WELCOME_STATS_CARDS } from '~/constants/preferences';
 
 /** Profile scale: all spacing and sizes proportional to card title (titleCard = 17) */
@@ -124,6 +132,10 @@ export default function ProfileScreen() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [showWelcomeStatsCards, setShowWelcomeStatsCards] = useState(true);
+  const [biometricHw, setBiometricHw] = useState(false);
+  const [biometricOn, setBiometricOn] = useState(false);
+  const [biometricLabel, setBiometricLabel] = useState('Biometric');
+  const [serverAllowsBiometric, setServerAllowsBiometric] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -140,6 +152,29 @@ export default function ProfileScreen() {
       mounted = false;
     };
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      (async () => {
+        const allowed = await enforceServerBiometricPolicyAsync();
+        if (!active) return;
+        setServerAllowsBiometric(allowed);
+        const [hw, on, label] = await Promise.all([
+          isBiometricHardwareAvailable(),
+          getBiometricLoginEnabled(),
+          getBiometricLabel(),
+        ]);
+        if (!active) return;
+        setBiometricHw(hw);
+        setBiometricOn(on);
+        setBiometricLabel(label);
+      })();
+      return () => {
+        active = false;
+      };
+    }, [])
+  );
 
   useEffect(() => {
     if (user) {
@@ -300,18 +335,34 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const handleLogout = async () => {
-    setSigningOut(true);
-    try {
-      await api.auth.logout();
-    } catch {
-      // offline or already invalid
+  const toggleBiometricLogin = useCallback(async () => {
+    if (biometricOn) {
+      Alert.alert('Turn off biometric login?', 'You will sign in with username and PIN only.', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Turn off',
+          style: 'destructive',
+          onPress: async () => {
+            await clearBiometricLogin();
+            setBiometricOn(false);
+          },
+        },
+      ]);
+      return;
     }
-    await clearStoredToken();
-    dispatch(logout());
-    router.replace('/login');
-    setSigningOut(false);
-  };
+    try {
+      const token = await loadStoredToken();
+      if (!token) {
+        Alert.alert('Session unavailable', 'Sign out and sign in again, then enable biometric login.');
+        return;
+      }
+      await saveBiometricCredential(token);
+      setBiometricOn(true);
+      Alert.alert('Enabled', `${biometricLabel} sign-in is enabled on this device.`);
+    } catch (e) {
+      Alert.alert('Could not enable', e instanceof Error ? e.message : 'Try again.');
+    }
+  }, [biometricOn, biometricLabel]);
 
   const toggleWelcomeStatsCards = useCallback(async () => {
     const next = !showWelcomeStatsCards;
@@ -511,6 +562,37 @@ export default function ProfileScreen() {
                 color={showWelcomeStatsCards ? themeYellow : colors.textSecondary}
               />
             </Pressable>
+            {biometricHw && serverAllowsBiometric ? (
+              <Pressable
+                onPress={toggleBiometricLogin}
+                style={({ pressed }) => [
+                  styles.settingRow,
+                  { borderTopColor: cardBorder, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
+                ]}
+              >
+                <View style={styles.settingRowTextWrap}>
+                  <ThemedText style={[styles.settingRowTitle, { color: colors.text }]}>{biometricLabel} login</ThemedText>
+                  <ThemedText style={[styles.settingRowSub, { color: colors.textSecondary }]}>
+                    Sign in on the login screen without typing your PIN
+                  </ThemedText>
+                </View>
+                <Ionicons
+                  name={biometricOn ? 'toggle' : 'toggle-outline'}
+                  size={Icons.header}
+                  color={biometricOn ? themeYellow : colors.textSecondary}
+                />
+              </Pressable>
+            ) : biometricHw && !serverAllowsBiometric ? (
+              <View style={[styles.settingRow, { borderTopColor: cardBorder }]}>
+                <View style={styles.settingRowTextWrap}>
+                  <ThemedText style={[styles.settingRowTitle, { color: colors.text }]}>{biometricLabel} login</ThemedText>
+                  <ThemedText style={[styles.settingRowSub, { color: colors.textSecondary }]}>
+                    Disabled in System Settings — sign in with username and PIN
+                  </ThemedText>
+                </View>
+                <Ionicons name="lock-closed-outline" size={Icons.header} color={colors.textSecondary} />
+              </View>
+            ) : null}
           </View>
 
           {/* ACCOUNT DETAILS */}
@@ -635,6 +717,7 @@ export default function ProfileScreen() {
               onChangeText={setName}
               placeholder="Full name"
               autoCapitalize="words"
+              compact
               style={styles.input}
             />
             <StagePassInput
@@ -643,6 +726,7 @@ export default function ProfileScreen() {
               placeholder="Email"
               keyboardType="email-address"
               autoCapitalize="none"
+              compact
               style={styles.input}
             />
             <StagePassInput
@@ -650,6 +734,7 @@ export default function ProfileScreen() {
               onChangeText={setPhoneNumber}
               placeholder="Phone number"
               keyboardType="phone-pad"
+              compact
               style={styles.input}
             />
             <StagePassInput
@@ -657,6 +742,7 @@ export default function ProfileScreen() {
               onChangeText={setAddress}
               placeholder="Address"
               autoCapitalize="words"
+              compact
               style={styles.input}
             />
             <StagePassInput
@@ -664,6 +750,7 @@ export default function ProfileScreen() {
               onChangeText={setEmergencyContact}
               placeholder="Emergency contact (name & number)"
               keyboardType="default"
+              compact
               style={styles.input}
             />
             {user.username ? (
@@ -708,6 +795,7 @@ export default function ProfileScreen() {
               secureTextEntry
               keyboardType="number-pad"
               maxLength={20}
+              compact
               style={styles.input}
             />
             <StagePassInput
@@ -717,6 +805,7 @@ export default function ProfileScreen() {
               secureTextEntry
               keyboardType="number-pad"
               maxLength={20}
+              compact
               style={styles.input}
             />
             <StagePassInput
@@ -726,6 +815,7 @@ export default function ProfileScreen() {
               secureTextEntry
               keyboardType="number-pad"
               maxLength={20}
+              compact
               style={styles.input}
             />
             <StagePassButton
@@ -754,6 +844,7 @@ export default function ProfileScreen() {
                 onChangeText={setPassword}
                 placeholder="New password"
                 secureTextEntry
+                compact
                 style={styles.input}
               />
               <StagePassInput
@@ -761,6 +852,7 @@ export default function ProfileScreen() {
                 onChangeText={setPasswordConfirmation}
                 placeholder="Confirm new password"
                 secureTextEntry
+                compact
                 style={styles.input}
               />
               <StagePassButton
@@ -772,32 +864,6 @@ export default function ProfileScreen() {
               />
             </View>
           ) : null}
-
-          {/* Sign out */}
-          <View style={[styles.logoutCard, { backgroundColor: cardBg, borderColor: colors.error + '44' }]}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.logoutWrap,
-                { opacity: signingOut ? 0.8 : pressed ? 0.8 : 1 },
-              ]}
-              onPress={handleLogout}
-              disabled={signingOut}
-            >
-              {signingOut ? (
-                <>
-                  <ActivityIndicator size="small" color={colors.error} style={styles.logoutSpinner} />
-                  <ThemedText style={[styles.logoutText, { color: colors.error }]}>Signing out…</ThemedText>
-                </>
-              ) : (
-                <>
-                  <View style={[styles.logoutIconWrap, { backgroundColor: colors.error + '18', borderColor: colors.error + '55' }]}>
-                    <Ionicons name="log-out-outline" size={Icons.header} color={colors.error} />
-                  </View>
-                  <ThemedText style={[styles.logoutText, { color: colors.error }]}>Sign out</ThemedText>
-                </>
-              )}
-            </Pressable>
-          </View>
 
         </ScrollView>
       </KeyboardAvoidingView>

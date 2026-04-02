@@ -13,6 +13,23 @@ use Illuminate\Support\Facades\Schema;
 class SettingsController extends Controller
 {
     /**
+     * Minimal app policy for unauthenticated clients (e.g. login screen before token).
+     */
+    public function publicAppConfig(): JsonResponse
+    {
+        return response()
+            ->json([
+                'allow_biometric_mobile_login' => $this->allowBiometricMobileLogin(),
+            ])
+            ->header('Cache-Control', 'public, max-age=60');
+    }
+
+    private function allowBiometricMobileLogin(): bool
+    {
+        return Setting::getBool('allow_biometric_mobile_login', true);
+    }
+
+    /**
      * Office check-in config (location + time window) for any authenticated user.
      * Used by mobile app so crew can see office check-in without full settings access.
      */

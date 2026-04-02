@@ -3,9 +3,17 @@ import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 
 export type StagePassInputProps = TextInputProps & {
   error?: boolean;
+  /** Slightly smaller padding/font for settings-style dense forms. */
+  compact?: boolean;
 };
 
-export function StagePassInput({ style, error, placeholderTextColor, ...props }: StagePassInputProps) {
+export function StagePassInput({
+  style,
+  error,
+  placeholderTextColor,
+  compact,
+  ...props
+}: StagePassInputProps) {
   const { colors, radius, spacing } = useStagePassTheme();
 
   return (
@@ -16,10 +24,10 @@ export function StagePassInput({ style, error, placeholderTextColor, ...props }:
           backgroundColor: colors.inputBackground,
           borderColor: error ? colors.error : colors.inputBorder,
           borderRadius: radius.md,
-          paddingHorizontal: spacing.lg,
-          paddingVertical: spacing.md,
+          paddingHorizontal: compact ? spacing.md : spacing.lg,
+          paddingVertical: compact ? spacing.sm : spacing.md,
           color: colors.text,
-          fontSize: 16,
+          fontSize: compact ? 15 : 16,
         },
         style,
       ]}

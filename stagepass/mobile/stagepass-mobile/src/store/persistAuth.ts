@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import { invalidateBiometricSessionToken } from './biometricLogin';
 import { setAuthToken } from '../services/api';
 
 const TOKEN_KEY = 'stagepass_token';
@@ -18,9 +19,20 @@ export async function saveToken(token: string): Promise<void> {
   await SecureStore.setItemAsync(TOKEN_KEY, token);
 }
 
+/** Clears the active session only (sign out). Keeps the biometric copy of the token so Face ID / fingerprint can still be offered; that copy may be rejected by the server until the user signs in with PIN again. */
 export async function clearStoredToken(): Promise<void> {
   await SecureStore.deleteItemAsync(TOKEN_KEY);
   setAuthToken(null);
+}
+
+/** Use when the API rejects the token (401, failed session restore). Clears biometric-stored token too. */
+export async function clearSessionAfterAuthFailure(
+  clearBiometricToken: boolean = true
+): Promise<void> {
+  if (clearBiometricToken) {
+    await invalidateBiometricSessionToken();
+  }
+  await clearStoredToken();
 }
 
 export async function hydrateAuth(
@@ -34,8 +46,7 @@ export async function hydrateAuth(
     const user = await api.auth.me();
     setCredentials({ user, token });
   } catch {
-    setAuthToken(null);
-    await clearStoredToken();
+    await clearSessionAfterAuthFailure();
   }
 }
 

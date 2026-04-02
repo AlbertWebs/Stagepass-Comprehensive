@@ -1,8 +1,10 @@
+import 'react-native-gesture-handler';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Redirect, Stack, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { Provider, useDispatch, useSelector } from 'react-redux';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 
@@ -11,7 +13,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { setOnUnauthorized } from '~/services/api';
 import { store } from '~/store';
 import { logout, setCredentials, setLoading } from '~/store/authSlice';
-import { clearStoredToken, hydrateAuth, loadStoredToken } from '~/store/persistAuth';
+import { clearSessionAfterAuthFailure, clearStoredToken, hydrateAuth, loadStoredToken } from '~/store/persistAuth';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -44,10 +46,16 @@ function RootLayoutNav() {
   useEffect(() => {
     setOnUnauthorized(() => {
       dispatch(logout());
-      clearStoredToken();
+      // If we're already on an auth screen, preserve the biometric token so Face ID /
+      // fingerprint can still be offered after logout.
+      if (onAuthScreen) {
+        void clearStoredToken();
+      } else {
+        void clearSessionAfterAuthFailure(true);
+      }
     });
     return () => setOnUnauthorized(null);
-  }, [dispatch]);
+  }, [dispatch, onAuthScreen]);
 
   const shouldRedirectToLogin = !isLoading && !token && !onAuthScreen;
 
@@ -76,10 +84,12 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <Provider store={store}>
-      <ThemePreferenceProvider>
-        <RootLayoutNav />
-      </ThemePreferenceProvider>
-    </Provider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <Provider store={store}>
+        <ThemePreferenceProvider>
+          <RootLayoutNav />
+        </ThemePreferenceProvider>
+      </Provider>
+    </GestureHandlerRootView>
   );
 }

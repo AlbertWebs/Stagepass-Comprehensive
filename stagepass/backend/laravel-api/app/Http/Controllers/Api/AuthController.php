@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -152,6 +153,7 @@ class AuthController extends Controller
         $payload['office_checkout_time'] = $officeCheckoutTime;
         $payload['has_approved_time_off_today'] = $hasApprovedTimeOffToday;
         $payload['homepage_preferences'] = $this->normalizeHomepagePreferences($user->homepage_preferences);
+        $payload['allow_biometric_mobile_login'] = $this->allowBiometricMobileLogin();
 
         Log::info('GET /me office state', [
             'user_id' => $user->id,
@@ -202,6 +204,11 @@ class AuthController extends Controller
         }
         $user->save();
         return response()->json($user->fresh()->load('roles'));
+    }
+
+    private function allowBiometricMobileLogin(): bool
+    {
+        return Setting::getBool('allow_biometric_mobile_login', true);
     }
 
     private function normalizeHomepagePreferences(?array $prefs): array
