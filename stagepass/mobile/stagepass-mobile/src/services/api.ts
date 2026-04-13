@@ -59,6 +59,39 @@ const API_BASE = getDefaultApiBase();
 
 export const getApiBase = () => API_BASE;
 
+/**
+ * Build a device-loadable avatar URL. Fixes relative `/storage/...` paths and
+ * legacy rows where the server stored APP_URL (e.g. localhost) while the app
+ * calls a public API host.
+ */
+export function resolveUserAvatarUrl(avatarUrl: string | undefined | null): string | undefined {
+  const raw = avatarUrl?.trim();
+  if (!raw) return undefined;
+  const base = getApiBase().replace(/\/+$/, '');
+  const apiIsLocal = (): boolean => {
+    try {
+      const h = new URL(base.includes('://') ? base : `http://${base}`).hostname;
+      return /^(localhost|127\.0\.0\.1|10\.0\.2\.2)$/i.test(h);
+    } catch {
+      return false;
+    }
+  };
+  try {
+    if (raw.startsWith('/')) {
+      return `${base}${raw}`;
+    }
+    const parsed = new URL(raw);
+    const badHost = /^(localhost|127\.0\.0\.1|10\.0\.2\.2)$/i.test(parsed.hostname);
+    if (badHost && !apiIsLocal()) {
+      const origin = new URL(base.includes('://') ? base : `http://${base}`).origin;
+      return `${origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+  } catch {
+    /* keep raw */
+  }
+  return raw;
+}
+
 export type ApiConfig = {
   token: string | null;
 };
@@ -508,7 +541,7 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ event_id: eventId }),
       }),
-    /** Daily office check-in at configured location (e.g. 30m radius). Backend must implement POST /attendance/office-checkin. */
+    /** Daily office check-in at configured location (e.g. 100 m radius). Backend must implement POST /attendance/office-checkin. */
     officeCheckin: (latitude: number, longitude: number) =>
       request<{ checkin_time: string }>('/attendance/office-checkin', {
         method: 'POST',

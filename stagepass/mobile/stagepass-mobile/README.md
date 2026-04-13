@@ -31,11 +31,11 @@ You can start developing by editing the files inside the **app** directory. This
 - **Web Admin**: `C:\projects\Stapepass-mobile-app-webadmin`
 - **Mobile app**: this repository. Communicates with the API via the service layer in `src/services/api.ts`.
 
-**Daily (office) check-in** uses a **30m radius** at a fixed location. Set the location in `.env` from Google Maps (e.g. [office location](https://maps.app.goo.gl/wZg18AJBwUt9kJdj7) — right‑click map → copy coordinates):
+**Daily (office) check-in** uses a **100 m radius** at a fixed location (when not loaded from the API). Set the location in `.env` from Google Maps (e.g. [office location](https://maps.app.goo.gl/wZg18AJBwUt9kJdj7) — right‑click map → copy coordinates):
 
 - `EXPO_PUBLIC_OFFICE_CHECKIN_LAT` — latitude  
 - `EXPO_PUBLIC_OFFICE_CHECKIN_LNG` — longitude  
-- `EXPO_PUBLIC_OFFICE_CHECKIN_RADIUS_M=30` — radius in metres (default 30)
+- `EXPO_PUBLIC_OFFICE_CHECKIN_RADIUS_M=100` — radius in metres (default 100)
 
 ## Get a fresh project
 

@@ -281,9 +281,9 @@ export function HomeDashboardScreen({
       });
       const lat = s?.office_latitude;
       const lng = s?.office_longitude;
-      const radius = s?.office_radius_m ?? 30;
+      const radius = s?.office_radius_m ?? 100;
       if (typeof lat === 'number' && typeof lng === 'number' && Number.isFinite(lat) && Number.isFinite(lng)) {
-        setOfficeConfigFromApi({ latitude: lat, longitude: lng, radiusMeters: radius > 0 ? radius : 30 });
+        setOfficeConfigFromApi({ latitude: lat, longitude: lng, radiusMeters: radius > 0 ? radius : 100 });
       } else {
         setOfficeConfigFromApi(null);
       }
@@ -652,7 +652,7 @@ export function HomeDashboardScreen({
         if (String(msg).includes('404') || String(msg).includes('Not Found')) {
           Alert.alert(
             'Office check-in',
-            'Server does not support office check-in yet. You are within the 30m radius.'
+            'Server does not support office check-in yet. You are within the configured office radius.'
           );
         } else {
           Alert.alert('Check-in failed', msg);

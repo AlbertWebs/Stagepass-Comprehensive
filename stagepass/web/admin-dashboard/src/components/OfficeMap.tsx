@@ -9,7 +9,7 @@ type OfficeMapProps = {
   className?: string;
 };
 
-export function OfficeMap({ latitude, longitude, radiusM = 30, className = '' }: OfficeMapProps) {
+export function OfficeMap({ latitude, longitude, radiusM = 100, className = '' }: OfficeMapProps) {
   const pad = 0.004 + (radiusM / 111000) * 2; // ~rough degrees for radius
   const minLon = longitude - pad;
   const minLat = latitude - pad;

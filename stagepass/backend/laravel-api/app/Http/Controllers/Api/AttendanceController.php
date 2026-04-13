@@ -68,7 +68,8 @@ class AttendanceController extends Controller
 
         $officeLat = Setting::get('office_latitude');
         $officeLon = Setting::get('office_longitude');
-        $officeRadius = max(30, (int) Setting::get('office_radius_m', 30));
+        $configured = (int) Setting::get('office_radius_m', 100);
+        $officeRadius = $configured > 0 ? $configured : 100;
         if ($officeLat !== null && $officeLat !== '' && $officeLon !== null && $officeLon !== '') {
             $userLat = (float) $request->latitude;
             $userLon = (float) $request->longitude;

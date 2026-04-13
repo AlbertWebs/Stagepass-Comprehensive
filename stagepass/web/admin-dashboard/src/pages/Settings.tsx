@@ -69,7 +69,7 @@ const DEFAULTS: AppSettings = {
   office_location_name: '',
   office_latitude: '',
   office_longitude: '',
-  office_radius_m: 30,
+  office_radius_m: 100,
   office_checkin_start_time: '09:00',
   office_checkin_end_time: '10:00',
 };
@@ -212,7 +212,7 @@ export default function Settings() {
 
   const officeLat = parseCoord(appSettings.office_latitude);
   const officeLon = parseCoord(appSettings.office_longitude);
-  const officeRadius = getNum(appSettings.office_radius_m) || 30;
+  const officeRadius = getNum(appSettings.office_radius_m) || 100;
   const hasOfficeCoords = officeLat != null && officeLon != null;
 
   return (
@@ -534,12 +534,12 @@ export default function Settings() {
                         type="number"
                         min={10}
                         max={500}
-                        value={getNum(appSettings.office_radius_m) || 30}
-                        onChange={(e) => updateSetting('office_radius_m', parseInt(e.target.value, 10) || 30)}
+                        value={getNum(appSettings.office_radius_m) || 100}
+                        onChange={(e) => updateSetting('office_radius_m', parseInt(e.target.value, 10) || 100)}
                         className="form-input"
                         disabled={!canEditSettings}
                       />
-                      <p className="mt-1 text-xs text-slate-500">Crew must be within this distance to check in (default 30 m).</p>
+                      <p className="mt-1 text-xs text-slate-500">Crew must be within this distance to check in (default 100 m).</p>
                     </div>
                     <div className="form-field sm:col-span-2">
                       <label className="form-label form-label-optional" htmlFor="office_checkin_start_time">

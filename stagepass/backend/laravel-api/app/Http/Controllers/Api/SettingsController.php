@@ -37,14 +37,14 @@ class SettingsController extends Controller
     {
         $lat = Setting::get('office_latitude');
         $lng = Setting::get('office_longitude');
-        $radius = (int) Setting::get('office_radius_m', 30);
+        $radius = (int) Setting::get('office_radius_m', 100);
         $start = Setting::get('office_checkin_start_time', '09:00');
         $end = Setting::get('office_checkin_end_time', '10:00');
 
         return response()->json([
             'office_latitude' => $lat !== null && $lat !== '' ? (float) $lat : null,
             'office_longitude' => $lng !== null && $lng !== '' ? (float) $lng : null,
-            'office_radius_m' => $radius > 0 ? $radius : 30,
+            'office_radius_m' => $radius > 0 ? $radius : 100,
             'office_checkin_start_time' => is_string($start) ? $start : '09:00',
             'office_checkin_end_time' => is_string($end) ? $end : '10:00',
         ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');

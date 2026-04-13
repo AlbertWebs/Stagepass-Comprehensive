@@ -280,7 +280,9 @@ class AuthController extends Controller
         $name = $user->id . '_' . now()->format('YmdHis') . '.' . $file->getClientOriginalExtension();
         $path = $file->storeAs($dir, $name, 'public');
 
-        $base = rtrim(config('app.url'), '/');
+        // Use the incoming request root so avatars work when APP_URL still points at localhost
+        // but the API is served from a public host (e.g. https://app.stagepass.co.ke).
+        $base = rtrim($request->root(), '/');
         $user->avatar_url = $base . '/storage/' . $path;
         $user->save();
 

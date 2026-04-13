@@ -34,7 +34,7 @@ class SettingsSeeder extends Seeder
         'office_location_name' => '',
         'office_latitude' => '',
         'office_longitude' => '',
-        'office_radius_m' => 30,
+        'office_radius_m' => 100,
         'payment_currency' => 'KES',
         'allow_time_off_requests' => '1',
         /** When false, mobile app hides biometric login (Face ID / fingerprint). */

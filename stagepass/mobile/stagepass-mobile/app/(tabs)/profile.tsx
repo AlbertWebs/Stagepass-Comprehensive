@@ -30,7 +30,7 @@ import { Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 import { useAppRole } from '~/hooks/useAppRole';
-import { api } from '~/services/api';
+import { api, resolveUserAvatarUrl } from '~/services/api';
 import { logout, setUser } from '~/store/authSlice';
 import {
   clearBiometricLogin,
@@ -281,9 +281,10 @@ export default function ProfileScreen() {
     setUploadingPhoto(true);
     try {
       const data = await api.auth.uploadProfilePhoto(uri);
-      const updatedUser = 'user' in data ? data.user : data;
-      dispatch(setUser(updatedUser));
-      if (updatedUser?.avatar_url) setPassportPhotoUri(null);
+      const updatedUser = ('user' in data ? data.user : data) as User;
+      const fixedAvatar = resolveUserAvatarUrl(updatedUser.avatar_url);
+      dispatch(setUser({ ...user, ...updatedUser, ...(fixedAvatar ? { avatar_url: fixedAvatar } : {}) }));
+      if (fixedAvatar) setPassportPhotoUri(null);
       Alert.alert('Saved', 'Your profile photo has been updated.');
     } catch (e) {
       Alert.alert(
@@ -473,7 +474,9 @@ export default function ProfileScreen() {
               >
                 {(passportPhotoUri || user?.avatar_url) ? (
                   <Image
-                    source={{ uri: passportPhotoUri ?? user?.avatar_url ?? '' }}
+                    source={{
+                      uri: passportPhotoUri ?? resolveUserAvatarUrl(user?.avatar_url) ?? user?.avatar_url ?? '',
+                    }}
                     style={styles.heroAvatarImage}
                     contentFit="cover"
                   />
@@ -668,7 +671,9 @@ export default function ProfileScreen() {
               >
                 {(passportPhotoUri || user?.avatar_url) ? (
                   <Image
-                    source={{ uri: passportPhotoUri ?? user?.avatar_url ?? '' }}
+                    source={{
+                      uri: passportPhotoUri ?? resolveUserAvatarUrl(user?.avatar_url) ?? user?.avatar_url ?? '',
+                    }}
                     style={styles.passportPhoto}
                     contentFit="cover"
                   />

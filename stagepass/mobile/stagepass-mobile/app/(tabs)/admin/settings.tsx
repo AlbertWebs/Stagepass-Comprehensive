@@ -53,7 +53,7 @@ const DEFAULTS: AppSettings = {
   office_location_name: '',
   office_latitude: '',
   office_longitude: '',
-  office_radius_m: 30,
+  office_radius_m: 100,
   office_checkin_start_time: '09:00',
   office_checkin_end_time: '10:00',
 };
@@ -308,7 +308,7 @@ export default function AdminSettingsScreen() {
           </View>
           <View style={styles.fieldGroup}>
             <ThemedText style={[styles.fieldLabel, { color: colors.textSecondary }]}>Office geofence radius (m)</ThemedText>
-            <StagePassInput value={String(getNum(data.office_radius_m) || 30)} onChangeText={(v) => update('office_radius_m', parseInt(v, 10) || 30)} editable={canEdit} keyboardType="number-pad" style={styles.input} />
+            <StagePassInput value={String(getNum(data.office_radius_m) || 100)} onChangeText={(v) => update('office_radius_m', parseInt(v, 10) || 100)} editable={canEdit} keyboardType="number-pad" style={styles.input} />
           </View>
           <View style={styles.fieldGroup}>
             <ThemedText style={[styles.fieldLabel, { color: colors.textSecondary }]}>Office check-in window</ThemedText>

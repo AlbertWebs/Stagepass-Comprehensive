@@ -1,5 +1,5 @@
 /**
- * Office / daily check-in location: 30m radius.
+ * Office / daily check-in location: 100 m radius (override with EXPO_PUBLIC_OFFICE_CHECKIN_RADIUS_M).
  * Set in .env from your office location (e.g. from Google Maps link).
  * Example: https://maps.app.goo.gl/wZg18AJBwUt9kJdj7 → get lat/lng from Maps and set below.
  */
@@ -9,7 +9,7 @@ function parseNum(value: string | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export const OFFICE_CHECKIN_RADIUS_METERS = 30;
+export const OFFICE_CHECKIN_RADIUS_METERS = 100;
 
 export function getOfficeCheckinConfig(): {
   latitude: number;
