@@ -2,8 +2,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   SlideInRight,
@@ -16,6 +16,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
 import { api, type Event as EventType } from '~/services/api';
+import { useAppRole } from '@/hooks/useAppRole';
 import { useGeofence } from '~/hooks/useGeofence';
 import { AppHeader } from '@/components/AppHeader';
 import { StagepassLoader } from '@/components/StagepassLoader';
@@ -66,9 +67,11 @@ export default function EventDetailScreen() {
   const insets = useSafeAreaInsets();
   const token = useSelector((s: { auth: { token: string | null } }) => s.auth.token);
   const currentUserId = useSelector((s: { auth: { user: { id?: number } | null } }) => s.auth.user?.id);
+  const role = useAppRole();
   const [event, setEvent] = useState<EventType | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [leaderCheckInUserId, setLeaderCheckInUserId] = useState<number | null>(null);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const { checkCanCheckIn } = useGeofence();
 
@@ -116,6 +119,59 @@ export default function EventDetailScreen() {
   const checkoutTimeFormatted = formatCheckoutTime(checkoutTime as string | undefined);
   const myRoleInEvent = hasPivot && (myAssignment?.pivot as { role_in_event?: string | null })?.role_in_event;
   const teamLeader = event?.team_leader ?? event?.teamLeader;
+
+  const canManageEventCrew = useMemo(() => {
+    if (!event || currentUserId == null) return false;
+    if (role === 'admin') return true;
+    const assignedLeaderId = event.team_leader_id ?? teamLeader?.id;
+    if (assignedLeaderId != null && Number(assignedLeaderId) === currentUserId) {
+      return true;
+    }
+    if (role !== 'team_leader') return false;
+    if (event.team_leader_id != null && event.team_leader_id !== undefined) {
+      return false;
+    }
+    if (Number(event.created_by_id) === currentUserId) return true;
+    return Boolean(event.crew?.some((c) => c.id === currentUserId));
+  }, [event, currentUserId, role, teamLeader]);
+
+  const crewAttendanceRows = useMemo(() => {
+    if (!event?.crew?.length) return [];
+    return event.crew.map((c) => {
+      const p = c.pivot as { checkin_time?: string | null; checkout_time?: string | null; role_in_event?: string | null } | undefined;
+      let status: 'pending' | 'checked_in' | 'checked_out' = 'pending';
+      if (p?.checkout_time) status = 'checked_out';
+      else if (p?.checkin_time) status = 'checked_in';
+      return {
+        id: c.id,
+        name: c.name,
+        status,
+        roleInEvent: p?.role_in_event?.trim() ? p.role_in_event : null,
+      };
+    });
+  }, [event?.crew]);
+
+  const handleLeaderCheckInMember = async (userId: number) => {
+    if (!event?.id) return;
+    setLeaderCheckInUserId(userId);
+    let lat: number | undefined;
+    let lon: number | undefined;
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const loc = await Location.getCurrentPositionAsync({});
+        lat = loc.coords.latitude;
+        lon = loc.coords.longitude;
+      }
+      await api.attendance.checkinOnBehalf(event.id, userId, lat, lon);
+      const updated = await api.events.get(event.id);
+      setEvent(updated);
+    } catch (e: unknown) {
+      Alert.alert('Check-in failed', e instanceof Error ? e.message : 'Could not check in crew member.');
+    } finally {
+      setLeaderCheckInUserId(null);
+    }
+  };
 
   const handleCheckIn = async () => {
     if (!event?.id || actionLoading) return;
@@ -197,6 +253,7 @@ export default function EventDetailScreen() {
     return <StagepassLoader message="Loading event…" fullScreen />;
   }
 
+  const isEventEnded = event.status === 'completed' || event.status === 'closed';
   const locationLabel = event.location_name ?? 'No location';
   const timeLabel = formatEventTime(event.start_time);
   const dateLabel = formatEventDate(event.date);
@@ -316,6 +373,42 @@ export default function EventDetailScreen() {
             </>
           ) : null}
 
+          {canManageEventCrew ? (
+            <>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                <View style={[styles.sectionTitleIconWrap, { backgroundColor: iconWrapBg }]}>
+                  <Ionicons name="people-outline" size={Icons.small} color={themeYellow} />
+                </View>
+                <ThemedText style={[styles.sectionTitle, { color: accent }]}>Crew</ThemedText>
+              </View>
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname: '/admin/events/[id]/operations',
+                    params: { id: String(event.id) },
+                  })
+                }
+                style={({ pressed }) => [
+                  styles.leadOpsCard,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  pressed && { opacity: 0.92 },
+                ]}
+              >
+                <View style={[styles.leadOpsIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
+                  <Ionicons name="briefcase-outline" size={Icons.standard} color={themeYellow} />
+                </View>
+                <View style={styles.leadOpsTextWrap}>
+                  <ThemedText style={[styles.leadOpsTitle, { color: colors.text }]}>Event operations</ThemedText>
+                  <ThemedText style={[styles.leadOpsSub, { color: colors.textSecondary }]}>
+                    Onboard crew, checklist, check-in, and end event
+                  </ThemedText>
+                </View>
+                <Ionicons name="chevron-forward" size={22} color={colors.textSecondary} />
+              </Pressable>
+            </>
+          ) : null}
+
           {/* Check-in / Check-out actions */}
           <View style={styles.sectionTitleRow}>
             <View style={[styles.sectionTitleAccent, { backgroundColor: themeBlue }]} />
@@ -387,6 +480,67 @@ export default function EventDetailScreen() {
               </Pressable>
             )}
           </View>
+
+          {canManageEventCrew && !isEventEnded && crewAttendanceRows.length > 0 ? (
+            <>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                <View style={[styles.sectionTitleIconWrap, { backgroundColor: iconWrapBg }]}>
+                  <Ionicons name="people" size={Icons.small} color={themeYellow} />
+                </View>
+                <ThemedText style={[styles.sectionTitle, { color: accent }]}>Check in crew</ThemedText>
+              </View>
+              <View style={[styles.leaderCrewCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <ThemedText style={[styles.leaderCrewHint, { color: colors.textSecondary }]}>
+                  Mark arrivals when someone cannot check in on their device or at the geofence.
+                </ThemedText>
+                {crewAttendanceRows.map((row, idx) => (
+                  <View
+                    key={row.id}
+                    style={[
+                      styles.leaderCrewRow,
+                      { borderBottomColor: colors.border },
+                      idx === crewAttendanceRows.length - 1 && styles.leaderCrewRowLast,
+                    ]}
+                  >
+                    <View style={styles.leaderCrewRowInfo}>
+                      <ThemedText style={[styles.leaderCrewName, { color: colors.text }]}>{row.name}</ThemedText>
+                      {row.roleInEvent ? (
+                        <ThemedText style={[styles.leaderCrewMeta, { color: colors.textSecondary }]}>{row.roleInEvent}</ThemedText>
+                      ) : null}
+                    </View>
+                    {row.status === 'pending' ? (
+                      <Pressable
+                        onPress={() => handleLeaderCheckInMember(row.id)}
+                        disabled={leaderCheckInUserId === row.id}
+                        style={({ pressed }) => [
+                          styles.leaderCheckInBtn,
+                          { backgroundColor: themeYellow + '22', borderColor: themeYellow },
+                          pressed && { opacity: 0.85 },
+                        ]}
+                      >
+                        {leaderCheckInUserId === row.id ? (
+                          <ActivityIndicator size="small" color={themeYellow} />
+                        ) : (
+                          <>
+                            <Ionicons name="location" size={18} color={themeYellow} />
+                            <ThemedText style={[styles.leaderCheckInBtnText, { color: themeYellow }]}>Check in</ThemedText>
+                          </>
+                        )}
+                      </Pressable>
+                    ) : row.status === 'checked_in' ? (
+                      <View style={[styles.leaderStatusBadge, { backgroundColor: themeYellow + '22' }]}>
+                        <Ionicons name="checkmark-circle" size={18} color={themeYellow} />
+                        <ThemedText style={[styles.leaderStatusBadgeText, { color: themeYellow }]}>In</ThemedText>
+                      </View>
+                    ) : (
+                      <ThemedText style={[styles.leaderCrewMeta, { color: colors.textSecondary }]}>Checked out</ThemedText>
+                    )}
+                  </View>
+                ))}
+              </View>
+            </>
+          ) : null}
         </Animated.View>
       </ScrollView>
     </ThemedView>
@@ -511,6 +665,70 @@ const styles = StyleSheet.create({
   allowanceTextWrap: { flex: 1 },
   allowanceValue: { fontSize: Typography.body, fontWeight: Typography.buttonTextWeight },
   allowanceLabel: { fontSize: Typography.label, marginTop: 2 },
+  leadOpsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    borderRadius: Cards.borderRadius,
+    borderWidth: 1,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
+  leadOpsIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  leadOpsTextWrap: { flex: 1, minWidth: 0 },
+  leadOpsTitle: { fontSize: Typography.body, fontWeight: '700' },
+  leadOpsSub: { fontSize: Typography.label, marginTop: 4, lineHeight: 18 },
+  leaderCrewCard: {
+    borderRadius: Cards.borderRadius,
+    borderWidth: 1,
+    padding: Spacing.md,
+    marginBottom: Spacing.lg,
+  },
+  leaderCrewHint: {
+    fontSize: Typography.label,
+    lineHeight: 20,
+    marginBottom: Spacing.md,
+  },
+  leaderCrewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.sm,
+  },
+  leaderCrewRowLast: {
+    borderBottomWidth: 0,
+  },
+  leaderCrewRowInfo: { flex: 1, minWidth: 0 },
+  leaderCrewName: { fontSize: Typography.body, fontWeight: '600' },
+  leaderCrewMeta: { fontSize: 12, marginTop: 2 },
+  leaderCheckInBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+  },
+  leaderCheckInBtnText: { fontSize: 13, fontWeight: '600' },
+  leaderStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: BorderRadius.md,
+  },
+  leaderStatusBadgeText: { fontSize: 13, fontWeight: '600' },
   actions: { marginTop: Spacing.sm, alignItems: 'center', marginBottom: Spacing.lg },
   roundCheckInWrap: {
     position: 'relative',

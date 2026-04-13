@@ -20,7 +20,16 @@ class EventCrewController extends Controller
         if ($user->hasRole('super_admin') || $user->hasRole('director')) {
             return true;
         }
-        return (int) $event->team_leader_id === (int) $user->id;
+        if ((int) $event->team_leader_id === (int) $user->id) {
+            return true;
+        }
+        // Event not yet assigned a team leader: allow onboarded team_leader role users who created the event or are on crew.
+        if ($user->hasRole('team_leader') && blank($event->team_leader_id)) {
+            return (int) $event->created_by_id === (int) $user->id
+                || $event->crew()->whereKey($user->id)->exists();
+        }
+
+        return false;
     }
 
     public function assignUser(Request $request, Event $event): JsonResponse

@@ -936,6 +936,7 @@ export interface Event {
   geofence_radius: number;
   daily_allowance?: number | null;
   team_leader_id?: number;
+  created_by_id?: number;
   status: string;
   team_leader?: { id: number; name: string };
   teamLeader?: { id: number; name: string };
