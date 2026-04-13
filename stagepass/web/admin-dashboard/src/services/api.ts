@@ -230,6 +230,7 @@ export interface PaymentItem {
   id: number;
   event_id: number;
   user_id: number;
+  payment_date?: string | null;
   purpose?: string | null;
   hours: number;
   per_diem: number;
@@ -389,7 +390,7 @@ export const api = {
       request<void>(`/transport/assignments/${assignmentId}`, { method: 'DELETE' }),
   },
   payments: {
-    list: (params?: { status?: string; event_id?: number; page?: number }) =>
+    list: (params?: { status?: string; event_id?: number; page?: number; per_page?: number }) =>
       request<Paginated<PaymentItem>>('/payments', {
         params: params as Record<string, string | number>,
       }),

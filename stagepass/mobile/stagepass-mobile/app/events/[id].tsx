@@ -16,7 +16,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
 import { api, type Event as EventType } from '~/services/api';
-import { useAppRole } from '@/hooks/useAppRole';
+import { useAppRole } from '~/hooks/useAppRole';
 import { useGeofence } from '~/hooks/useGeofence';
 import { AppHeader } from '@/components/AppHeader';
 import { StagepassLoader } from '@/components/StagepassLoader';

@@ -14,6 +14,7 @@ import EventOperations from '@/pages/EventOperations';
 import Events from '@/pages/Events';
 import Login from '@/pages/Login';
 import Payments from '@/pages/Payments';
+import Allowances from '@/pages/Allowances';
 import Help from '@/pages/Help';
 import Placeholder from '@/pages/Placeholder';
 import Checkins from '@/pages/Checkins';
@@ -59,6 +60,7 @@ export default function App() {
         <Route path="equipment" element={<Equipment />} />
         <Route path="transport" element={<Transport />} />
         <Route path="payments" element={<Payments />} />
+        <Route path="allowances" element={<Allowances />} />
         <Route path="clients" element={<Clients />} />
         <Route path="reports" element={<Reports />} />
         <Route path="checkins" element={<Checkins />} />

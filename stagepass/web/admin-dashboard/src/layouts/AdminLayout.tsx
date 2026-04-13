@@ -18,6 +18,7 @@ const nav: Array<
   { type: 'link', to: '/equipment', label: 'Equipment', icon: EquipmentIcon },
   { type: 'link', to: '/transport', label: 'Transport & Logistics', icon: TransportIcon },
   { type: 'link', to: '/payments', label: 'Payments', icon: PaymentsIcon },
+  { type: 'link', to: '/allowances', label: 'Allowances', icon: AllowancesIcon },
   { type: 'link', to: '/clients', label: 'Clients', icon: ClientsIcon },
   { type: 'section', label: 'Reports & Analytics' },
   { type: 'link', to: '/reports', label: 'Reports', icon: ReportsIcon },
@@ -42,6 +43,7 @@ const pathToTitle: Record<string, string> = {
   '/equipment': 'Equipment',
   '/transport': 'Transport & Logistics',
   '/payments': 'Payments',
+  '/allowances': 'Allowances',
   '/clients': 'Clients',
   '/reports': 'Reports',
   '/checkins': 'Daily check-ins',
@@ -97,6 +99,13 @@ function PaymentsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2h-2m-4-1V9a2 2 0 012-2h2a2 2 0 012 2v1m-4 1a2 2 0 01-2 2h-2a2 2 0 01-2-2" />
+    </svg>
+  );
+}
+function AllowancesIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   );
 }
