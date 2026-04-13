@@ -178,12 +178,17 @@ class UserController extends Controller
                 isResend: true,
             ));
         } catch (\Throwable $e) {
-            Log::warning('Welcome email send failed', [
+            Log::error('Welcome email send failed', [
                 'user_id' => $user->id,
-                'message' => $e->getMessage(),
+                'exception' => $e->getMessage(),
             ]);
 
-            return response()->json(['message' => 'Could not send email. Check mail configuration.'], 500);
+            $payload = ['message' => 'Could not send email. Check mail configuration.'];
+            if (config('app.debug')) {
+                $payload['details'] = $e->getMessage();
+            }
+
+            return response()->json($payload, 500);
         }
 
         return response()->json(['message' => 'Welcome email sent.']);

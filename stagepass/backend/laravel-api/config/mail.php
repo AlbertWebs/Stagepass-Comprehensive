@@ -1,5 +1,10 @@
 <?php
 
+$mailHost = env('MAIL_HOST', '127.0.0.1');
+$appUrlHost = parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST) ?: 'localhost';
+// EHLO as "localhost" often breaks real SMTP when APP_URL is local; use the SMTP hostname when it is not an IP.
+$smtpEhloDefault = filter_var($mailHost, FILTER_VALIDATE_IP) ? $appUrlHost : $mailHost;
+
 return [
 
     /*
@@ -39,14 +44,17 @@ return [
 
         'smtp' => [
             'transport' => 'smtp',
-            'scheme' => env('MAIL_SCHEME'),
+            // Prefer MAIL_SCHEME (e.g. smtps). If unset, legacy MAIL_ENCRYPTION=ssl maps to smtps; otherwise Laravel infers smtp vs smtps from MAIL_PORT.
+            'scheme' => filled(env('MAIL_SCHEME'))
+                ? env('MAIL_SCHEME')
+                : (strtolower((string) env('MAIL_ENCRYPTION', '')) === 'ssl' ? 'smtps' : null),
             'url' => env('MAIL_URL'),
             'host' => env('MAIL_HOST', '127.0.0.1'),
             'port' => env('MAIL_PORT', 2525),
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
             'timeout' => null,
-            'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
+            'local_domain' => env('MAIL_EHLO_DOMAIN', $smtpEhloDefault),
         ],
 
         'ses' => [
