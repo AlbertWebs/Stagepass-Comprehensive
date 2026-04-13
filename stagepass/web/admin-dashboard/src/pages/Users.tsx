@@ -59,6 +59,11 @@ export default function Users({
   const [createOpen, setCreateOpen] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
   const [deleteUser, setDeleteUser] = useState<User | null>(null);
+  const [welcomeUser, setWelcomeUser] = useState<User | null>(null);
+  const [welcomePassword, setWelcomePassword] = useState('');
+  const [welcomePin, setWelcomePin] = useState('');
+  const [welcomeSaving, setWelcomeSaving] = useState(false);
+  const [welcomeError, setWelcomeError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
@@ -103,6 +108,10 @@ export default function Users({
     setCreateOpen(false);
     setEditUser(null);
     setDeleteUser(null);
+    setWelcomeUser(null);
+    setWelcomePassword('');
+    setWelcomePin('');
+    setWelcomeError(null);
     setError(null);
   };
 
@@ -174,6 +183,24 @@ export default function Users({
       setError(err instanceof Error ? err.message : 'Failed to delete user');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSendWelcomeEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!welcomeUser) return;
+    setWelcomeSaving(true);
+    setWelcomeError(null);
+    try {
+      const body: { password?: string; pin?: string } = {};
+      if (welcomePassword.trim().length > 0) body.password = welcomePassword.trim();
+      if (welcomePin.trim().length > 0) body.pin = welcomePin.trim();
+      await api.users.sendWelcomeEmail(welcomeUser.id, Object.keys(body).length ? body : undefined);
+      closeModals();
+    } catch (err) {
+      setWelcomeError(err instanceof Error ? err.message : 'Failed to send email');
+    } finally {
+      setWelcomeSaving(false);
     }
   };
 
@@ -370,7 +397,19 @@ export default function Users({
                       : '–'}
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <span className="inline-flex gap-3">
+                    <span className="inline-flex flex-wrap items-center justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWelcomeUser(u);
+                          setWelcomePassword('');
+                          setWelcomePin('');
+                          setWelcomeError(null);
+                        }}
+                        className="text-sm font-medium text-slate-600 hover:text-brand-accent hover:underline"
+                      >
+                        Welcome email
+                      </button>
                       <button
                         type="button"
                         onClick={() => openEdit(u)}
@@ -436,6 +475,69 @@ export default function Users({
       {editUser && (
         <FormModal title="Edit user" onClose={closeModals} wide>
           {formContent}
+        </FormModal>
+      )}
+
+      {welcomeUser && (
+        <FormModal title="Send welcome email" onClose={closeModals} wide={false}>
+          <div className="px-6 py-4">
+            {welcomeError && (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+                {welcomeError}
+              </div>
+            )}
+            <p className="text-sm text-slate-700">
+              Send <strong>{welcomeUser.name}</strong> ({welcomeUser.email}) a sign-in details email. Leave the fields
+              empty to resend a reminder only (password and PIN are not shown in that case). If you set a new password
+              or PIN below, it is saved on the account and included in the email.
+            </p>
+            <form onSubmit={handleSendWelcomeEmail} className="mt-4 space-y-4">
+              <div className="form-field">
+                <label className="form-label form-label-optional" htmlFor="welcome-password">
+                  New password (optional, min 8 characters)
+                </label>
+                <input
+                  id="welcome-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={welcomePassword}
+                  onChange={(e) => setWelcomePassword(e.target.value)}
+                  className="form-input"
+                  placeholder="Leave blank to keep current password"
+                />
+              </div>
+              <div className="form-field">
+                <label className="form-label form-label-optional" htmlFor="welcome-pin">
+                  New mobile PIN (optional)
+                </label>
+                <input
+                  id="welcome-pin"
+                  type="text"
+                  inputMode="numeric"
+                  value={welcomePin}
+                  onChange={(e) => setWelcomePin(e.target.value)}
+                  className="form-input"
+                  placeholder="Leave blank to keep current PIN"
+                />
+              </div>
+              <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
+                <button
+                  type="button"
+                  onClick={closeModals}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={welcomeSaving}
+                  className="btn-brand disabled:opacity-50"
+                >
+                  {welcomeSaving ? 'Sending…' : 'Send email'}
+                </button>
+              </div>
+            </form>
+          </div>
         </FormModal>
       )}
 

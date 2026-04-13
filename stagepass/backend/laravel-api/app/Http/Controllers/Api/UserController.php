@@ -73,9 +73,10 @@ class UserController extends Controller
                     ? (string) $validated['pin']
                     : null;
                 Mail::to($user->email)->send(new UserCreatedMail(
-                    $user,
-                    $validated['password'],
-                    $plainPin,
+                    user: $user,
+                    webPassword: $validated['password'],
+                    mobilePin: $plainPin,
+                    isResend: false,
                 ));
             } catch (\Throwable $e) {
                 Log::warning('User created but welcome email failed', [
@@ -133,6 +134,59 @@ class UserController extends Controller
         }
 
         return response()->json($user->fresh()->load('roles'));
+    }
+
+    /**
+     * Resend welcome / sign-in details email (optional new password and/or PIN applied first).
+     */
+    public function sendWelcomeEmail(Request $request, User $user): JsonResponse
+    {
+        $admin = $request->user();
+        if (! $admin->hasRole('super_admin') && ! $admin->hasRole('director') && ! $admin->hasRole('admin')) {
+            return response()->json(['message' => 'Only admins can send welcome emails.'], 403);
+        }
+
+        $validated = $request->validate([
+            'password' => 'nullable|string|min:8',
+            'pin' => 'nullable|string|max:20',
+        ]);
+
+        $plainPassword = ! empty($validated['password']) ? (string) $validated['password'] : null;
+        $plainPin = array_key_exists('pin', $validated) && $validated['pin'] !== '' && $validated['pin'] !== null
+            ? (string) $validated['pin']
+            : null;
+
+        if ($plainPassword !== null) {
+            $user->password = $plainPassword;
+        }
+        if ($plainPin !== null) {
+            $user->pin = $plainPin;
+        }
+        if ($plainPassword !== null || $plainPin !== null) {
+            $user->save();
+        }
+
+        if (! $user->email) {
+            return response()->json(['message' => 'This user has no email address.'], 422);
+        }
+
+        try {
+            Mail::to($user->email)->send(new UserCreatedMail(
+                user: $user->fresh()->load('roles'),
+                webPassword: $plainPassword,
+                mobilePin: $plainPin,
+                isResend: true,
+            ));
+        } catch (\Throwable $e) {
+            Log::warning('Welcome email send failed', [
+                'user_id' => $user->id,
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json(['message' => 'Could not send email. Check mail configuration.'], 500);
+        }
+
+        return response()->json(['message' => 'Welcome email sent.']);
     }
 
     public function destroy(User $user): JsonResponse

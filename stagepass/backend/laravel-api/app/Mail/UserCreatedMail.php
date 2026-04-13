@@ -19,19 +19,23 @@ class UserCreatedMail extends Mailable
     use Queueable, SerializesModels;
 
     /**
-     * @param  string  $webPassword  Plain password for web admin (email) sign-in — only for this transactional email.
-     * @param  string|null  $mobilePin  Plain PIN for mobile app, if the admin set one.
+     * @param  string|null  $webPassword  Plain web password when set/changed; null on resend if unchanged (email explains Forgot password).
+     * @param  string|null  $mobilePin  Plain PIN when set/changed; null if not included in this email.
+     * @param  bool  $isResend  True when sent from admin "Send welcome email" (existing user); adjusts copy.
      */
     public function __construct(
         public User $user,
-        public string $webPassword,
+        public ?string $webPassword,
         public ?string $mobilePin = null,
+        public bool $isResend = false,
     ) {}
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Your Stagepass account has been created',
+            subject: $this->isResend
+                ? 'Your Stagepass sign-in details'
+                : 'Your Stagepass account has been created',
             from: config('mail.from'),
         );
     }
