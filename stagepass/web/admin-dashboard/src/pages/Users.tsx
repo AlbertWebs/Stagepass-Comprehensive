@@ -365,7 +365,7 @@ export default function Users({
                 <th>Email</th>
                 <th>Username</th>
                 <th>Roles</th>
-                <th className="text-right">Actions</th>
+                <th className="text-right whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -396,8 +396,8 @@ export default function Users({
                         ))
                       : '–'}
                   </td>
-                  <td className="px-6 py-4 text-right">
-                    <span className="inline-flex flex-wrap items-center justify-end gap-3">
+                  <td className="px-6 py-4 text-right whitespace-nowrap">
+                    <span className="inline-flex items-center justify-end gap-3">
                       <button
                         type="button"
                         onClick={() => {
@@ -406,7 +406,8 @@ export default function Users({
                           setWelcomePin('');
                           setWelcomeError(null);
                         }}
-                        className="text-sm font-medium text-slate-600 hover:text-brand-accent hover:underline"
+                        className="link-brand hover:underline"
+                        aria-label={`Send welcome email to ${u.name}`}
                       >
                         Welcome email
                       </button>
