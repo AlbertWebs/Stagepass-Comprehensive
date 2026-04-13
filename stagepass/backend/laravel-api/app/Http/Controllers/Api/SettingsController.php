@@ -69,22 +69,33 @@ class SettingsController extends Controller
         }
 
         // Accept JSON body: { "settings": { "app_name": "...", ... } } or flat { "app_name": "...", ... }
-        // Prefer raw body: Laravel does not always merge JSON into input() for POST
+        // Prefer Laravel-parsed JSON first (works behind proxies / PHP input quirks); fall back to raw body.
         $settingsInput = null;
-        $raw = $request->getContent();
-        if (is_string($raw) && $raw !== '') {
-            $decoded = json_decode($raw, true);
-            if (is_array($decoded)) {
-                if (isset($decoded['settings']) && is_array($decoded['settings'])) {
-                    $settingsInput = $decoded['settings'];
-                } elseif (! isset($decoded['settings'])) {
-                    // Flat object as settings
-                    $settingsInput = $decoded;
+        if (is_array($request->input('settings'))) {
+            $settingsInput = $request->input('settings');
+        }
+        if (! is_array($settingsInput)) {
+            $decodedBag = $request->json()->all();
+            if (is_array($decodedBag)) {
+                if (isset($decodedBag['settings']) && is_array($decodedBag['settings'])) {
+                    $settingsInput = $decodedBag['settings'];
+                } elseif (! array_key_exists('settings', $decodedBag) && count($decodedBag) > 0) {
+                    $settingsInput = $decodedBag;
                 }
             }
         }
         if (! is_array($settingsInput)) {
-            $settingsInput = $request->input('settings');
+            $raw = $request->getContent();
+            if (is_string($raw) && $raw !== '') {
+                $decoded = json_decode($raw, true);
+                if (is_array($decoded)) {
+                    if (isset($decoded['settings']) && is_array($decoded['settings'])) {
+                        $settingsInput = $decoded['settings'];
+                    } elseif (! array_key_exists('settings', $decoded) && count($decoded) > 0) {
+                        $settingsInput = $decoded;
+                    }
+                }
+            }
         }
         if (! is_array($settingsInput)) {
             return response()->json(['message' => 'Invalid payload: send JSON body { "settings": { "key": "value", ... } }'], 422);

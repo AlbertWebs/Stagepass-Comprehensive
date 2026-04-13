@@ -3,7 +3,16 @@
  * Uses same Laravel API as mobile (Sanctum).
  */
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+/** Normalize VITE_API_URL: no trailing slash, no accidental /api suffix (avoids /api/api/...). */
+function normalizeApiBase(raw: string): string {
+  let base = raw.trim().replace(/\/+$/, '');
+  if (base.toLowerCase().endsWith('/api')) {
+    base = base.slice(0, -4).replace(/\/+$/, '');
+  }
+  return base;
+}
+
+const API_BASE = normalizeApiBase(import.meta.env.VITE_API_URL || '');
 
 function getToken(): string | null {
   return localStorage.getItem('stagepass_admin_token');
@@ -59,6 +68,11 @@ async function request<T>(
   options: RequestInit & { params?: Record<string, string | number | undefined> } = {}
 ): Promise<T> {
   const { params, ...init } = options;
+  if (!path.startsWith('http') && !API_BASE) {
+    throw new Error(
+      'VITE_API_URL is not set. Add it in Vercel (or .env) to your Laravel API origin, e.g. https://app.stagepass.co.ke — no trailing slash.'
+    );
+  }
   const url = path.startsWith('http') ? path : `${API_BASE}/api${path}`;
   const clean = params ? buildParams(params) : null;
   const fullUrl = clean && Object.keys(clean).length > 0 ? `${url}?${new URLSearchParams(clean)}` : url;

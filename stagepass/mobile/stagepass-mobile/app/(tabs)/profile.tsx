@@ -58,7 +58,7 @@ const P = {
   iconCard: Math.round(T * 1.88),   // 32 – card header icon wrap
   avatar: Math.round(T * 3.53),     // 60
   avatarBadge: Math.round(T * 1.29), // 22
-  swatch: Math.round(T * 2.35),     // 40 – appearance option
+  swatchH: Math.round(T * 1.65),   // 28 – appearance chip height (horizontal bar)
   radiusSm: Math.round(T * 0.47),   // 8
   radiusMd: Math.round(T * 0.94),   // 16
   passportW: Math.round(T * 5.18),  // 88
@@ -536,10 +536,10 @@ export default function ProfileScreen() {
                       pressed && { opacity: 0.9 },
                     ]}
                   >
-                    <View style={[styles.appearanceOptionSwatch, { backgroundColor: selected ? themeBlue + '22' : (mode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.06)') }]}>
+                    <View style={[styles.appearanceOptionChip, { backgroundColor: selected ? themeBlue + '22' : (mode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.06)') }]}>
                       <Ionicons name={icon} size={Icons.standard} color={selected ? themeBlue : fg} />
                     </View>
-                    <Text style={[styles.appearanceOptionText, { color: selected ? themeBlue : fg }]}>
+                    <Text style={[styles.appearanceOptionText, { color: selected ? themeBlue : fg }]} numberOfLines={1}>
                       {label}
                     </Text>
                   </Pressable>
@@ -1085,15 +1085,17 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     paddingVertical: P.md,
     paddingHorizontal: P.sm,
-    borderRadius: P.radiusMd,
+    borderRadius: P.radiusSm,
     alignItems: 'center',
     justifyContent: 'center',
     gap: P.sm,
   },
-  appearanceOptionSwatch: {
-    width: P.swatch,
-    height: P.swatch,
-    borderRadius: Math.round(T * 0.59),
+  /** Full-width horizontal rounded rectangle for the icon (not a square). */
+  appearanceOptionChip: {
+    alignSelf: 'stretch',
+    width: '100%',
+    height: P.swatchH,
+    borderRadius: P.radiusSm,
     justifyContent: 'center',
     alignItems: 'center',
   },
