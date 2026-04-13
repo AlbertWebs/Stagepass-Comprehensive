@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Mail\UserCreatedMail;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -47,9 +48,15 @@ class UsersApiTest extends TestCase
                 'email' => 'newcrew@test.com',
                 'password' => 'password123',
                 'username' => 'newcrew',
+                'pin' => '1234',
             ]);
         $response->assertStatus(201)->assertJsonPath('name', 'New Crew')->assertJsonPath('email', 'newcrew@test.com');
         $this->assertDatabaseHas('users', ['email' => 'newcrew@test.com']);
+        Mail::assertSent(UserCreatedMail::class, function (UserCreatedMail $mail): bool {
+            return $mail->user->email === 'newcrew@test.com'
+                && $mail->webPassword === 'password123'
+                && $mail->mobilePin === '1234';
+        });
     }
 
     public function test_users_update_modifies_user(): void

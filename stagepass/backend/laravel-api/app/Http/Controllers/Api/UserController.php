@@ -7,6 +7,7 @@ use App\Mail\UserCreatedMail;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 
@@ -67,7 +68,22 @@ class UserController extends Controller
         }
 
         if ($user->email) {
-            Mail::to($user->email)->send(new UserCreatedMail($user));
+            try {
+                $plainPin = isset($validated['pin']) && $validated['pin'] !== '' && $validated['pin'] !== null
+                    ? (string) $validated['pin']
+                    : null;
+                Mail::to($user->email)->send(new UserCreatedMail(
+                    $user,
+                    $validated['password'],
+                    $plainPin,
+                ));
+            } catch (\Throwable $e) {
+                Log::warning('User created but welcome email failed', [
+                    'user_id' => $user->id,
+                    'email' => $user->email,
+                    'message' => $e->getMessage(),
+                ]);
+            }
         }
 
         return response()->json($user->load('roles'), 201);
