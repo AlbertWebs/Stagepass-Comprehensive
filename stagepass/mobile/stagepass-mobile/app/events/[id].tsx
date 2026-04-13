@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { HomeHeader } from '@/components/HomeHeader';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, {
@@ -18,7 +19,7 @@ import { useSelector } from 'react-redux';
 import { api, type Event as EventType } from '~/services/api';
 import { useAppRole } from '~/hooks/useAppRole';
 import { useGeofence } from '~/hooks/useGeofence';
-import { AppHeader } from '@/components/AppHeader';
+import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 import { StagepassLoader } from '@/components/StagepassLoader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -63,6 +64,7 @@ function formatCheckoutTime(value: string | undefined): string {
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const handleNav = useNavigationPress();
   const { colors, isDark } = useStagePassTheme();
   const insets = useSafeAreaInsets();
   const token = useSelector((s: { auth: { token: string | null } }) => s.auth.token);
@@ -249,8 +251,44 @@ export default function EventDetailScreen() {
     return { transform: [{ scale }], opacity };
   });
 
+  const headerBg = isDark ? '#1E212A' : '#F5F7FC';
+  const headerBackIconTint = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  const headerBackIconBorder = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.10)';
+
+  const handleScreenBack = useCallback(() => {
+    handleNav(() => {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/(tabs)/events');
+      }
+    });
+  }, [handleNav, router]);
+
   if (loading || !event) {
-    return <StagepassLoader message="Loading event…" fullScreen />;
+    return (
+      <ThemedView style={styles.container}>
+        <HomeHeader title="Home" notificationCount={0} />
+        <Pressable
+          onPress={handleScreenBack}
+          style={({ pressed }) => [
+            styles.backBelowHeader,
+            { backgroundColor: headerBg, borderBottomColor: colors.border },
+            pressed && { opacity: NAV_PRESSED_OPACITY },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Back to events"
+        >
+          <View style={[styles.backBelowIconWrap, { backgroundColor: headerBackIconTint, borderColor: headerBackIconBorder }]}>
+            <Ionicons name="chevron-back" size={Icons.header} color={colors.text} />
+          </View>
+          <ThemedText style={[styles.backBelowTitle, { color: colors.text }]}>Event details</ThemedText>
+        </Pressable>
+        <View style={[styles.scrollWrapper, styles.loaderArea]}>
+          <StagepassLoader message="Loading event…" fullScreen={false} />
+        </View>
+      </ThemedView>
+    );
   }
 
   const isEventEnded = event.status === 'completed' || event.status === 'closed';
@@ -264,7 +302,22 @@ export default function EventDetailScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <AppHeader title="Event details" showBack />
+      <HomeHeader title="Home" notificationCount={0} />
+      <Pressable
+        onPress={handleScreenBack}
+        style={({ pressed }) => [
+          styles.backBelowHeader,
+          { backgroundColor: headerBg, borderBottomColor: colors.border },
+          pressed && { opacity: NAV_PRESSED_OPACITY },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel="Back to events"
+      >
+        <View style={[styles.backBelowIconWrap, { backgroundColor: headerBackIconTint, borderColor: headerBackIconBorder }]}>
+          <Ionicons name="chevron-back" size={Icons.header} color={colors.text} />
+        </View>
+        <ThemedText style={[styles.backBelowTitle, { color: colors.text }]}>Event details</ThemedText>
+      </Pressable>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + Spacing.xxl }]}
@@ -549,6 +602,34 @@ export default function EventDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  scrollWrapper: { flex: 1 },
+  loaderArea: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 200,
+  },
+  backBelowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm + 2,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm + 2,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  backBelowIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  backBelowTitle: {
+    fontSize: Typography.titleCard,
+    fontWeight: Typography.titleLargeWeight,
+    letterSpacing: 0.35,
+    flex: 1,
+  },
   scroll: { flex: 1 },
   content: { padding: Spacing.lg },
   heroCard: {
