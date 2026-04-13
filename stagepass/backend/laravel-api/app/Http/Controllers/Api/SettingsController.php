@@ -35,8 +35,10 @@ class SettingsController extends Controller
      */
     public function officeCheckinConfig(Request $request): JsonResponse
     {
-        $lat = Setting::get('office_latitude');
-        $lng = Setting::get('office_longitude');
+        $latRaw = Setting::get('office_latitude');
+        $lngRaw = Setting::get('office_longitude');
+        $lat = is_string($latRaw) ? trim($latRaw) : $latRaw;
+        $lng = is_string($lngRaw) ? trim($lngRaw) : $lngRaw;
         $radius = (int) Setting::get('office_radius_m', 100);
         $start = Setting::get('office_checkin_start_time', '09:00');
         $end = Setting::get('office_checkin_end_time', '10:00');

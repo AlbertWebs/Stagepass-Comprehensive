@@ -95,6 +95,18 @@ function isSameLocalDay(a: Date, b: Date): boolean {
   );
 }
 
+/** Parse office_latitude / office_longitude from API (number or numeric string). */
+function parseOfficeCoord(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const t = value.trim().replace(/,/g, '.');
+    if (t === '') return null;
+    const n = parseFloat(t);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
 function roleLabel(role: string): string {
   const map: Record<string, string> = {
     admin: 'Admin',
@@ -169,6 +181,7 @@ export function HomeDashboardScreen({
   const welcomeChipBorder = isDark ? 'rgba(147, 197, 253, 0.34)' : themeBlue + '38';
   const dispatch = useDispatch();
   const user = useSelector((s: { auth: { user: ApiUser | null } }) => s.auth.user);
+  const authToken = useSelector((s: { auth: { token: string | null } }) => s.auth.token);
   const userName = (user?.name ?? '').trim();
   const [localHomepagePrefs, setLocalHomepagePrefs] = useState<HomepagePreferences | null>(null);
   const normalizeHomepagePrefs = (prefs?: HomepagePreferences | null): HomepagePreferences => {
@@ -273,22 +286,43 @@ export function HomeDashboardScreen({
   const dayOfWeek = currentTime.getDay();
   const isOfficeOpenToday = dayOfWeek !== 0 && dayOfWeek !== 6;
 
-  useEffect(() => {
-    api.settings.getOfficeCheckinConfig().then((s) => {
-      setOfficeCheckinWindow({
-        start: s?.office_checkin_start_time ?? '09:00',
-        end: s?.office_checkin_end_time ?? '10:00',
-      });
-      const lat = s?.office_latitude;
-      const lng = s?.office_longitude;
-      const radius = s?.office_radius_m ?? 100;
-      if (typeof lat === 'number' && typeof lng === 'number' && Number.isFinite(lat) && Number.isFinite(lng)) {
-        setOfficeConfigFromApi({ latitude: lat, longitude: lng, radiusMeters: radius > 0 ? radius : 100 });
-      } else {
-        setOfficeConfigFromApi(null);
-      }
-    }).catch(() => {});
+  const applyOfficeCheckinConfig = useCallback((s: Awaited<ReturnType<typeof api.settings.getOfficeCheckinConfig>>) => {
+    setOfficeCheckinWindow({
+      start: s?.office_checkin_start_time ?? '09:00',
+      end: s?.office_checkin_end_time ?? '10:00',
+    });
+    const lat = parseOfficeCoord(s?.office_latitude);
+    const lng = parseOfficeCoord(s?.office_longitude);
+    const rawRadius = s?.office_radius_m;
+    const radius =
+      typeof rawRadius === 'number' && Number.isFinite(rawRadius)
+        ? rawRadius
+        : parseFloat(String(rawRadius ?? '').replace(/,/g, '.')) || 100;
+    if (lat != null && lng != null) {
+      setOfficeConfigFromApi({ latitude: lat, longitude: lng, radiusMeters: radius > 0 ? radius : 100 });
+    } else {
+      setOfficeConfigFromApi(null);
+    }
   }, []);
+
+  /** Load after token exists (cold start) and when Home gains focus so admin office updates apply. */
+  useFocusEffect(
+    useCallback(() => {
+      if (!authToken) return undefined;
+      let cancelled = false;
+      api.settings
+        .getOfficeCheckinConfig()
+        .then((s) => {
+          if (!cancelled) applyOfficeCheckinConfig(s);
+        })
+        .catch(() => {
+          if (!cancelled) setOfficeConfigFromApi(null);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [authToken, applyOfficeCheckinConfig])
+  );
 
   useEffect(() => {
     let mounted = true;
