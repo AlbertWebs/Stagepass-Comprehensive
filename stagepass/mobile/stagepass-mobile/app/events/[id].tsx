@@ -61,6 +61,13 @@ function formatCheckoutTime(value: string | undefined): string {
   }
 }
 
+function formatHoursLabel(hours: number): string {
+  const totalMinutes = Math.max(0, Math.round(hours * 60));
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${h}h ${m}m`;
+}
+
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -73,6 +80,8 @@ export default function EventDetailScreen() {
   const [event, setEvent] = useState<EventType | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [clockTick, setClockTick] = useState(0);
+  const [extraNotified, setExtraNotified] = useState(false);
   const [leaderCheckInUserId, setLeaderCheckInUserId] = useState<number | null>(null);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const { checkCanCheckIn } = useGeofence();
@@ -118,8 +127,53 @@ export default function EventDetailScreen() {
   const hasPivot = myAssignment && 'pivot' in myAssignment && myAssignment.pivot;
   const checkinTime = hasPivot && (myAssignment?.pivot as { checkin_time?: string })?.checkin_time;
   const checkoutTime = hasPivot && (myAssignment?.pivot as { checkout_time?: string })?.checkout_time;
+  const pivotData = (myAssignment?.pivot ?? {}) as {
+    checkin_time?: string;
+    checkout_time?: string;
+    total_hours?: number | null;
+    extra_hours?: number | null;
+    is_sunday?: boolean;
+    is_holiday?: boolean;
+    holiday_name?: string | null;
+  };
   const checkoutTimeFormatted = formatCheckoutTime(checkoutTime as string | undefined);
   const myRoleInEvent = hasPivot && (myAssignment?.pivot as { role_in_event?: string | null })?.role_in_event;
+  useEffect(() => {
+    const interval = setInterval(() => setClockTick((v) => v + 1), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const sessionStats = useMemo(() => {
+    void clockTick;
+    if (!checkinTime) {
+      return { totalHours: 0, extraHours: 0, dayType: 'normal' as const };
+    }
+
+    const dayType = pivotData.is_holiday ? 'holiday' : (pivotData.is_sunday ? 'sunday' : 'normal');
+    if (checkoutTime) {
+      return {
+        totalHours: Number(pivotData.total_hours ?? 0),
+        extraHours: Number(pivotData.extra_hours ?? 0),
+        dayType,
+      };
+    }
+
+    const start = new Date(checkinTime).getTime();
+    const now = Date.now();
+    const minutes = Math.max(0, Math.floor((now - start) / 60000));
+    const totalHours = minutes / 60;
+    const extraHours = dayType === 'normal' ? Math.max(0, (minutes - 480) / 60) : totalHours;
+    return { totalHours, extraHours, dayType };
+  }, [checkinTime, checkoutTime, clockTick, pivotData.total_hours, pivotData.extra_hours, pivotData.is_holiday, pivotData.is_sunday]);
+
+  useEffect(() => {
+    if (extraNotified || checkoutTime || !checkinTime) return;
+    if (sessionStats.extraHours > 0) {
+      setExtraNotified(true);
+      Alert.alert('Extra hours', 'Your extra hours have started.');
+    }
+  }, [checkinTime, checkoutTime, sessionStats.extraHours, extraNotified]);
+
   const teamLeader = event?.team_leader ?? event?.teamLeader;
 
   const canManageEventCrew = useMemo(() => {
@@ -208,6 +262,23 @@ export default function EventDetailScreen() {
       await api.attendance.checkout(event.id);
       const updated = await api.events.get(event.id);
       setEvent(updated);
+      if ((role === 'team_leader' || role === 'admin') && canManageEventCrew) {
+        Alert.alert(
+          'Done for the Day?',
+          'Are you done for the day?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Done for the Day',
+              onPress: () =>
+                router.push({
+                  pathname: '/admin/events/[id]/operations',
+                  params: { id: String(event.id) },
+                }),
+            },
+          ]
+        );
+      }
     } catch (e: unknown) {
       Alert.alert('Check-out failed', e instanceof Error ? e.message : 'Try again.');
     } finally {
@@ -291,7 +362,7 @@ export default function EventDetailScreen() {
     );
   }
 
-  const isEventEnded = event.status === 'completed' || event.status === 'closed';
+  const isEventEnded = event.status === 'completed' || event.status === 'closed' || event.status === 'done_for_the_day';
   const locationLabel = event.location_name ?? 'No location';
   const timeLabel = formatEventTime(event.start_time);
   const dateLabel = formatEventDate(event.date);
@@ -515,6 +586,9 @@ export default function EventDetailScreen() {
                   <ThemedText style={[styles.checkedOutText, { color: colors.textSecondary }]}>
                     {checkoutTimeFormatted ? `Checked out at ${checkoutTimeFormatted}` : 'You’re checked out'}
                   </ThemedText>
+                  <ThemedText style={[styles.checkedOutText, { color: colors.textSecondary }]}>
+                    Total: {formatHoursLabel(sessionStats.totalHours)} · Extra: {formatHoursLabel(sessionStats.extraHours)} · {sessionStats.dayType === 'holiday' ? (pivotData.holiday_name || 'Holiday') : (sessionStats.dayType === 'sunday' ? 'Sunday' : 'Normal day')}
+                  </ThemedText>
                 </View>
               </View>
             ) : (
@@ -533,6 +607,15 @@ export default function EventDetailScreen() {
               </Pressable>
             )}
           </View>
+          {checkinTime && !checkoutTime ? (
+            <View style={[styles.liveHoursCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <ThemedText style={[styles.liveHoursTitle, { color: colors.text }]}>Active session</ThemedText>
+              <ThemedText style={[styles.liveHoursValue, { color: colors.textSecondary }]}>Time worked: {formatHoursLabel(sessionStats.totalHours)}</ThemedText>
+              <ThemedText style={[styles.liveHoursValue, { color: sessionStats.extraHours > 0 ? '#f97316' : colors.textSecondary }]}>
+                Extra hours: {formatHoursLabel(sessionStats.extraHours)}
+              </ThemedText>
+            </View>
+          ) : null}
 
           {canManageEventCrew && !isEventEnded && crewAttendanceRows.length > 0 ? (
             <>
@@ -948,5 +1031,21 @@ const styles = StyleSheet.create({
   },
   checkedOutText: {
     fontSize: Typography.bodySmall,
+  },
+  liveHoursCard: {
+    width: '100%',
+    borderWidth: 1,
+    borderRadius: Cards.borderRadius,
+    padding: Spacing.md,
+    marginBottom: Spacing.lg,
+  },
+  liveHoursTitle: {
+    fontSize: Typography.body,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  liveHoursValue: {
+    fontSize: Typography.bodySmall,
+    marginTop: 2,
   },
 });

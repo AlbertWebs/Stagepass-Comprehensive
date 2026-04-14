@@ -37,6 +37,18 @@ export default function EventOperations() {
   const [checkinEventId, setCheckinEventId] = useState('');
   const [checkinUserId, setCheckinUserId] = useState('');
   const [checkinLoading, setCheckinLoading] = useState(false);
+  const [pauseEventId, setPauseEventId] = useState('');
+  const [pauseUserId, setPauseUserId] = useState('');
+  const [pauseReason, setPauseReason] = useState('');
+  const [pauseSaving, setPauseSaving] = useState(false);
+  const [transportEventId, setTransportEventId] = useState('');
+  const [transportUserId, setTransportUserId] = useState('');
+  const [transportType, setTransportType] = useState<'organization' | 'cab' | 'none'>('organization');
+  const [transportAmount, setTransportAmount] = useState('');
+  const [transportSaving, setTransportSaving] = useState(false);
+  const [closeEventId, setCloseEventId] = useState('');
+  const [closeComment, setCloseComment] = useState('');
+  const [closing, setClosing] = useState(false);
 
   // Add crew state
   const [addCrewEventId, setAddCrewEventId] = useState('');
@@ -84,6 +96,10 @@ export default function EventOperations() {
   const checkinEventCrewNotCheckedIn = (checkinEvent?.crew ?? []).filter(
     (u) => !(u as CrewMember).pivot?.checkin_time
   );
+  const pauseEvent = pauseEventId ? events.find((e) => e.id === Number(pauseEventId)) : null;
+  const pauseCrew = (pauseEvent?.crew ?? []).filter((u) => (u as CrewMember).pivot?.checkin_time && !(u as CrewMember).pivot?.checkout_time);
+  const transportEvent = transportEventId ? events.find((e) => e.id === Number(transportEventId)) : null;
+  const transportCrew = transportEvent?.crew ?? [];
 
   const handleTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,6 +164,72 @@ export default function EventOperations() {
       setError(err instanceof Error ? err.message : 'Failed to add crew.');
     } finally {
       setAddCrewSaving(false);
+    }
+  };
+
+  const handlePauseResume = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const eventId = Number(pauseEventId);
+    const userId = Number(pauseUserId);
+    if (!eventId || !userId) return;
+    setPauseSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const member = pauseCrew.find((u) => u.id === userId) as CrewMember | undefined;
+      const isPaused = Boolean(member?.pivot && (member.pivot as { is_paused?: boolean }).is_paused);
+      if (isPaused) await api.events.resumeCrew(eventId, userId);
+      else await api.events.pauseCrew(eventId, userId, pauseReason || undefined);
+      setSuccess(isPaused ? 'Crew resumed successfully.' : 'Crew paused successfully.');
+      setPauseReason('');
+      fetchData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Pause/resume failed.');
+    } finally {
+      setPauseSaving(false);
+    }
+  };
+
+  const handleTransport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const eventId = Number(transportEventId);
+    const userId = Number(transportUserId);
+    if (!eventId || !userId) return;
+    setTransportSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await api.events.recordCrewTransport(eventId, userId, {
+        transport_type: transportType,
+        transport_amount: transportType === 'cab' && transportAmount !== '' ? Number(transportAmount) : null,
+      });
+      setSuccess('Transport recorded successfully.');
+      setTransportAmount('');
+      fetchData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Transport record failed.');
+    } finally {
+      setTransportSaving(false);
+    }
+  };
+
+  const handleDoneForDay = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const eventId = Number(closeEventId);
+    if (!eventId || !closeComment.trim()) return;
+    setClosing(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await api.events.doneForDay(eventId, closeComment.trim());
+      setSuccess('Event marked as done for the day.');
+      setCloseComment('');
+      setCloseEventId('');
+      fetchData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to close event for the day.');
+    } finally {
+      setClosing(false);
     }
   };
 
@@ -311,6 +393,93 @@ export default function EventOperations() {
               className="btn-brand disabled:opacity-50"
             >
               {checkinLoading ? 'Saving…' : 'Mark as arrived'}
+            </button>
+          </form>
+        </div>
+      </SectionCard>
+
+      <SectionCard sectionLabel="Pause / resume crew">
+        <div className="p-6">
+          <form onSubmit={handlePauseResume} className="flex flex-wrap items-end gap-4">
+            <div className="form-field min-w-[200px]">
+              <label className="form-label">Event</label>
+              <select className="form-select" value={pauseEventId} onChange={(e) => { setPauseEventId(e.target.value); setPauseUserId(''); }} required>
+                <option value="">Select event</option>
+                {activeEvents.map((e) => <option key={e.id} value={e.id}>{e.name} – {e.date}</option>)}
+              </select>
+            </div>
+            <div className="form-field min-w-[220px]">
+              <label className="form-label">Crew member</label>
+              <select className="form-select" value={pauseUserId} onChange={(e) => setPauseUserId(e.target.value)} required>
+                <option value="">Select crew</option>
+                {pauseCrew.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+            <div className="form-field min-w-[240px]">
+              <label className="form-label form-label-optional">Reason (optional)</label>
+              <input className="form-input" value={pauseReason} onChange={(e) => setPauseReason(e.target.value)} placeholder="Break / delay / temporary absence" />
+            </div>
+            <button type="submit" disabled={pauseSaving || !pauseEventId || !pauseUserId} className="btn-brand disabled:opacity-50">
+              {pauseSaving ? 'Saving…' : 'Pause / Resume'}
+            </button>
+          </form>
+        </div>
+      </SectionCard>
+
+      <SectionCard sectionLabel="Transport tracking">
+        <div className="p-6">
+          <form onSubmit={handleTransport} className="flex flex-wrap items-end gap-4">
+            <div className="form-field min-w-[200px]">
+              <label className="form-label">Event</label>
+              <select className="form-select" value={transportEventId} onChange={(e) => { setTransportEventId(e.target.value); setTransportUserId(''); }} required>
+                <option value="">Select event</option>
+                {activeEvents.map((e) => <option key={e.id} value={e.id}>{e.name} – {e.date}</option>)}
+              </select>
+            </div>
+            <div className="form-field min-w-[200px]">
+              <label className="form-label">Crew member</label>
+              <select className="form-select" value={transportUserId} onChange={(e) => setTransportUserId(e.target.value)} required>
+                <option value="">Select crew</option>
+                {transportCrew.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+            <div className="form-field min-w-[180px]">
+              <label className="form-label">Transport type</label>
+              <select className="form-select" value={transportType} onChange={(e) => setTransportType(e.target.value as 'organization' | 'cab' | 'none')}>
+                <option value="organization">Organization transport</option>
+                <option value="cab">Cab / Taxi</option>
+                <option value="none">No transport</option>
+              </select>
+            </div>
+            {transportType === 'cab' && (
+              <div className="form-field min-w-[140px]">
+                <label className="form-label">Amount (KSh)</label>
+                <input className="form-input" type="number" min="0" step="0.01" value={transportAmount} onChange={(e) => setTransportAmount(e.target.value)} required />
+              </div>
+            )}
+            <button type="submit" disabled={transportSaving || !transportEventId || !transportUserId} className="btn-brand disabled:opacity-50">
+              {transportSaving ? 'Saving…' : 'Record transport'}
+            </button>
+          </form>
+        </div>
+      </SectionCard>
+
+      <SectionCard sectionLabel="Done for the day">
+        <div className="p-6">
+          <form onSubmit={handleDoneForDay} className="flex flex-wrap items-end gap-4">
+            <div className="form-field min-w-[220px]">
+              <label className="form-label">Event</label>
+              <select className="form-select" value={closeEventId} onChange={(e) => setCloseEventId(e.target.value)} required>
+                <option value="">Select event</option>
+                {activeEvents.map((e) => <option key={e.id} value={e.id}>{e.name} – {e.date}</option>)}
+              </select>
+            </div>
+            <div className="form-field min-w-[320px] flex-1">
+              <label className="form-label">Leave a comment about today&apos;s work</label>
+              <input className="form-input" value={closeComment} onChange={(e) => setCloseComment(e.target.value)} required />
+            </div>
+            <button type="submit" disabled={closing || !closeEventId || !closeComment.trim()} className="btn-brand disabled:opacity-50">
+              {closing ? 'Closing…' : 'Confirm done'}
             </button>
           </form>
         </div>

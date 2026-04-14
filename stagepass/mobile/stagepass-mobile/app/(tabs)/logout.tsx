@@ -11,6 +11,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing, themeBlue } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { api } from '~/services/api';
+import { getBiometricLoginEnabled, hasBiometricStoredToken } from '~/store/biometricLogin';
 import { logout } from '~/store/authSlice';
 import { clearStoredToken } from '~/store/persistAuth';
 
@@ -24,7 +25,13 @@ export default function LogoutScreen() {
     let mounted = true;
     (async () => {
       try {
-        await api.auth.logout();
+        const biometricEnabled = await getBiometricLoginEnabled();
+        const hasBiometricToken = await hasBiometricStoredToken();
+        // Keep biometric session usable after local logout by avoiding server-side token revocation.
+        // If biometric is not configured, perform normal API logout.
+        if (!(biometricEnabled && hasBiometricToken)) {
+          await api.auth.logout();
+        }
       } catch {
         // ignore
       }

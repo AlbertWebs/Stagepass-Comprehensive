@@ -57,6 +57,7 @@ export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [firstName, setFirstName] = useState<string | null>(null);
   const [pin, setPin] = useState('');
+  const [showPin, setShowPin] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
   const [failedAttempts, setFailedAttempts] = useState(0);
@@ -405,12 +406,26 @@ export default function LoginScreen() {
                   placeholderTextColor={colors.placeholder}
                   value={pin}
                   onChangeText={(text) => setPin(text.replace(/\D/g, '').slice(0, PIN_LENGTH))}
-                  secureTextEntry
+                  secureTextEntry={!showPin}
                   editable={!loading && !isLocked}
                   keyboardType="number-pad"
                   maxLength={PIN_LENGTH}
                   style={[styles.input, styles.pinInput, { color: colors.text }]}
                 />
+                <Pressable
+                  onPress={() => setShowPin((v) => !v)}
+                  disabled={loading || isLocked}
+                  style={({ pressed }) => [styles.pinToggleBtn, { opacity: pressed ? NAV_PRESSED_OPACITY : 1 }]}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={showPin ? 'Hide PIN' : 'Show PIN'}
+                >
+                  <Ionicons
+                    name={showPin ? 'eye-off-outline' : 'eye-outline'}
+                    size={Icons.standard}
+                    color={accentColor}
+                  />
+                </Pressable>
               </View>
             </View>
 
@@ -531,13 +546,6 @@ export default function LoginScreen() {
             )}
           </View>
 
-          {/* Footer */}
-          <View style={styles.footer}>
-            <ThemedText type="bodySmall" style={[styles.footerText, { color: subtitleColor }]}>New to Stagepass AV?</ThemedText>
-            <Pressable onPress={() => handleNav(() => router.push('/forgot-password'))} hitSlop={8} style={({ pressed }) => ({ opacity: pressed ? NAV_PRESSED_OPACITY : 1 })}>
-              <ThemedText type="link" style={[styles.footerLink, { color: accentColor }]}>Request Access</ThemedText>
-            </Pressable>
-          </View>
           <View style={styles.footerIcons}>
             <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
               <Ionicons name="help-circle-outline" size={Icons.header} color={subtitleColor} />
@@ -631,6 +639,13 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
   },
   pinInput: { letterSpacing: 4 },
+  pinToggleBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+  },
   lockoutText: {
     textAlign: 'center',
     marginTop: Spacing.lg,

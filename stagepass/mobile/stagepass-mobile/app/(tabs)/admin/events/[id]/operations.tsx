@@ -71,7 +71,7 @@ export default function AdminEventOperationsScreen() {
   const [ending, setEnding] = useState(false);
 
   const eventId = id ? Number(id) : 0;
-  const isEnded = event?.status === 'completed' || event?.status === 'closed';
+  const isEnded = event?.status === 'completed' || event?.status === 'closed' || event?.status === 'done_for_the_day';
   const crewCount = event?.crew?.length ?? 0;
 
   const loadEvent = useCallback(async () => {
@@ -93,12 +93,12 @@ export default function AdminEventOperationsScreen() {
   const handleEndEvent = async () => {
     const comment = endComment.trim();
     if (!comment) {
-      Alert.alert('Required', 'Please enter an end comment.');
+      Alert.alert('Required', "Leave a comment about today's work.");
       return;
     }
     setEnding(true);
     try {
-      await api.events.end(eventId, { end_comment: comment });
+      await api.events.doneForDay(eventId, comment);
       await loadEvent();
       setEndModalVisible(false);
       setEndComment('');
@@ -310,11 +310,11 @@ export default function AdminEventOperationsScreen() {
                 <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>End event</ThemedText>
               </View>
               <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>
-                Mark this event as completed. Crew will no longer be able to check in.
+                Mark this event as done for the day. Crew will no longer be able to check in.
               </ThemedText>
               <View style={styles.endDeleteRow}>
                 <StagePassButton
-                  title="End event"
+                  title="Done for the day"
                   variant="outline"
                   onPress={() => setEndModalVisible(true)}
                   style={[styles.endDeleteBtn, { borderColor: themeBlue }]}
@@ -353,7 +353,7 @@ export default function AdminEventOperationsScreen() {
           <Pressable style={[styles.modalContent, { backgroundColor: colors.background, borderColor: themeYellow }]} onPress={(e) => e.stopPropagation()}>
             <View style={[styles.modalTitleStrip, { backgroundColor: themeBlue }]}>
               <View style={[styles.modalTitleAccent, { backgroundColor: themeYellow }]} />
-              <ThemedText style={styles.modalTitle}>End event</ThemedText>
+              <ThemedText style={styles.modalTitle}>Done for the day</ThemedText>
             </View>
             <View style={styles.modalBody}>
               <ThemedText style={[styles.modalSub, { color: colors.textSecondary }]}>
@@ -362,7 +362,7 @@ export default function AdminEventOperationsScreen() {
               <StagePassInput
                 value={endComment}
                 onChangeText={setEndComment}
-                placeholder="End comment"
+                placeholder="Leave a comment about today's work"
                 multiline
                 numberOfLines={3}
                 style={styles.input}
@@ -376,7 +376,7 @@ export default function AdminEventOperationsScreen() {
                 style={styles.modalBtn}
               />
               <StagePassButton
-                title={ending ? 'Ending…' : 'End event'}
+                title={ending ? 'Closing…' : 'Confirm done'}
                 onPress={handleEndEvent}
                 disabled={ending || !endComment.trim()}
                 style={[styles.modalBtn, { backgroundColor: themeYellow }]}

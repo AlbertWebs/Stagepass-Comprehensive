@@ -16,12 +16,14 @@ class Event extends Model
     public const STATUS_ACTIVE = 'active';
     public const STATUS_COMPLETED = 'completed';
     public const STATUS_CLOSED = 'closed';
+    public const STATUS_DONE_FOR_DAY = 'done_for_the_day';
 
     protected $fillable = [
         'name', 'description', 'date', 'end_date', 'start_time', 'expected_end_time',
         'location_name', 'latitude', 'longitude', 'geofence_radius', 'daily_allowance',
         'team_leader_id', 'client_id', 'status', 'created_by_id',
         'ended_at', 'ended_by_id', 'end_comment',
+        'closed_at', 'closed_by', 'closing_comment',
     ];
 
     protected function casts(): array
@@ -32,6 +34,7 @@ class Event extends Model
             'geofence_radius' => 'integer',
             'daily_allowance' => 'decimal:2',
             'ended_at' => 'datetime',
+            'closed_at' => 'datetime',
         ];
     }
 
@@ -94,10 +97,36 @@ class Event extends Model
         return $this->belongsTo(User::class, 'ended_by_id');
     }
 
+    public function closedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'closed_by');
+    }
+
     public function crew(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'event_user')
-            ->withPivot('role_in_event', 'checkin_time', 'checkout_time', 'total_hours', 'checkin_latitude', 'checkin_longitude')
+            ->withPivot(
+                'role_in_event',
+                'checkin_time',
+                'checkout_time',
+                'total_hours',
+                'extra_hours',
+                'is_sunday',
+                'is_holiday',
+                'holiday_name',
+                'checkin_latitude',
+                'checkin_longitude',
+                'is_paused',
+                'pause_start_time',
+                'pause_end_time',
+                'pause_duration',
+                'paused_by',
+                'pause_reason',
+                'transport_type',
+                'transport_amount',
+                'transport_recorded_by',
+                'transport_recorded_at'
+            )
             ->withTimestamps();
     }
 

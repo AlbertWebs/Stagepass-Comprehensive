@@ -31,6 +31,7 @@ export default function ManageCheckInScreen() {
   const [crewStatus, setCrewStatus] = useState<CrewStatusItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkingInId, setCheckingInId] = useState<number | null>(null);
+  const [savingStatusId, setSavingStatusId] = useState<number | null>(null);
 
   const loadData = useCallback(async () => {
     if (!eventId) return;
@@ -93,6 +94,71 @@ export default function ManageCheckInScreen() {
       Alert.alert('Check-in failed', e instanceof Error ? e.message : 'Could not check in crew member.');
     } finally {
       setCheckingInId(null);
+    }
+  };
+
+  const handlePauseResume = async (member: CrewStatusItem) => {
+    if (!eventId) return;
+    setSavingStatusId(member.user_id);
+    try {
+      if (member.is_paused) {
+        await api.events.resumeCrew(eventId, member.user_id);
+        Alert.alert('Success', 'Crew resumed successfully');
+      } else {
+        await api.events.pauseCrew(eventId, member.user_id);
+        Alert.alert('Success', 'Crew paused successfully');
+      }
+      await loadData();
+    } catch (e) {
+      Alert.alert('Action failed', e instanceof Error ? e.message : 'Could not update crew status.');
+    } finally {
+      setSavingStatusId(null);
+    }
+  };
+
+  const handleTransport = async (member: CrewStatusItem, type: 'organization' | 'cab' | 'none') => {
+    if (!eventId) return;
+    let amount: number | null = null;
+    if (type === 'cab') {
+      Alert.prompt(
+        'Cab amount',
+        'Enter transport amount (KSh)',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Save',
+            onPress: async (value) => {
+              const parsed = Number(value ?? '');
+              if (!Number.isFinite(parsed) || parsed < 0) {
+                Alert.alert('Invalid amount', 'Please enter a valid amount.');
+                return;
+              }
+              setSavingStatusId(member.user_id);
+              try {
+                await api.events.recordCrewTransport(eventId, member.user_id, { transport_type: 'cab', transport_amount: parsed });
+                Alert.alert('Success', 'Transport recorded successfully');
+                await loadData();
+              } catch (e) {
+                Alert.alert('Transport failed', e instanceof Error ? e.message : 'Could not record transport.');
+              } finally {
+                setSavingStatusId(null);
+              }
+            },
+          },
+        ],
+        'plain-text'
+      );
+      return;
+    }
+    setSavingStatusId(member.user_id);
+    try {
+      await api.events.recordCrewTransport(eventId, member.user_id, { transport_type: type, transport_amount: amount });
+      Alert.alert('Success', 'Transport recorded successfully');
+      await loadData();
+    } catch (e) {
+      Alert.alert('Transport failed', e instanceof Error ? e.message : 'Could not record transport.');
+    } finally {
+      setSavingStatusId(null);
     }
   };
 
@@ -184,7 +250,7 @@ export default function ManageCheckInScreen() {
               <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 <View style={styles.sectionHeader}>
                   <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
-                  <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Checked in</ThemedText>
+                  <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Active / paused</ThemedText>
                 </View>
                 {checkedIn.map((member) => (
                   <View
@@ -198,10 +264,35 @@ export default function ManageCheckInScreen() {
                           {member.checkin_time}
                         </ThemedText>
                       ) : null}
+                      {member.transport_type ? (
+                        <ThemedText style={[styles.statusLabel, { color: colors.textSecondary }]}>
+                          Transport: {member.transport_type}{member.transport_amount != null ? ` · KSh ${member.transport_amount}` : ''}
+                        </ThemedText>
+                      ) : null}
                     </View>
-                    <View style={[styles.badge, { backgroundColor: themeYellow + '22' }]}>
-                      <Ionicons name="checkmark-circle" size={18} color={themeYellow} />
-                      <ThemedText style={[styles.badgeText, { color: themeYellow }]}>In</ThemedText>
+                    <View style={styles.actionCol}>
+                      <View style={[styles.badge, { backgroundColor: member.is_paused ? '#f9731622' : '#22c55e22' }]}>
+                        <Ionicons name="checkmark-circle" size={18} color={member.is_paused ? '#f97316' : '#22c55e'} />
+                        <ThemedText style={[styles.badgeText, { color: member.is_paused ? '#f97316' : '#22c55e' }]}>
+                          {member.is_paused ? 'Paused' : 'Active'}
+                        </ThemedText>
+                      </View>
+                      {!isEnded && (
+                        <Pressable
+                          onPress={() => handlePauseResume(member)}
+                          disabled={savingStatusId === member.user_id}
+                          style={({ pressed }) => [styles.smallBtn, { borderColor: themeYellow }, pressed && { opacity: 0.8 }]}
+                        >
+                          {savingStatusId === member.user_id ? <ActivityIndicator size="small" color={themeYellow} /> : (
+                            <ThemedText style={[styles.smallBtnText, { color: themeYellow }]}>{member.is_paused ? 'Resume' : 'Pause'}</ThemedText>
+                          )}
+                        </Pressable>
+                      )}
+                      <View style={styles.transportRow}>
+                        <Pressable onPress={() => handleTransport(member, 'organization')} style={styles.transportChip}><ThemedText style={styles.transportChipText}>Org</ThemedText></Pressable>
+                        <Pressable onPress={() => handleTransport(member, 'cab')} style={styles.transportChip}><ThemedText style={styles.transportChipText}>Cab</ThemedText></Pressable>
+                        <Pressable onPress={() => handleTransport(member, 'none')} style={styles.transportChip}><ThemedText style={styles.transportChipText}>None</ThemedText></Pressable>
+                      </View>
                     </View>
                   </View>
                 ))}
@@ -289,6 +380,23 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
   },
   badgeText: { fontSize: 12, fontWeight: '700' },
+  actionCol: { alignItems: 'flex-end', gap: 6 },
+  smallBtn: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+  },
+  smallBtnText: { fontSize: 12, fontWeight: '700' },
+  transportRow: { flexDirection: 'row', gap: 6 },
+  transportChip: {
+    borderWidth: 1,
+    borderColor: themeBlue,
+    borderRadius: BorderRadius.sm,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+  },
+  transportChipText: { fontSize: 11, color: themeBlue, fontWeight: '600' },
   backBtn: { alignSelf: 'center', paddingVertical: Spacing.md },
   backBtnText: { fontSize: 16, fontWeight: '600' },
 });

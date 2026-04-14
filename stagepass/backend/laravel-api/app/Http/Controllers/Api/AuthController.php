@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\AttendanceOvertimeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -16,6 +17,10 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    public function __construct(
+        private AttendanceOvertimeService $overtime
+    ) {}
+
     private const DEFAULT_HOMEPAGE_PREFERENCES = [
         'visibility' => [
             'upcoming_events' => true,
@@ -139,6 +144,13 @@ class AuthController extends Controller
         $officeCheckinTime = $officeCheckin?->checkin_time?->toIso8601String();
         $officeCheckedOutToday = $officeCheckin?->checkout_time !== null;
         $officeCheckoutTime = $officeCheckin?->checkout_time?->toIso8601String();
+        $officeLiveTotals = null;
+        if ($officeCheckin?->checkin_time) {
+            $officeLiveTotals = $this->overtime->calculate(
+                $officeCheckin->checkin_time,
+                $officeCheckin->checkout_time ?: now(config('app.timezone', 'Africa/Nairobi'))
+            );
+        }
 
         $hasApprovedTimeOffToday = \App\Models\TimeOffRequest::where('user_id', $user->id)
             ->where('status', \App\Models\TimeOffRequest::STATUS_APPROVED)
@@ -151,6 +163,12 @@ class AuthController extends Controller
         $payload['office_checkin_time'] = $officeCheckinTime;
         $payload['office_checked_out_today'] = $officeCheckedOutToday;
         $payload['office_checkout_time'] = $officeCheckoutTime;
+        $payload['office_total_hours'] = $officeLiveTotals['total_hours'] ?? null;
+        $payload['office_extra_hours'] = $officeLiveTotals['extra_hours'] ?? null;
+        $payload['office_is_sunday'] = $officeLiveTotals['is_sunday'] ?? false;
+        $payload['office_is_holiday'] = $officeLiveTotals['is_holiday'] ?? false;
+        $payload['office_holiday_name'] = $officeLiveTotals['holiday_name'] ?? null;
+        $payload['office_day_type'] = $officeLiveTotals['day_type'] ?? null;
         $payload['has_approved_time_off_today'] = $hasApprovedTimeOffToday;
         $payload['homepage_preferences'] = $this->normalizeHomepagePreferences($user->homepage_preferences);
         $payload['allow_biometric_mobile_login'] = $this->allowBiometricMobileLogin();

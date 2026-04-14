@@ -7,7 +7,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Platform,
@@ -117,6 +117,13 @@ function roleLabel(role: string): string {
     crew: 'Crew',
   };
   return map[role] ?? role;
+}
+
+function formatHoursLabel(hours?: number | null): string {
+  const mins = Math.max(0, Math.round(Number(hours ?? 0) * 60));
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${h}h ${m}m`;
 }
 
 function toLocalDateString(date: Date): string {
@@ -437,6 +444,14 @@ export function HomeDashboardScreen({
         }
       })()
     : '';
+  const officeExtraHours = Number(user?.office_extra_hours ?? 0);
+  const officeTotalHours = Number(user?.office_total_hours ?? 0);
+  const officeDayTypeLabel = user?.office_day_type === 'holiday'
+    ? (user?.office_holiday_name || 'Holiday')
+    : user?.office_day_type === 'sunday'
+      ? 'Sunday'
+      : 'Normal day';
+  const officeExtraAlertShownRef = useRef(false);
 
   const recentCheckinActivities = useRecentCheckinActivities(user, eventToday ?? null, optimisticOfficeCheckinTime);
 
@@ -714,6 +729,17 @@ export function HomeDashboardScreen({
       setOptimisticOfficeCheckinTime(null);
     }
   }, [user?.office_checked_out_today, user?.office_checkin_time]);
+
+  useEffect(() => {
+    if (!officeCheckedInToday || officeCheckedOutToday) {
+      officeExtraAlertShownRef.current = false;
+      return;
+    }
+    if (!officeExtraAlertShownRef.current && officeExtraHours > 0) {
+      officeExtraAlertShownRef.current = true;
+      Alert.alert('Extra hours', 'Your extra hours have started.');
+    }
+  }, [officeCheckedInToday, officeCheckedOutToday, officeExtraHours]);
 
   useEffect(() => {
     if (!hasEventCheckedOut) setDismissedCheckedOutCard(false);
@@ -1097,8 +1123,13 @@ export function HomeDashboardScreen({
                   {officeCheckedOutToday ? (
                     <View style={styles.dailyCheckInSecondaryRow}>
                       <Ionicons name="checkmark-done-circle" size={Icons.standard} color={StatusColors.checkedIn} />
-                      <ThemedText style={[styles.dailyCheckInSecondaryLabel, { color: colors.textSecondary }]}>Daily check-in done</ThemedText>
-                      <ThemedText style={[styles.dailyCheckInSecondaryTime, { color: colors.textSecondary }]}>{officeCheckinTimeStr && officeCheckoutTimeStr ? `${officeCheckinTimeStr} – ${officeCheckoutTimeStr}` : 'Done'}</ThemedText>
+                      <View style={styles.dailyCheckInSecondaryInfo}>
+                        <ThemedText style={[styles.dailyCheckInSecondaryLabel, { color: colors.textSecondary }]}>Daily check-in done</ThemedText>
+                        <ThemedText style={[styles.dailyCheckInSecondaryTime, { color: colors.textSecondary }]}>{officeCheckinTimeStr && officeCheckoutTimeStr ? `${officeCheckinTimeStr} – ${officeCheckoutTimeStr}` : 'Done'}</ThemedText>
+                        <ThemedText style={[styles.dailyCheckInSecondaryTime, { color: officeExtraHours > 0 ? '#f97316' : colors.textSecondary }]}>
+                          Worked {formatHoursLabel(officeTotalHours)} · Extra {formatHoursLabel(officeExtraHours)} · {officeDayTypeLabel}
+                        </ThemedText>
+                      </View>
                     </View>
                   ) : (
                     <Pressable
@@ -1705,10 +1736,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
   },
+  dailyCheckInSecondaryInfo: {
+    flex: 1,
+  },
   dailyCheckInSecondaryLabel: {
     fontSize: Typography.buttonText,
     fontWeight: Typography.buttonTextWeight,
-    flex: 1,
   },
   dailyCheckInSecondaryTime: {
     fontSize: Typography.bodySmall,

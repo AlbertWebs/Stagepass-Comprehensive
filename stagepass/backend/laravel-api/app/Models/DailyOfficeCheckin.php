@@ -12,6 +12,11 @@ class DailyOfficeCheckin extends Model
         'date',
         'checkin_time',
         'checkout_time',
+        'total_hours',
+        'extra_hours',
+        'is_sunday',
+        'is_holiday',
+        'holiday_name',
         'latitude',
         'longitude',
     ];
@@ -22,6 +27,10 @@ class DailyOfficeCheckin extends Model
             'date' => 'date',
             'checkin_time' => 'datetime',
             'checkout_time' => 'datetime',
+            'total_hours' => 'decimal:2',
+            'extra_hours' => 'decimal:2',
+            'is_sunday' => 'boolean',
+            'is_holiday' => 'boolean',
             'latitude' => 'float',
             'longitude' => 'float',
         ];

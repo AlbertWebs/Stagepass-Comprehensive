@@ -61,18 +61,6 @@ class DatabaseSeeder extends Seeder
             }
         }
 
-        $testUser = User::firstOrCreate(
-            ['email' => 'test@example.com'],
-            [
-                'name' => 'Test User',
-                'username' => 'testuser',
-                'password' => Hash::make('password'),
-                'pin' => '1234',
-                'remember_token' => Str::random(10),
-            ]
-        );
-        if (! $testUser->username) {
-            $testUser->update(['username' => 'testuser', 'pin' => '1234']);
-        }
+        $this->call(ResetDemoCredentialsSeeder::class);
     }
 }

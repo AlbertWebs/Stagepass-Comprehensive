@@ -8,6 +8,7 @@ use App\Models\Event;
 use App\Models\EventMeal;
 use App\Models\EventUser;
 use App\Models\Setting;
+use App\Services\AttendanceOvertimeService;
 use App\Services\GeofenceService;
 use Carbon\Carbon;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -18,7 +19,8 @@ use Illuminate\Support\Facades\Log;
 class AttendanceController extends Controller
 {
     public function __construct(
-        private GeofenceService $geofence
+        private GeofenceService $geofence,
+        private AttendanceOvertimeService $overtime
     ) {}
 
     /**
@@ -93,10 +95,16 @@ class AttendanceController extends Controller
         }
 
         try {
+            $calc = $this->overtime->calculate($now, $now, $tz);
             $checkin = DailyOfficeCheckin::create([
                 'user_id' => $user->id,
                 'date' => $today,
                 'checkin_time' => $now,
+                'total_hours' => $calc['total_hours'],
+                'extra_hours' => $calc['extra_hours'],
+                'is_sunday' => $calc['is_sunday'],
+                'is_holiday' => $calc['is_holiday'],
+                'holiday_name' => $calc['holiday_name'],
                 'latitude' => (float) $request->latitude,
                 'longitude' => (float) $request->longitude,
             ]);
@@ -123,6 +131,12 @@ class AttendanceController extends Controller
         $payload = [
             'message' => 'Checked in successfully',
             'checkin_time' => $checkin->checkin_time->toIso8601String(),
+            'total_hours' => (float) $checkin->total_hours,
+            'extra_hours' => (float) $checkin->extra_hours,
+            'is_sunday' => (bool) $checkin->is_sunday,
+            'is_holiday' => (bool) $checkin->is_holiday,
+            'holiday_name' => $checkin->holiday_name,
+            'day_type' => $checkin->is_holiday ? 'holiday' : ($checkin->is_sunday ? 'sunday' : 'normal'),
         ];
         if (! $withinWindow) {
             $payload['outside_window'] = true;
@@ -156,12 +170,22 @@ class AttendanceController extends Controller
             ], 422);
         }
 
-        $record->checkout_time = Carbon::now($tz);
+        $checkout = Carbon::now($tz);
+        $calc = $this->overtime->calculate($record->checkin_time, $checkout, $tz);
+        $record->checkout_time = $checkout;
+        $record->total_hours = $calc['total_hours'];
+        $record->extra_hours = $calc['extra_hours'];
         $record->save();
 
         return response()->json([
             'message' => 'Checked out successfully',
             'checkout_time' => $record->checkout_time->toIso8601String(),
+            'total_hours' => (float) $record->total_hours,
+            'extra_hours' => (float) $record->extra_hours,
+            'is_sunday' => (bool) $record->is_sunday,
+            'is_holiday' => (bool) $record->is_holiday,
+            'holiday_name' => $record->holiday_name,
+            'day_type' => $record->is_holiday ? 'holiday' : ($record->is_sunday ? 'sunday' : 'normal'),
         ]);
     }
 
@@ -176,7 +200,7 @@ class AttendanceController extends Controller
         $event = Event::findOrFail($request->event_id);
         $user = $request->user();
 
-        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED], true)) {
+        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED, Event::STATUS_DONE_FOR_DAY], true)) {
             return response()->json(['message' => 'Cannot check in to an event that is already ended.'], 422);
         }
 
@@ -213,8 +237,14 @@ class AttendanceController extends Controller
         }
 
         $now = now();
+        $calc = $this->overtime->calculate($now, $now);
         $assignment->update([
             'checkin_time' => $now,
+            'total_hours' => $calc['total_hours'],
+            'extra_hours' => $calc['extra_hours'],
+            'is_sunday' => $calc['is_sunday'],
+            'is_holiday' => $calc['is_holiday'],
+            'holiday_name' => $calc['holiday_name'],
             'checkin_latitude' => (float) $request->latitude,
             'checkin_longitude' => (float) $request->longitude,
         ]);
@@ -224,6 +254,12 @@ class AttendanceController extends Controller
         return response()->json([
             'message' => 'Checked in successfully',
             'checkin_time' => $now->toIso8601String(),
+            'total_hours' => $calc['total_hours'],
+            'extra_hours' => $calc['extra_hours'],
+            'is_sunday' => $calc['is_sunday'],
+            'is_holiday' => $calc['is_holiday'],
+            'holiday_name' => $calc['holiday_name'],
+            'day_type' => $calc['day_type'],
         ]);
     }
 
@@ -323,7 +359,7 @@ class AttendanceController extends Controller
             ->firstOrFail();
 
         $event = $assignment->event;
-        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED], true)) {
+        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED, Event::STATUS_DONE_FOR_DAY], true)) {
             return response()->json(['message' => 'Cannot check out from an event that is already ended.'], 422);
         }
 
@@ -339,10 +375,19 @@ class AttendanceController extends Controller
         }
 
         $checkout = now();
-        $totalHours = Carbon::parse($assignment->checkin_time)->diffInMinutes($checkout) / 60;
+        $pausedMinutes = (int) ($assignment->pause_duration ?? 0);
+        if ($assignment->is_paused && $assignment->pause_start_time) {
+            $pausedMinutes += Carbon::parse($assignment->pause_start_time)->diffInMinutes($checkout);
+        }
+        $calc = $this->overtime->calculate(Carbon::parse($assignment->checkin_time), $checkout, null, $pausedMinutes);
         $assignment->update([
             'checkout_time' => $checkout,
-            'total_hours' => round($totalHours, 2),
+            'total_hours' => $calc['total_hours'],
+            'extra_hours' => $calc['extra_hours'],
+            'is_paused' => false,
+            'pause_start_time' => null,
+            'pause_end_time' => $assignment->is_paused ? $checkout : $assignment->pause_end_time,
+            'pause_duration' => $pausedMinutes,
         ]);
         $assignment->refresh();
 
@@ -354,6 +399,12 @@ class AttendanceController extends Controller
             'message' => 'Checked out successfully',
             'checkout_time' => $checkout->toIso8601String(),
             'total_hours' => $assignment->total_hours,
+            'extra_hours' => $assignment->extra_hours,
+            'is_sunday' => (bool) $assignment->is_sunday,
+            'is_holiday' => (bool) $assignment->is_holiday,
+            'holiday_name' => $assignment->holiday_name,
+            'day_type' => $assignment->is_holiday ? 'holiday' : ($assignment->is_sunday ? 'sunday' : 'normal'),
+            'pause_duration' => (int) ($assignment->pause_duration ?? 0),
         ]);
     }
 

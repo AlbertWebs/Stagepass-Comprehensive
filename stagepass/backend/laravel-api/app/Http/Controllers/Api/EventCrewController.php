@@ -7,6 +7,7 @@ use App\Models\Event;
 use App\Models\EventUser;
 use App\Models\ReminderLog;
 use App\Models\User;
+use App\Services\AttendanceOvertimeService;
 use Carbon\Carbon;
 use App\Notifications\CrewAddedToEventReminder;
 use Illuminate\Http\JsonResponse;
@@ -14,10 +15,14 @@ use Illuminate\Http\Request;
 
 class EventCrewController extends Controller
 {
+    public function __construct(
+        private AttendanceOvertimeService $overtime
+    ) {}
+
     private function canManageCrew(Request $request, Event $event): bool
     {
         $user = $request->user();
-        if ($user->hasRole('super_admin') || $user->hasRole('director')) {
+        if ($user->hasRole('super_admin') || $user->hasRole('director') || $user->hasRole('admin')) {
             return true;
         }
         if ((int) $event->team_leader_id === (int) $user->id) {
@@ -38,7 +43,7 @@ class EventCrewController extends Controller
             return response()->json(['message' => 'You cannot add crew to this event.'], 403);
         }
 
-        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED], true)) {
+        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED, Event::STATUS_DONE_FOR_DAY], true)) {
             return response()->json(['message' => 'Cannot add crew to an event that is already ended.'], 422);
         }
 
@@ -100,7 +105,7 @@ class EventCrewController extends Controller
             return response()->json(['message' => 'You cannot transfer crew for this event.'], 403);
         }
 
-        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED], true)) {
+        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED, Event::STATUS_DONE_FOR_DAY], true)) {
             return response()->json(['message' => 'Cannot transfer crew from an event that is already ended.'], 422);
         }
 
@@ -113,7 +118,7 @@ class EventCrewController extends Controller
         if ($targetEvent->id === $event->id) {
             return response()->json(['message' => 'Source and target event must be different.'], 422);
         }
-        if (in_array($targetEvent->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED], true)) {
+        if (in_array($targetEvent->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED, Event::STATUS_DONE_FOR_DAY], true)) {
             return response()->json(['message' => 'Cannot transfer crew to an event that is already ended.'], 422);
         }
 
@@ -159,11 +164,26 @@ class EventCrewController extends Controller
                     ? $checkinTime->format('g:i A')
                     : Carbon::parse($checkinTime)->format('g:i A');
             }
+            $pausedForMinutes = (int) ($pivot->pause_duration ?? 0);
+            if ($pivot->is_paused && $pivot->pause_start_time) {
+                $pausedForMinutes += Carbon::parse($pivot->pause_start_time)->diffInMinutes(now());
+            }
             return [
                 'user_id' => $user->id,
                 'name' => $user->name,
                 'status' => $status,
                 'checkin_time' => $checkinFormatted,
+                'total_hours' => (float) ($pivot->total_hours ?? 0),
+                'extra_hours' => (float) ($pivot->extra_hours ?? 0),
+                'is_sunday' => (bool) ($pivot->is_sunday ?? false),
+                'is_holiday' => (bool) ($pivot->is_holiday ?? false),
+                'holiday_name' => $pivot->holiday_name ?? null,
+                'day_type' => ($pivot->is_holiday ?? false) ? 'holiday' : (($pivot->is_sunday ?? false) ? 'sunday' : 'normal'),
+                'is_paused' => (bool) ($pivot->is_paused ?? false),
+                'pause_duration' => $pausedForMinutes,
+                'pause_reason' => $pivot->pause_reason,
+                'transport_type' => $pivot->transport_type,
+                'transport_amount' => $pivot->transport_amount !== null ? (float) $pivot->transport_amount : null,
             ];
         })->values()->all();
 
@@ -179,7 +199,7 @@ class EventCrewController extends Controller
             return response()->json(['message' => 'You cannot manage attendance for this event.'], 403);
         }
 
-        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED], true)) {
+        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED, Event::STATUS_DONE_FOR_DAY], true)) {
             return response()->json(['message' => 'Cannot record attendance for an event that is already ended.'], 422);
         }
 
@@ -194,14 +214,124 @@ class EventCrewController extends Controller
             ], 422);
         }
 
-        $assignment->update(['checkin_time' => now()]);
+        $now = now();
+        $calc = $this->overtime->calculate($now, $now);
+        $assignment->update([
+            'checkin_time' => $now,
+            'total_hours' => $calc['total_hours'],
+            'extra_hours' => $calc['extra_hours'],
+            'is_sunday' => $calc['is_sunday'],
+            'is_holiday' => $calc['is_holiday'],
+            'holiday_name' => $calc['holiday_name'],
+        ]);
 
         $assignment->load('user');
 
         return response()->json([
             'message' => 'Marked as arrived',
             'checkin_time' => $assignment->checkin_time->toIso8601String(),
+            'total_hours' => $calc['total_hours'],
+            'extra_hours' => $calc['extra_hours'],
+            'is_sunday' => $calc['is_sunday'],
+            'is_holiday' => $calc['is_holiday'],
+            'holiday_name' => $calc['holiday_name'],
+            'day_type' => $calc['day_type'],
             'assignment' => $assignment,
+        ]);
+    }
+
+    public function pauseCrew(Request $request, Event $event, User $user): JsonResponse
+    {
+        if (! $this->canManageCrew($request, $event)) {
+            return response()->json(['message' => 'You cannot pause crew for this event.'], 403);
+        }
+
+        $validated = $request->validate([
+            'reason' => 'nullable|string|max:255',
+        ]);
+
+        $assignment = EventUser::where('event_id', $event->id)
+            ->where('user_id', $user->id)
+            ->firstOrFail();
+
+        if (! $assignment->checkin_time || $assignment->checkout_time) {
+            return response()->json(['message' => 'Crew member must be actively checked in to pause.'], 422);
+        }
+        if ($assignment->is_paused) {
+            return response()->json(['message' => 'Crew member is already paused.'], 422);
+        }
+
+        $assignment->update([
+            'is_paused' => true,
+            'pause_start_time' => now(),
+            'pause_end_time' => null,
+            'paused_by' => $request->user()->id,
+            'pause_reason' => $validated['reason'] ?? null,
+        ]);
+
+        return response()->json([
+            'message' => 'Crew paused successfully',
+            'assignment' => $assignment->fresh(),
+        ]);
+    }
+
+    public function resumeCrew(Request $request, Event $event, User $user): JsonResponse
+    {
+        if (! $this->canManageCrew($request, $event)) {
+            return response()->json(['message' => 'You cannot resume crew for this event.'], 403);
+        }
+
+        $assignment = EventUser::where('event_id', $event->id)
+            ->where('user_id', $user->id)
+            ->firstOrFail();
+
+        if (! $assignment->is_paused || ! $assignment->pause_start_time) {
+            return response()->json(['message' => 'Crew member is not paused.'], 422);
+        }
+
+        $pauseMinutes = Carbon::parse($assignment->pause_start_time)->diffInMinutes(now());
+        $assignment->update([
+            'is_paused' => false,
+            'pause_end_time' => now(),
+            'pause_start_time' => null,
+            'pause_duration' => (int) ($assignment->pause_duration ?? 0) + $pauseMinutes,
+        ]);
+
+        return response()->json([
+            'message' => 'Crew resumed successfully',
+            'assignment' => $assignment->fresh(),
+        ]);
+    }
+
+    public function recordTransport(Request $request, Event $event, User $user): JsonResponse
+    {
+        if (! $this->canManageCrew($request, $event)) {
+            return response()->json(['message' => 'You cannot record transport for this event.'], 403);
+        }
+
+        $validated = $request->validate([
+            'transport_type' => 'required|in:organization,cab,none',
+            'transport_amount' => 'nullable|numeric|min:0',
+        ]);
+
+        if ($validated['transport_type'] !== 'cab') {
+            $validated['transport_amount'] = null;
+        }
+
+        $assignment = EventUser::where('event_id', $event->id)
+            ->where('user_id', $user->id)
+            ->firstOrFail();
+
+        $assignment->update([
+            'transport_type' => $validated['transport_type'],
+            'transport_amount' => $validated['transport_amount'] ?? null,
+            'transport_recorded_by' => $request->user()->id,
+            'transport_recorded_at' => now(),
+        ]);
+
+        return response()->json([
+            'message' => 'Transport recorded successfully',
+            'assignment' => $assignment->fresh(),
         ]);
     }
 }

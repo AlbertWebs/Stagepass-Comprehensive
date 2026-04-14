@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '~/services/api';
+import { StagepassFaviconLogo } from '@/components/StagepassFaviconLogo';
 import { ThemedText } from '@/components/themed-text';
 import { useThemePreference } from '@/context/ThemePreferenceContext';
 import { themeBlue, themeYellow } from '@/constants/theme';
@@ -103,11 +104,11 @@ export default function ForgotPasswordScreen() {
 
           {/* Logo + wordmark – same as login */}
           <View style={styles.logoSection}>
-            <View style={[styles.logoBox, { backgroundColor: accentColor }]}>
-              <Ionicons name="ticket" size={32} color="#fff" />
+            <View style={styles.logoIconWrap}>
+              <StagepassFaviconLogo size={64} />
             </View>
             <ThemedText style={[styles.wordmark, { color: isDark ? '#fff' : colors.text }]}>
-              StagePass
+              Stagepass Crew
             </ThemedText>
           </View>
 
@@ -221,14 +222,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: U.section,
   },
-  logoBox: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: U.md,
-  },
+  logoIconWrap: { marginBottom: U.md },
   wordmark: {
     fontSize: 22,
     fontWeight: '700',

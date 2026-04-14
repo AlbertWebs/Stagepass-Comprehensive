@@ -37,6 +37,10 @@ module.exports = {
     ...appJson.expo,
     extra: {
       ...(appJson.expo?.extra || {}),
+      eas: {
+        ...((appJson.expo?.extra && appJson.expo.extra.eas) || {}),
+        projectId: '9c5ebab6-be53-4719-b5ef-704d71b23691',
+      },
       googlePlacesApiKey: googlePlacesApiKey || undefined,
     },
   },

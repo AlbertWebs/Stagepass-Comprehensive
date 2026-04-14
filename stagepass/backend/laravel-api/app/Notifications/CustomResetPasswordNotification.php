@@ -11,7 +11,7 @@ class CustomResetPasswordNotification extends ResetPassword implements ShouldQue
 {
     use Queueable;
 
-    public function toMail(object $notifiable): MailMessage
+    public function toMail($notifiable): MailMessage
     {
         $base = rtrim((string) config('app.frontend_password_reset_url', config('app.url')), '/');
         $url = $base . '?token=' . urlencode($this->token) . '&email=' . urlencode($notifiable->getEmailForPasswordReset());

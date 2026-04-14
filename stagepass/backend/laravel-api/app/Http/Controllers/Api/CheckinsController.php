@@ -87,6 +87,12 @@ class CheckinsController extends Controller
                 'checked_out' => $checkedOut,
                 'checkout_time' => $checkin && $checkin->checkout_time ? $checkin->checkout_time->format('H:i') : null,
                 'checkout_time_iso' => $checkin && $checkin->checkout_time ? $checkin->checkout_time->toIso8601String() : null,
+                'total_hours' => $checkin ? (float) ($checkin->total_hours ?? 0) : 0,
+                'extra_hours' => $checkin ? (float) ($checkin->extra_hours ?? 0) : 0,
+                'is_sunday' => $checkin ? (bool) $checkin->is_sunday : false,
+                'is_holiday' => $checkin ? (bool) $checkin->is_holiday : false,
+                'holiday_name' => $checkin?->holiday_name,
+                'day_type' => $checkin ? ($checkin->is_holiday ? 'holiday' : ($checkin->is_sunday ? 'sunday' : 'normal')) : 'normal',
                 'is_off' => $isOff,
                 'expected_to_report' => $expectedToReport,
             ];
@@ -272,6 +278,12 @@ class CheckinsController extends Controller
                 'event_id' => null,
                 'event_name' => null,
                 'location' => 'Office',
+                'total_hours' => (float) ($c->total_hours ?? 0),
+                'extra_hours' => (float) ($c->extra_hours ?? 0),
+                'is_sunday' => (bool) $c->is_sunday,
+                'is_holiday' => (bool) $c->is_holiday,
+                'holiday_name' => $c->holiday_name,
+                'day_type' => $c->is_holiday ? 'holiday' : ($c->is_sunday ? 'sunday' : 'normal'),
             ];
         }
 
@@ -290,6 +302,16 @@ class CheckinsController extends Controller
                 'event_id' => $a->event_id,
                 'event_name' => $a->event?->name ?? 'Event #' . $a->event_id,
                 'location' => $a->event?->location_name ?? $a->event?->name ?? 'Event',
+                'total_hours' => (float) ($a->total_hours ?? 0),
+                'extra_hours' => (float) ($a->extra_hours ?? 0),
+                'is_sunday' => (bool) $a->is_sunday,
+                'is_holiday' => (bool) $a->is_holiday,
+                'holiday_name' => $a->holiday_name,
+                'day_type' => $a->is_holiday ? 'holiday' : ($a->is_sunday ? 'sunday' : 'normal'),
+                'pause_duration' => (int) ($a->pause_duration ?? 0),
+                'is_paused' => (bool) ($a->is_paused ?? false),
+                'transport_type' => $a->transport_type,
+                'transport_amount' => $a->transport_amount !== null ? (float) $a->transport_amount : null,
             ];
         }
 

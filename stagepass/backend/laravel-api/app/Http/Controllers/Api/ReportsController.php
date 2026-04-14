@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\DailyOfficeCheckin;
 use App\Models\Event;
 use App\Models\EventExpense;
+use App\Models\EventAllowance;
 use App\Models\EventPayment;
 use App\Models\EventUser;
 use App\Models\Task;
@@ -148,16 +149,20 @@ class ReportsController extends Controller
         $allAssignments = (clone $baseQuery)->get();
         $missed = $allAssignments->filter(fn ($a) => $a->checkin_time === null)->count();
         $totalHours = $withCheckin->sum(fn ($a) => (float) ($a->total_hours ?? 0));
+        $totalExtraHours = $withCheckin->sum(fn ($a) => (float) ($a->extra_hours ?? 0));
+        $totalPauseMinutes = (int) $withCheckin->sum(fn ($a) => (int) ($a->pause_duration ?? 0));
+        $transportCostTotal = $allAssignments->sum(fn ($a) => (float) ($a->transport_amount ?? 0));
 
         $byDay = [];
         foreach ($withCheckin as $a) {
             $date = $a->event?->date?->format('Y-m-d');
             if ($date) {
                 if (! isset($byDay[$date])) {
-                    $byDay[$date] = ['date' => $date, 'checkins' => 0, 'hours' => 0.0];
+                    $byDay[$date] = ['date' => $date, 'checkins' => 0, 'hours' => 0.0, 'extra_hours' => 0.0];
                 }
                 $byDay[$date]['checkins']++;
                 $byDay[$date]['hours'] += (float) ($a->total_hours ?? 0);
+                $byDay[$date]['extra_hours'] += (float) ($a->extra_hours ?? 0);
             }
         }
         ksort($byDay);
@@ -170,6 +175,10 @@ class ReportsController extends Controller
                 ? round(100 * $withCheckin->count() / $allAssignments->count(), 1)
                 : 0,
             'total_hours' => round($totalHours, 2),
+            'total_extra_hours' => round($totalExtraHours, 2),
+            'total_pause_minutes' => $totalPauseMinutes,
+            'active_hours' => round(max(0, $totalHours - ($totalPauseMinutes / 60)), 2),
+            'transport_cost_total' => round($transportCostTotal, 2),
         ];
 
         $listQuery = EventUser::query()
@@ -445,11 +454,11 @@ class ReportsController extends Controller
                 $baseQuery = EventUser::query()->with(['event', 'user'])->whereHas('event', fn ($q) => $q->spansRange($from->toDateString(), $to->toDateString()))->when($eventId, fn ($q) => $q->where('event_id', $eventId))->when($userId, fn ($q) => $q->where('user_id', $userId));
                 $all = (clone $baseQuery)->get();
                 $checkedIn = $all->whereNotNull('checkin_time');
-                $summaryHtml = '<p>Total assignments: <strong>' . $all->count() . '</strong> | Check-ins: <strong>' . $checkedIn->count() . '</strong> | Missed: <strong>' . ($all->count() - $checkedIn->count()) . '</strong> | Total hours: <strong>' . round($checkedIn->sum(fn ($a) => (float) ($a->total_hours ?? 0)), 2) . '</strong></p>';
+                $summaryHtml = '<p>Total assignments: <strong>' . $all->count() . '</strong> | Check-ins: <strong>' . $checkedIn->count() . '</strong> | Missed: <strong>' . ($all->count() - $checkedIn->count()) . '</strong> | Total hours: <strong>' . round($checkedIn->sum(fn ($a) => (float) ($a->total_hours ?? 0)), 2) . '</strong> | Extra hours: <strong>' . round($checkedIn->sum(fn ($a) => (float) ($a->extra_hours ?? 0)), 2) . '</strong></p>';
                 foreach ($baseQuery->orderByDesc('checkin_time')->get() as $a) {
-                    $tableRows .= '<tr><td>' . e($a->user?->name ?? '—') . '</td><td>' . e($a->event?->name ?? '—') . '</td><td>' . ($a->checkin_time ? $a->checkin_time->format('Y-m-d H:i') : '—') . '</td><td>' . ($a->checkout_time ? $a->checkout_time->format('Y-m-d H:i') : '—') . '</td><td>' . ($a->total_hours ?? '—') . '</td></tr>';
+                    $tableRows .= '<tr><td>' . e($a->user?->name ?? '—') . '</td><td>' . e($a->event?->name ?? '—') . '</td><td>' . ($a->checkin_time ? $a->checkin_time->format('Y-m-d H:i') : '—') . '</td><td>' . ($a->checkout_time ? $a->checkout_time->format('Y-m-d H:i') : '—') . '</td><td>' . ($a->total_hours ?? '—') . '</td><td>' . ($a->extra_hours ?? '—') . '</td></tr>';
                 }
-                $tableRows = $tableRows ?: '<tr><td colspan="5">No records</td></tr>';
+                $tableRows = $tableRows ?: '<tr><td colspan="6">No records</td></tr>';
                 break;
             case 'crew-payments':
                 $data = $this->financialReportData($from, $to, $eventId, $userId);
@@ -513,7 +522,7 @@ class ReportsController extends Controller
         if (! isset($tableHeader)) {
             $tableHeader = match ($type) {
                 'events' => '<tr><th>Event</th><th>Date</th><th>Status</th></tr>',
-                'crew-attendance' => '<tr><th>Crew</th><th>Event</th><th>Check-in</th><th>Check-out</th><th>Hours</th></tr>',
+                'crew-attendance' => '<tr><th>Crew</th><th>Event</th><th>Check-in</th><th>Check-out</th><th>Hours</th><th>Extra Hours</th></tr>',
                 'tasks' => '<tr><th>Task</th><th>Event</th><th>Due date</th><th>Status</th><th>Assignees</th></tr>',
                 default => '<tr><th>Item</th><th>Details</th></tr>',
             };
@@ -616,6 +625,14 @@ th{background:#f5f5f5;font-weight:600;}
                 'total_payments' => $payments->count(),
                 'total_amount' => round($totalAmount, 2),
                 'by_status' => $byStatus,
+                'earned_allowances_total' => round(
+                    EventAllowance::query()
+                        ->whereBetween('recorded_at', [$from, $to])
+                        ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
+                        ->when($userId, fn ($q) => $q->where('crew_id', $userId))
+                        ->sum('amount'),
+                    2
+                ),
             ],
             'by_day' => array_values($byDay),
         ];
@@ -707,17 +724,21 @@ th{background:#f5f5f5;font-weight:600;}
         $assignments = $query->get();
 
         $totalHours = 0;
+        $totalExtraHours = 0;
         $byDay = [];
         foreach ($assignments as $a) {
             $hours = (float) ($a->total_hours ?? 0);
+            $extraHours = (float) ($a->extra_hours ?? 0);
             $totalHours += $hours;
+            $totalExtraHours += $extraHours;
             $date = $a->event?->date?->format('Y-m-d');
             if ($date) {
                 if (! isset($byDay[$date])) {
-                    $byDay[$date] = ['date' => $date, 'checkins' => 0, 'hours' => 0];
+                    $byDay[$date] = ['date' => $date, 'checkins' => 0, 'hours' => 0, 'extra_hours' => 0];
                 }
                 $byDay[$date]['checkins']++;
                 $byDay[$date]['hours'] += $hours;
+                $byDay[$date]['extra_hours'] += $extraHours;
             }
         }
         ksort($byDay);
@@ -726,6 +747,7 @@ th{background:#f5f5f5;font-weight:600;}
             'summary' => [
                 'total_checkins' => $assignments->count(),
                 'total_hours' => round($totalHours, 2),
+                'total_extra_hours' => round($totalExtraHours, 2),
             ],
             'by_day' => array_values($byDay),
         ];

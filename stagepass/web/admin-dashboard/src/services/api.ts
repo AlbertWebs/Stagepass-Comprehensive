@@ -144,6 +144,9 @@ export interface Event {
   ended_by_id?: number | null;
   end_comment?: string | null;
   ended_by?: User | null;
+  closed_at?: string | null;
+  closed_by?: number | null;
+  closing_comment?: string | null;
 }
 
 export interface Paginated<T> {
@@ -163,6 +166,14 @@ export interface Client {
   address?: string | null;
   notes?: string | null;
   events_count?: number;
+}
+
+export interface HolidayItem {
+  id: number;
+  name: string;
+  date: string;
+  description?: string | null;
+  is_active: boolean;
 }
 
 export interface CommunicationItem {
@@ -246,6 +257,37 @@ export interface PaymentItem {
   approved_by_user?: User;
 }
 
+export interface AllowanceTypeItem {
+  id: number;
+  name: string;
+  is_active: boolean;
+}
+
+export interface EarnedAllowanceDetail {
+  id: number;
+  crew_id: number;
+  crew_name: string;
+  allowance_type_id: number;
+  allowance_type: string;
+  amount: number;
+  description?: string | null;
+  recorded_by?: string | null;
+  recorded_at?: string | null;
+  status: 'pending' | 'approved' | 'paid';
+}
+
+export interface EarnedAllowanceEventGroup {
+  event_id: number;
+  event_name: string;
+  event_date?: string | null;
+  location?: string | null;
+  team_lead?: string | null;
+  crew_count: number;
+  total_allowances: number;
+  status_breakdown: { pending: number; approved: number; paid: number };
+  details: EarnedAllowanceDetail[];
+}
+
 export const api = {
   auth: {
     login: (email: string, password: string) =>
@@ -276,6 +318,17 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ settings }),
       }),
+  },
+  holidays: {
+    list: (params?: { active?: boolean }) =>
+      request<{ data: HolidayItem[] }>('/holidays', {
+        params: params ? { active: params.active ? 1 : 0 } : undefined,
+      }),
+    create: (body: { name: string; date: string; description?: string; is_active?: boolean }) =>
+      request<HolidayItem>('/holidays', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number, body: Partial<{ name: string; date: string; description?: string | null; is_active: boolean }>) =>
+      request<HolidayItem>(`/holidays/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (id: number) => request<void>(`/holidays/${id}`, { method: 'DELETE' }),
   },
   roles: {
     list: () => request<Role[]>('/roles'),
@@ -325,6 +378,23 @@ export const api = {
         `/events/${eventId}/attendance/manual-checkin/${userId}`,
         { method: 'POST' }
       ),
+    pauseCrew: (eventId: number, userId: number, reason?: string) =>
+      request<{ message: string }>(`/events/${eventId}/crew/${userId}/pause`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason || undefined }),
+      }),
+    resumeCrew: (eventId: number, userId: number) =>
+      request<{ message: string }>(`/events/${eventId}/crew/${userId}/resume`, { method: 'POST' }),
+    recordCrewTransport: (eventId: number, userId: number, body: { transport_type: 'organization' | 'cab' | 'none'; transport_amount?: number | null }) =>
+      request<{ message: string }>(`/events/${eventId}/crew/${userId}/transport`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    doneForDay: (eventId: number, closingComment: string) =>
+      request<Event>(`/events/${eventId}/done-for-day`, {
+        method: 'POST',
+        body: JSON.stringify({ closing_comment: closingComment }),
+      }),
     removeUser: (eventId: number, userId: number) =>
       request<void>(`/events/${eventId}/crew/${userId}`, { method: 'DELETE' }),
     transferUser: (eventId: number, userId: number, targetEventId: number) =>
@@ -406,6 +476,25 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ payment_id: paymentId, rejection_reason: rejectionReason }),
       }),
+    earnedAllowances: (params?: Record<string, string | number>) =>
+      request<{ data: EarnedAllowanceEventGroup[]; pagination: { current_page: number; last_page: number; per_page: number; total: number } }>(
+        '/payments/earned-allowances',
+        { params: params as Record<string, string | number> }
+      ),
+    addEarnedAllowance: (body: { event_id: number; crew_id: number; allowance_type_id: number; amount: number; description?: string; recorded_at?: string }) =>
+      request<EarnedAllowanceDetail>('/payments/earned-allowances', { method: 'POST', body: JSON.stringify(body) }),
+    updateAllowanceStatus: (id: number, status: 'pending' | 'approved' | 'paid') =>
+      request<EarnedAllowanceDetail>(`/payments/earned-allowances/${id}/status`, {
+        method: 'POST',
+        body: JSON.stringify({ status }),
+      }),
+    exportEarnedAllowances: (format: 'csv' | 'pdf' | 'excel') =>
+      request<Blob | unknown>(`/payments/earned-allowances/export`, { params: { format } }),
+    allowanceTypes: () => request<{ data: AllowanceTypeItem[] }>('/payments/allowance-types'),
+    createAllowanceType: (name: string, isActive = true) =>
+      request<AllowanceTypeItem>('/payments/allowance-types', { method: 'POST', body: JSON.stringify({ name, is_active: isActive }) }),
+    updateAllowanceType: (id: number, body: { name?: string; is_active?: boolean }) =>
+      request<AllowanceTypeItem>(`/payments/allowance-types/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   },
   reports: {
     get: (from: string, to: string) =>
@@ -578,6 +667,12 @@ export interface CheckinItem {
   event_id?: number | null;
   event_name?: string | null;
   location: string;
+  total_hours?: number;
+  extra_hours?: number;
+  is_sunday?: boolean;
+  is_holiday?: boolean;
+  holiday_name?: string | null;
+  day_type?: 'normal' | 'sunday' | 'holiday';
 }
 
 export interface CheckinsResponse {
@@ -601,6 +696,12 @@ export interface DailyEmployeeStatusItem {
   checked_out?: boolean;
   checkout_time?: string | null;
   checkout_time_iso?: string | null;
+  total_hours?: number;
+  extra_hours?: number;
+  is_sunday?: boolean;
+  is_holiday?: boolean;
+  holiday_name?: string | null;
+  day_type?: 'normal' | 'sunday' | 'holiday';
   is_off: boolean;
   expected_to_report: boolean;
 }
@@ -648,8 +749,11 @@ export interface ReportCrewAttendanceResponse {
     missed_checkins: number;
     participation_rate: number;
     total_hours: number;
+    total_extra_hours?: number;
+    total_pause_minutes?: number;
+    active_hours?: number;
   };
-  by_day: { date: string; checkins: number; hours: number }[];
+  by_day: { date: string; checkins: number; hours: number; extra_hours?: number }[];
   data: Array<{
     id: number;
     event_id: number;
@@ -657,6 +761,13 @@ export interface ReportCrewAttendanceResponse {
     checkin_time: string | null;
     checkout_time: string | null;
     total_hours?: number | null;
+    extra_hours?: number | null;
+    pause_duration?: number | null;
+    transport_type?: 'organization' | 'cab' | 'none' | null;
+    transport_amount?: number | null;
+    is_sunday?: boolean;
+    is_holiday?: boolean;
+    holiday_name?: string | null;
     event?: { id: number; name: string; date: string };
     user?: { id: number; name: string };
   }>;

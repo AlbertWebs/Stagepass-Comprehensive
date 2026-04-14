@@ -450,9 +450,26 @@ export const api = {
     /** Admin/team leader: end event with comment */
     end: (eventId: number, body: { end_comment: string }) =>
       request<Event>(`/events/${eventId}/end`, { method: 'POST', body: JSON.stringify(body) }),
+    doneForDay: (eventId: number, closingComment: string) =>
+      request<Event>(`/events/${eventId}/done-for-day`, {
+        method: 'POST',
+        body: JSON.stringify({ closing_comment: closingComment }),
+      }),
     /** Admin/team leader: crew status for event */
     eventCrewStatus: (eventId: number) =>
       request<{ data: CrewStatusItem[] }>(`/events/${eventId}/crew-status`),
+    pauseCrew: (eventId: number, userId: number, reason?: string) =>
+      request<{ message: string }>(`/events/${eventId}/crew/${userId}/pause`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason || undefined }),
+      }),
+    resumeCrew: (eventId: number, userId: number) =>
+      request<{ message: string }>(`/events/${eventId}/crew/${userId}/resume`, { method: 'POST' }),
+    recordCrewTransport: (eventId: number, userId: number, body: { transport_type: 'organization' | 'cab' | 'none'; transport_amount?: number | null }) =>
+      request<{ message: string }>(`/events/${eventId}/crew/${userId}/transport`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
     /** Admin/team leader: checklist progress */
     eventChecklistProgress: (eventId: number) =>
       request<{ data: ChecklistProgressItem[] }>(`/events/${eventId}/checklist-progress`),
@@ -524,7 +541,7 @@ export const api = {
         pull_up_percentage: number;
       }>('/attendance/stats'),
     checkin: (eventId: number, latitude: number, longitude: number) =>
-      request<{ checkin_time: string }>('/attendance/checkin', {
+      request<{ checkin_time: string; total_hours?: number; extra_hours?: number; day_type?: 'normal' | 'sunday' | 'holiday'; is_sunday?: boolean; is_holiday?: boolean; holiday_name?: string | null }>('/attendance/checkin', {
         method: 'POST',
         body: JSON.stringify({
           event_id: eventId,
@@ -535,23 +552,23 @@ export const api = {
       }),
     /** Admin/team leader: check in a crew member on their behalf (manual check-in) */
     checkinOnBehalf: (eventId: number, userId: number, _latitude?: number, _longitude?: number) =>
-      request<{ checkin_time: string }>(`/events/${eventId}/attendance/manual-checkin/${userId}`, {
+      request<{ checkin_time: string; total_hours?: number; extra_hours?: number; day_type?: 'normal' | 'sunday' | 'holiday' }>(`/events/${eventId}/attendance/manual-checkin/${userId}`, {
         method: 'POST',
       }),
     checkout: (eventId: number) =>
-      request<{ checkout_time: string; total_hours: number }>('/attendance/checkout', {
+      request<{ checkout_time: string; total_hours: number; extra_hours?: number; day_type?: 'normal' | 'sunday' | 'holiday'; is_sunday?: boolean; is_holiday?: boolean; holiday_name?: string | null }>('/attendance/checkout', {
         method: 'POST',
         body: JSON.stringify({ event_id: eventId }),
       }),
     /** Daily office check-in at configured location (e.g. 100 m radius). Backend must implement POST /attendance/office-checkin. */
     officeCheckin: (latitude: number, longitude: number) =>
-      request<{ checkin_time: string }>('/attendance/office-checkin', {
+      request<{ checkin_time: string; total_hours?: number; extra_hours?: number; day_type?: 'normal' | 'sunday' | 'holiday'; is_sunday?: boolean; is_holiday?: boolean; holiday_name?: string | null }>('/attendance/office-checkin', {
         method: 'POST',
         body: JSON.stringify({ latitude, longitude, timestamp: getLocalDateTimeWithOffset() }),
       }),
     /** Daily office check-out. Sends timestamp and optional location for audit. */
     officeCheckout: (latitude?: number, longitude?: number) =>
-      request<{ checkout_time: string }>('/attendance/office-checkout', {
+      request<{ checkout_time: string; total_hours?: number; extra_hours?: number; day_type?: 'normal' | 'sunday' | 'holiday'; is_sunday?: boolean; is_holiday?: boolean; holiday_name?: string | null }>('/attendance/office-checkout', {
         method: 'POST',
         body: JSON.stringify({
           latitude,
@@ -611,6 +628,33 @@ export const api = {
       request<Payment>('/payments/reject', {
         method: 'POST',
         body: JSON.stringify({ payment_id: paymentId, rejection_reason: reason }),
+      }),
+    earnedAllowances: (params?: { event_id?: number; status?: string; search?: string; page?: number; per_page?: number }) =>
+      request<{ data: EarnedAllowanceEventGroup[]; pagination: { current_page: number; last_page: number; total: number; per_page: number } }>(
+        '/payments/earned-allowances',
+        {
+          params: params
+            ? (Object.fromEntries(
+                Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)])
+              ) as Record<string, string>)
+            : undefined,
+        }
+      ),
+    addEarnedAllowance: (body: { event_id: number; crew_id: number; allowance_type_id: number; amount: number; description?: string }) =>
+      request<EarnedAllowanceDetail>('/payments/earned-allowances', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    updateAllowanceStatus: (id: number, status: 'pending' | 'approved' | 'paid') =>
+      request<EarnedAllowanceDetail>(`/payments/earned-allowances/${id}/status`, {
+        method: 'POST',
+        body: JSON.stringify({ status }),
+      }),
+    allowanceTypes: () => request<{ data: AllowanceTypeItem[] }>('/payments/allowance-types'),
+    createAllowanceType: (name: string) =>
+      request<AllowanceTypeItem>('/payments/allowance-types', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
       }),
   },
   /** Crew: my tasks (GET /api/my-tasks) */
@@ -866,6 +910,13 @@ export interface CrewStatusItem {
   department?: string;
   status: 'checked_in' | 'late' | 'pending' | 'checked_out';
   checkin_time?: string;
+  is_paused?: boolean;
+  pause_duration?: number;
+  pause_reason?: string | null;
+  transport_type?: 'organization' | 'cab' | 'none' | null;
+  transport_amount?: number | null;
+  total_hours?: number;
+  extra_hours?: number;
 }
 
 export interface ChecklistProgressItem {
@@ -903,6 +954,12 @@ export interface User {
   office_checkin_time?: string;
   office_checked_out_today?: boolean;
   office_checkout_time?: string;
+  office_total_hours?: number | null;
+  office_extra_hours?: number | null;
+  office_day_type?: 'normal' | 'sunday' | 'holiday' | null;
+  office_is_sunday?: boolean;
+  office_is_holiday?: boolean;
+  office_holiday_name?: string | null;
   /** Set by backend when user has approved time off that includes today */
   has_approved_time_off_today?: boolean;
   homepage_preferences?: HomepagePreferences;
@@ -938,9 +995,13 @@ export interface Event {
   team_leader_id?: number;
   created_by_id?: number;
   status: string;
+  closed_at?: string | null;
+  closed_by?: number | null;
+  closing_comment?: string | null;
   team_leader?: { id: number; name: string };
   teamLeader?: { id: number; name: string };
-  crew?: { id: number; name: string; pivot?: { checkin_time?: string; checkout_time?: string; role_in_event?: string | null } }[];
+  closedBy?: { id: number; name: string } | null;
+  crew?: { id: number; name: string; pivot?: { checkin_time?: string; checkout_time?: string; role_in_event?: string | null; total_hours?: number | null; extra_hours?: number | null; is_sunday?: boolean; is_holiday?: boolean; holiday_name?: string | null; is_paused?: boolean; pause_duration?: number; pause_reason?: string | null; transport_type?: 'organization' | 'cab' | 'none' | null; transport_amount?: number | null } }[];
 }
 
 export interface TimeOffRequestAttachment {
@@ -992,6 +1053,37 @@ export interface Payment {
   created_at?: string;
   event?: { id: number; name: string } | null;
   user?: { id: number; name: string } | null;
+}
+
+export interface AllowanceTypeItem {
+  id: number;
+  name: string;
+  is_active: boolean;
+}
+
+export interface EarnedAllowanceDetail {
+  id: number;
+  crew_id: number;
+  crew_name: string;
+  allowance_type_id: number;
+  allowance_type: string;
+  amount: number;
+  description?: string | null;
+  recorded_by?: string | null;
+  recorded_at?: string | null;
+  status: 'pending' | 'approved' | 'paid';
+}
+
+export interface EarnedAllowanceEventGroup {
+  event_id: number;
+  event_name: string;
+  event_date?: string | null;
+  location?: string | null;
+  team_lead?: string | null;
+  crew_count: number;
+  total_allowances: number;
+  status_breakdown: { pending: number; approved: number; paid: number };
+  details: EarnedAllowanceDetail[];
 }
 
 export interface Communication {

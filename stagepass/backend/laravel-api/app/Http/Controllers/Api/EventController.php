@@ -100,7 +100,7 @@ class EventController extends Controller
 
     public function show(Event $event): JsonResponse
     {
-        $event->load(['teamLeader', 'crew', 'client', 'notes.user', 'eventEquipment.equipment', 'endedBy']);
+        $event->load(['teamLeader', 'crew', 'client', 'notes.user', 'eventEquipment.equipment', 'endedBy', 'closedBy']);
         return response()->json($event);
     }
 
@@ -113,7 +113,7 @@ class EventController extends Controller
             return response()->json(['message' => 'Only the team leader or an admin can end this event.'], 403);
         }
 
-        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED], true)) {
+        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED, Event::STATUS_DONE_FOR_DAY], true)) {
             return response()->json(['message' => 'This event is already ended.'], 422);
         }
 
@@ -129,6 +129,47 @@ class EventController extends Controller
         ]);
 
         return response()->json($event->fresh()->load(['teamLeader', 'endedBy']));
+    }
+
+    public function doneForDay(Request $request, Event $event): JsonResponse
+    {
+        $user = $request->user();
+        $isTeamLeader = (int) $event->team_leader_id === (int) $user->id;
+        $isAdmin = $user->hasRole('super_admin') || $user->hasRole('director') || $user->hasRole('admin');
+        if (! $isTeamLeader && ! $isAdmin) {
+            return response()->json(['message' => 'Only the team leader or an admin can close this event for the day.'], 403);
+        }
+
+        if ($event->status === Event::STATUS_DONE_FOR_DAY) {
+            return response()->json(['message' => 'This event is already marked done for the day.'], 422);
+        }
+        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED], true)) {
+            return response()->json(['message' => 'This event is already ended.'], 422);
+        }
+
+        $validated = $request->validate([
+            'closing_comment' => 'required|string|max:5000',
+        ]);
+
+        // Auto check out closer if still checked in.
+        $assignment = $event->eventCrew()->where('user_id', $user->id)->first();
+        if ($assignment && $assignment->checkin_time && ! $assignment->checkout_time) {
+            $assignment->checkout_time = now();
+            $assignment->save();
+        }
+
+        $event->update([
+            'status' => Event::STATUS_DONE_FOR_DAY,
+            'closed_at' => now(),
+            'closed_by' => $user->id,
+            'closing_comment' => $validated['closing_comment'],
+            // keep legacy fields in sync for existing clients
+            'ended_at' => now(),
+            'ended_by_id' => $user->id,
+            'end_comment' => $validated['closing_comment'],
+        ]);
+
+        return response()->json($event->fresh()->load(['teamLeader', 'closedBy']));
     }
 
     public function update(Request $request, Event $event): JsonResponse
@@ -147,7 +188,7 @@ class EventController extends Controller
             'daily_allowance' => 'nullable|numeric|min:0',
             'team_leader_id' => 'nullable|exists:users,id',
             'client_id' => 'nullable|exists:clients,id',
-            'status' => 'sometimes|in:created,active,completed,closed',
+            'status' => 'sometimes|in:created,active,completed,closed,done_for_the_day',
         ]);
 
         $event->update($validated);
