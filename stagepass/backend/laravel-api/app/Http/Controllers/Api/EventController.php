@@ -43,8 +43,12 @@ class EventController extends Controller
     {
         $query = Event::query()->with(['teamLeader', 'crew', 'client']);
 
-        if ($request->user()->hasRole('super_admin') || $request->user()->hasRole('director')) {
-            // admins see all
+        if (
+            $request->user()->hasRole('super_admin')
+            || $request->user()->hasRole('director')
+            || $request->user()->hasRole('admin')
+        ) {
+            // full-admin roles see all events
         } elseif ($request->user()->hasRole('team_leader')) {
             $query->where(function ($q) use ($request) {
                 $q->where('team_leader_id', $request->user()->id)
