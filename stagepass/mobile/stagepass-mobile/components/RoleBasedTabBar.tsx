@@ -32,7 +32,7 @@ import { useSelector } from 'react-redux';
 const TAB_ICON_SIZE = Icons.header;
 const LABEL_FONT_SIZE = 8;
 const MIN_BOTTOM = Platform.OS === 'android' ? 12 : 8;
-const TAB_MIN_HEIGHT = 40;
+const TAB_MIN_HEIGHT = 36;
 const HIT_SLOP = { top: 8, bottom: 8, left: 12, right: 12 };
 const INACTIVE_COLOR_LIGHT = '#6B7280';
 const INACTIVE_COLOR_DARK = '#A1A1AA';
@@ -86,8 +86,10 @@ export function RoleBasedTabBar({ state, navigation, descriptors }: BottomTabBar
 
   const barBg = colors.surface;
   const barBorder = colors.border;
-  const activeColor = isDark ? themeYellow : themeBlue;
+  const activeColor = isDark ? themeYellow : themeYellow;
   const inactiveColor = isDark ? INACTIVE_COLOR_DARK : INACTIVE_COLOR_LIGHT;
+  const lightBarBg = '#FFFFFF';
+  const lightBarBorder = 'rgba(37, 99, 235, 0.16)';
 
   const handleNav = useNavigationPress();
 
@@ -189,7 +191,19 @@ export function RoleBasedTabBar({ state, navigation, descriptors }: BottomTabBar
   };
 
   return (
-    <View style={[styles.bar, { paddingBottom: bottomInset, backgroundColor: barBg, borderTopColor: barBorder, shadowColor: isDark ? 'transparent' : '#000', shadowOpacity: isDark ? 0 : 0.06, shadowRadius: 8 }]}>
+    <View
+      style={[
+        styles.bar,
+        {
+          paddingBottom: bottomInset,
+          backgroundColor: isDark ? barBg : lightBarBg,
+          borderTopColor: isDark ? barBorder : lightBarBorder,
+          shadowColor: isDark ? 'transparent' : '#0F172A',
+          shadowOpacity: isDark ? 0 : 0.08,
+          shadowRadius: isDark ? 8 : 12,
+        },
+      ]}
+    >
       {tabs.map((tab) => {
         const isAdminRoute = tab.name === 'admin' || tab.name === 'adminReports' || tab.name === 'adminProjects';
         const isActive = isAdminRoute
@@ -278,11 +292,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    paddingTop: 6,
+    paddingTop: 5,
     paddingHorizontal: 4,
-    paddingBottom: 2,
-    minHeight: 46,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingBottom: 1,
+    minHeight: 42,
+    borderTopWidth: 1,
     elevation: 8,
     shadowOffset: { width: 0, height: -2 },
     shadowRadius: 8,
@@ -293,11 +307,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: TAB_MIN_HEIGHT,
-    paddingVertical: 3,
-    paddingHorizontal: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 3,
     minWidth: 0,
-    borderRadius: 12,
-    marginHorizontal: 3,
+    borderRadius: 13,
+    marginHorizontal: 2,
   },
   tabItemContent: {
     alignItems: 'center',
@@ -336,7 +350,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    marginBottom: 2,
+    marginBottom: 1,
   },
   label: {
     fontSize: LABEL_FONT_SIZE,

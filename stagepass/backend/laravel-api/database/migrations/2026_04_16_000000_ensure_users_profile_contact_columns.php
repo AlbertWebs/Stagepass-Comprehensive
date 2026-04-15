@@ -4,6 +4,10 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
+/**
+ * Safety net for servers whose users table predates profile fields
+ * (fixes "no such column: address" on SQLite / missing columns on MySQL).
+ */
 return new class extends Migration
 {
     public function up(): void
@@ -36,4 +40,3 @@ return new class extends Migration
         }
     }
 };
-

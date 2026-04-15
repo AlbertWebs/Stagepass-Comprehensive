@@ -392,8 +392,10 @@ export const api = {
     updateProfile: (body: {
       name?: string;
       email?: string;
+      phone?: string;
       phone_number?: string;
       address?: string;
+      emergencyContact?: string;
       emergency_contact?: string;
       password?: string;
       password_confirmation?: string;
@@ -407,8 +409,10 @@ export const api = {
     updateProfileLocal401: (body: {
       name?: string;
       email?: string;
+      phone?: string;
       phone_number?: string;
       address?: string;
+      emergencyContact?: string;
       emergency_contact?: string;
       password?: string;
       password_confirmation?: string;
@@ -963,8 +967,10 @@ export interface User {
   roles?: { id: number; name: string }[];
   /** Profile/passport photo URL (set by backend after upload) */
   avatar_url?: string;
+  phone?: string;
   phone_number?: string;
   address?: string;
+  emergencyContact?: string;
   emergency_contact?: string;
   /** Permanent employees must daily office check-in 9–10 AM */
   is_permanent_employee?: boolean;

@@ -7,10 +7,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Schema;
 
 class Event extends Model
 {
     use HasFactory;
+    private static ?array $crewPivotColumnsCache = null;
 
     public const STATUS_CREATED = 'created';
     public const STATUS_ACTIVE = 'active';
@@ -106,29 +108,57 @@ class Event extends Model
     public function crew(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'event_user')
-            ->withPivot(
-                'role_in_event',
-                'checkin_time',
-                'checkout_time',
-                'total_hours',
-                'extra_hours',
-                'is_sunday',
-                'is_holiday',
-                'holiday_name',
-                'checkin_latitude',
-                'checkin_longitude',
-                'is_paused',
-                'pause_start_time',
-                'pause_end_time',
-                'pause_duration',
-                'paused_by',
-                'pause_reason',
-                'transport_type',
-                'transport_amount',
-                'transport_recorded_by',
-                'transport_recorded_at'
-            )
+            ->withPivot($this->crewPivotColumns())
             ->withTimestamps();
+    }
+
+    /**
+     * Resolve pivot columns defensively so environments with older schemas
+     * (e.g. missing extra_hours) still work instead of throwing SQL errors.
+     *
+     * @return array<int, string>
+     */
+    private function crewPivotColumns(): array
+    {
+        if (self::$crewPivotColumnsCache !== null) {
+            return self::$crewPivotColumnsCache;
+        }
+
+        $baseColumns = [
+            'role_in_event',
+            'checkin_time',
+            'checkout_time',
+            'total_hours',
+            'is_sunday',
+            'is_holiday',
+            'holiday_name',
+            'checkin_latitude',
+            'checkin_longitude',
+            'is_paused',
+            'pause_start_time',
+            'pause_end_time',
+            'pause_duration',
+            'paused_by',
+            'pause_reason',
+            'transport_type',
+            'transport_amount',
+            'transport_recorded_by',
+            'transport_recorded_at',
+        ];
+
+        // Newer schema field; guard for mixed migration states.
+        $optionalColumns = ['extra_hours'];
+        $resolved = $baseColumns;
+
+        foreach ($optionalColumns as $column) {
+            if (Schema::hasColumn('event_user', $column)) {
+                $resolved[] = $column;
+            }
+        }
+
+        self::$crewPivotColumnsCache = $resolved;
+
+        return self::$crewPivotColumnsCache;
     }
 
     public function eventCrew(): HasMany

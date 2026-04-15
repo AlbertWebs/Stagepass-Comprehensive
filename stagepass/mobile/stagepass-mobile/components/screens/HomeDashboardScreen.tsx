@@ -178,13 +178,20 @@ export function HomeDashboardScreen({
   const iconColor = isDark ? themeYellow : themeBlue;
   const iconOutlineColor = isDark ? themeYellow : themeBlue;
   /** Light mode: match Everything page card background. */
-  const welcomeCardBg = isDark ? '#1E212A' : '#F5F7FC';
-  const cardBg = isDark ? '#1E212A' : '#F5F7FC';
-  const quickCardBg = isDark ? '#1E212A' : '#F5F7FC';
-  const homeBorderColor = isDark ? colors.border : themeBlue + '33';
+  const welcomeCardBg = isDark ? '#1E212A' : '#FFFFFF';
+  const cardBg = isDark ? '#1E212A' : '#FFFFFF';
+  const quickCardBg = isDark ? '#1E212A' : '#FFFFFF';
+  const homeBorderColor = isDark ? colors.border : 'rgba(37, 99, 235, 0.16)';
+  const welcomeCardBorder = isDark ? 'rgba(148, 163, 184, 0.2)' : 'rgba(37, 99, 235, 0.16)';
+  const quickCardShadow = isDark
+    ? { shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 4 }
+    : { shadowColor: '#1E3A8A', shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 3 };
+  const eventCardShadow = isDark
+    ? { shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 9, shadowOffset: { width: 0, height: 4 }, elevation: 3 }
+    : { shadowColor: '#0F172A', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2 };
   const welcomeChipAccent = isDark ? '#93C5FD' : themeBlue;
-  const welcomeChipBg = isDark ? 'rgba(147, 197, 253, 0.14)' : themeBlue + '16';
-  const welcomeChipBorder = isDark ? 'rgba(147, 197, 253, 0.34)' : themeBlue + '38';
+  const welcomeChipBg = isDark ? 'rgba(147, 197, 253, 0.14)' : 'rgba(37, 99, 235, 0.08)';
+  const welcomeChipBorder = isDark ? 'rgba(147, 197, 253, 0.34)' : 'rgba(37, 99, 235, 0.2)';
   const dispatch = useDispatch();
   const user = useSelector((s: { auth: { user: ApiUser | null } }) => s.auth.user);
   const authToken = useSelector((s: { auth: { token: string | null } }) => s.auth.token);
@@ -874,7 +881,7 @@ export function HomeDashboardScreen({
           style={[
             styles.welcomeCard,
             isCompactLayout ? styles.welcomeCardCompact : null,
-            { backgroundColor: welcomeCardBg },
+            { backgroundColor: welcomeCardBg, borderColor: welcomeCardBorder },
             isDark
               ? {
                   shadowColor: '#000',
@@ -1282,7 +1289,13 @@ export function HomeDashboardScreen({
                           onPress={() => href && handleNav(() => router.push(href as any))}
                           style={({ pressed }) => [
                             styles.quickCard,
-                            { backgroundColor: quickCardBg, borderColor: homeBorderColor, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
+                            {
+                              backgroundColor: quickCardBg,
+                              borderColor: homeBorderColor,
+                              opacity: pressed ? NAV_PRESSED_OPACITY : 1,
+                              transform: [{ scale: pressed ? 0.985 : 1 }],
+                            },
+                            quickCardShadow,
                           ]}
                         >
                           {showEventDot ? (
@@ -1329,6 +1342,7 @@ export function HomeDashboardScreen({
                   style={({ pressed }) => [
                     styles.eventCard,
                     { backgroundColor: cardBg, borderColor: homeBorderColor, borderLeftWidth: 3, borderLeftColor: isDark ? themeYellow : themeBlue, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
+                    eventCardShadow,
                   ]}
                 >
                   <View style={styles.eventCardMain}>
@@ -1393,7 +1407,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.lg + 4,
     marginBottom: Spacing.lg,
     borderRadius: Cards.borderRadius,
-    borderWidth: 0,
+    borderWidth: 1,
     overflow: 'hidden',
   },
   welcomePatternLayer: {

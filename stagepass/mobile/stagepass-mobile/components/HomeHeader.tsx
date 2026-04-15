@@ -3,14 +3,14 @@
  * Use everywhere for a consistent look across tabs and admin/stack screens.
  */
 import { usePathname, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useDispatch } from 'react-redux';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ThemedText } from '@/components/themed-text';
 import { Icons, Typography } from '@/constants/ui';
-import { Spacing } from '@/constants/theme';
+import { Spacing, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { NAV_PRESSED_OPACITY } from '@/src/utils/navigationPress';
 import { useNavigationPress } from '@/src/utils/navigationPress';
@@ -20,7 +20,7 @@ import { logout } from '~/store/authSlice';
 import { clearStoredToken } from '~/store/persistAuth';
 
 const SUPPORT_WHATSAPP = process.env.EXPO_PUBLIC_SUPPORT_WHATSAPP ?? '';
-const ICON_BTN_SIZE = 34;
+const ICON_BTN_SIZE = 30;
 
 const ADMIN_MORE_LINKS: { label: string; href: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { label: 'Events', href: '/admin/events', icon: 'calendar-outline' },
@@ -96,7 +96,7 @@ export interface HomeHeaderProps {
   showBack?: boolean;
   /** Custom back when there is no history (e.g. replace to list). */
   onBack?: () => void;
-  /** When set, show notification bell in header (e.g. home screen). */
+  /** Kept for compatibility; header no longer shows notification icon. */
   notificationCount?: number;
 }
 
@@ -112,7 +112,6 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
   const isAdmin = role === 'admin' || role === 'team_leader';
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const [liveNoticeCount, setLiveNoticeCount] = useState(0);
   const handleNav = useNavigationPress();
 
   const toggleMoreMenu = useCallback(() => setMoreMenuOpen((v) => !v), []);
@@ -171,35 +170,28 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
     }
   };
 
-  const headerBg = isDark ? '#1E212A' : '#F5F7FC';
-  const iconTint = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-  const iconBorder = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.10)';
+  const headerBg = isDark ? '#171B24' : '#F8FAFF';
+  const headerHairline = isDark ? 'rgba(148, 163, 184, 0.22)' : 'rgba(37, 99, 235, 0.18)';
+  const headerAccent = 'rgba(251,191,36,0.55)';
+  const iconTint = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(15,23,42,0.04)';
+  const iconBorder = isDark ? 'rgba(255,255,255,0.16)' : 'rgba(15,23,42,0.10)';
   const iconColor = colors.text;
-  const titleColor = isDark ? '#F9FAFB' : '#0F172A';
-  const titleCapColor = isDark ? 'rgba(249,250,251,0.75)' : 'rgba(15,23,42,0.75)';
-  const neutralBadgeBg = isDark ? '#E5E7EB' : '#111827';
-  const neutralBadgeText = isDark ? '#111827' : '#F9FAFB';
-  const resolvedNoticeCount = typeof notificationCount === 'number' ? notificationCount : liveNoticeCount;
-
-  useEffect(() => {
-    let cancelled = false;
-    api.communications
-      .list()
-      .then((res) => {
-        if (cancelled) return;
-        const list = Array.isArray(res?.data) ? res.data : [];
-        setLiveNoticeCount(list.length);
-      })
-      .catch(() => {
-        if (!cancelled) setLiveNoticeCount(0);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [pathname]);
+  const titleColor = isDark ? '#F8FAFC' : '#0B1220';
+  const titleCapColor = isDark ? 'rgba(251,191,36,0.85)' : themeYellow;
+  const actionsTrayBg = isDark ? 'rgba(15,23,42,0.52)' : 'rgba(255,255,255,0.86)';
+  const actionsTrayBorder = isDark ? 'rgba(148,163,184,0.28)' : 'rgba(148,163,184,0.24)';
+  const breadcrumbColor = isDark ? 'rgba(226,232,240,0.90)' : themeYellow;
+  const breadcrumbDot = isDark ? 'rgba(251,191,36,0.80)' : themeYellow;
+  const outerShadow = isDark
+    ? { shadowOpacity: 0.2, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 7 }
+    : { shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 };
+  const trayShadow = isDark
+    ? { shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 }
+    : { shadowColor: '#1E3A8A', shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 };
+  void notificationCount;
 
   return (
-    <View style={[styles.outer, { paddingTop, backgroundColor: headerBg }]}>
+    <View style={[styles.outer, { paddingTop, backgroundColor: headerBg, borderBottomColor: headerHairline }, outerShadow]}>
       <Modal visible={signingOut} transparent animationType="fade" statusBarTranslucent>
         <View style={[styles.logoutOverlay, { backgroundColor: colors.background + 'EE' }]}>
           <ActivityIndicator size="large" color={colors.text} />
@@ -241,7 +233,8 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
                 }}
                 style={({ pressed }) => [styles.breadcrumbWrap, pressed && { opacity: NAV_PRESSED_OPACITY }]}
               >
-                <ThemedText style={[styles.breadcrumb, { color: colors.textSecondary }]}>
+                <View style={[styles.breadcrumbDot, { backgroundColor: breadcrumbDot }]} />
+                <ThemedText style={[styles.breadcrumb, { color: breadcrumbColor }]}>
                   {(() => {
                     const p = (pathname || '').replace(/\/$/, '');
                     if (p.includes('/admin/users')) return 'Users & Crew';
@@ -250,20 +243,7 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
                   })()}
                 </ThemedText>
               </Pressable>
-              <View style={styles.rightRow}>
-                <Pressable
-                  onPress={() => handleNav(() => router.push('/(tabs)/messages'))}
-                  style={({ pressed }) => [styles.iconBtn, styles.bellWrap, styles.bellBtn, { backgroundColor: iconTint, borderColor: iconBorder }, pressed && styles.iconBtnPressed]}
-                  accessibilityLabel="Notifications"
-                  accessibilityRole="button"
-                >
-                  <Ionicons name="notifications-outline" size={Icons.header} color={iconColor} />
-                  <View style={[styles.bellBadge, { backgroundColor: neutralBadgeBg }]}>
-                    <ThemedText style={[styles.bellBadgeText, { color: neutralBadgeText }]} numberOfLines={1}>
-                      {resolvedNoticeCount > 99 ? '99+' : resolvedNoticeCount}
-                    </ThemedText>
-                  </View>
-                </Pressable>
+              <View style={[styles.rightRow, { backgroundColor: actionsTrayBg, borderColor: actionsTrayBorder }, trayShadow]}>
                 {isAdmin ? (
                   <Pressable
                     onPress={toggleMoreMenu}
@@ -304,20 +284,7 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
                 {displayTitle}
               </ThemedText>
             </View>
-            <View style={styles.rightRow}>
-              <Pressable
-                onPress={() => handleNav(() => router.push('/(tabs)/messages'))}
-                style={({ pressed }) => [styles.iconBtn, styles.bellWrap, styles.bellBtn, { backgroundColor: iconTint, borderColor: iconBorder }, pressed && styles.iconBtnPressed]}
-                accessibilityLabel="Notifications"
-                accessibilityRole="button"
-              >
-                <Ionicons name="notifications-outline" size={Icons.header} color={iconColor} />
-                <View style={[styles.bellBadge, { backgroundColor: neutralBadgeBg }]}>
-                  <ThemedText style={[styles.bellBadgeText, { color: neutralBadgeText }]} numberOfLines={1}>
-                    {resolvedNoticeCount > 99 ? '99+' : resolvedNoticeCount}
-                  </ThemedText>
-                </View>
-              </Pressable>
+            <View style={[styles.rightRow, { backgroundColor: actionsTrayBg, borderColor: actionsTrayBorder }, trayShadow]}>
               {isAdmin ? (
                 <Pressable
                   onPress={toggleMoreMenu}
@@ -378,6 +345,7 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
           </Pressable>
         </Modal>
       )}
+      {isDark ? <View style={[styles.bottomAccent, { backgroundColor: headerAccent }]} /> : null}
     </View>
   );
 }
@@ -386,9 +354,9 @@ const styles = StyleSheet.create({
   outer: {
     paddingHorizontal: Spacing.lg,
     paddingBottom: 0,
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
+    position: 'relative',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -396,24 +364,32 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   bar: {
-    paddingVertical: Spacing.sm + 1,
-    paddingBottom: Spacing.sm - 1,
+    paddingVertical: Spacing.xs + 1,
+    paddingBottom: Spacing.xs,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 42,
+    minHeight: 38,
   },
   navRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: Spacing.sm + 2,
+    paddingTop: Spacing.sm + 1,
     marginTop: 2,
   },
   breadcrumbWrap: {
-    paddingVertical: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 3,
     paddingRight: Spacing.sm,
+  },
+  breadcrumbDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 8,
   },
   breadcrumb: {
     fontSize: Typography.label,
@@ -424,7 +400,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 42,
+    minHeight: 38,
   },
   titleWrapFull: {
     marginRight: 0,
@@ -436,7 +412,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: Spacing.sm + 2,
-    borderWidth: 1,
+    borderWidth: 0,
     overflow: 'hidden',
   },
   titleWrap: {
@@ -447,8 +423,8 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   titleCap: {
-    width: 2,
-    height: 18,
+    width: 3,
+    height: 20,
     borderRadius: 1,
     marginRight: Spacing.sm,
   },
@@ -456,12 +432,24 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: Typography.titleCard,
     fontWeight: Typography.titleLargeWeight,
-    letterSpacing: 0.35,
+    letterSpacing: 0.25,
   },
   rightRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
+    gap: Spacing.xs,
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  bottomAccent: {
+    height: 2,
+    borderRadius: 2,
+    marginHorizontal: Spacing.lg + 2,
+    marginTop: 2,
+    marginBottom: 1,
+    opacity: 0.85,
   },
   iconBtn: {
     width: ICON_BTN_SIZE,
@@ -469,38 +457,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 0,
     overflow: 'hidden',
   },
   logoutBtn: {},
   iconBtnPressed: {
     opacity: NAV_PRESSED_OPACITY,
-  },
-  bellWrap: {
-    position: 'relative',
-  },
-  bellBtn: {
-    overflow: 'visible',
-  },
-  bellBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-    overflow: 'hidden',
-    zIndex: 2,
-  },
-  bellBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    lineHeight: 10,
-    includeFontPadding: false,
-    textAlignVertical: 'center',
   },
   moreOverlay: {
     flex: 1,

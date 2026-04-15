@@ -85,6 +85,34 @@ function getInitial(name: string): string {
   return n.slice(0, 2).toUpperCase();
 }
 
+function extractUserFromPayload(payload: unknown, fallback: User): User {
+  if (payload && typeof payload === 'object') {
+    if ('user' in payload) {
+      const nested = (payload as { user?: unknown }).user;
+      if (nested && typeof nested === 'object') {
+        return { ...fallback, ...(nested as Partial<User>) };
+      }
+    }
+    if ('id' in payload && 'name' in payload) {
+      return { ...fallback, ...(payload as Partial<User>) };
+    }
+  }
+  return fallback;
+}
+
+function pickString(user: User | null | undefined, keys: Array<keyof User>): string {
+  if (!user) return '';
+  for (const key of keys) {
+    const value = user[key];
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return '';
+}
+
+function normalizeText(value: string): string {
+  return value.trim();
+}
+
 const TAB_BAR_HEIGHT = 58;
 
 type DayPeriod = 'morning' | 'afternoon' | 'evening' | 'night';
@@ -180,11 +208,20 @@ export default function ProfileScreen() {
     if (user) {
       setName(user.name ?? '');
       setEmail(user.email ?? '');
-      setPhoneNumber(user.phone_number ?? '');
+      setPhoneNumber(pickString(user, ['phone_number', 'phone']));
       setAddress(user.address ?? '');
-      setEmergencyContact(user.emergency_contact ?? '');
+      setEmergencyContact(pickString(user, ['emergency_contact', 'emergencyContact']));
     }
-  }, [user?.id, user?.name, user?.email, user?.phone_number, user?.address, user?.emergency_contact]);
+  }, [
+    user?.id,
+    user?.name,
+    user?.email,
+    user?.phone_number,
+    user?.phone,
+    user?.address,
+    user?.emergency_contact,
+    user?.emergencyContact,
+  ]);
 
   const handleSave = async () => {
     if (!user) return;
@@ -207,16 +244,20 @@ export default function ProfileScreen() {
       const body: {
         name?: string;
         email?: string;
+        phone?: string;
         phone_number?: string;
         address?: string;
+        emergencyContact?: string;
         emergency_contact?: string;
         password?: string;
         password_confirmation?: string;
       } = {
         name: trimmedName,
         email: trimmedEmail || undefined,
+        phone: phoneNumber.trim() || undefined,
         phone_number: phoneNumber.trim() || undefined,
         address: address.trim() || undefined,
+        emergencyContact: emergencyContact.trim() || undefined,
         emergency_contact: emergencyContact.trim() || undefined,
       };
       if (password) {
@@ -224,10 +265,35 @@ export default function ProfileScreen() {
         body.password_confirmation = passwordConfirmation;
       }
       const updated = await api.auth.updateProfile(body);
-      dispatch(setUser(updated));
+      const normalizedUser = extractUserFromPayload(updated, user);
+      const freshUser = await api.auth.me().catch(() => null);
+      const persistedUser = freshUser
+        ? extractUserFromPayload(freshUser, normalizedUser)
+        : normalizedUser;
+      dispatch(setUser(persistedUser));
       setPassword('');
       setPasswordConfirmation('');
-      Alert.alert('Saved', 'Your profile has been updated.');
+      const intendedPhone = normalizeText(phoneNumber);
+      const intendedAddress = normalizeText(address);
+      const intendedEmergency = normalizeText(emergencyContact);
+      const savedPhone = normalizeText(pickString(persistedUser, ['phone_number', 'phone']));
+      const savedAddress = normalizeText(persistedUser.address ?? '');
+      const savedEmergency = normalizeText(
+        pickString(persistedUser, ['emergency_contact', 'emergencyContact'])
+      );
+      const missingPersistence: string[] = [];
+      if (intendedPhone !== savedPhone) missingPersistence.push('phone number');
+      if (intendedAddress !== savedAddress) missingPersistence.push('address');
+      if (intendedEmergency !== savedEmergency) missingPersistence.push('emergency contact');
+
+      if (missingPersistence.length > 0) {
+        Alert.alert(
+          'Not fully saved',
+          `Server did not persist: ${missingPersistence.join(', ')}. Check backend profile fields on /api/me.`
+        );
+      } else {
+        Alert.alert('Saved', 'Your profile has been updated.');
+      }
     } catch (e) {
       Alert.alert(
         'Update failed',
@@ -281,7 +347,7 @@ export default function ProfileScreen() {
     setUploadingPhoto(true);
     try {
       const data = await api.auth.uploadProfilePhoto(uri);
-      const updatedUser = ('user' in data ? data.user : data) as User;
+      const updatedUser = extractUserFromPayload(data, user);
       const fixedAvatar = resolveUserAvatarUrl(updatedUser.avatar_url);
       dispatch(setUser({ ...user, ...updatedUser, ...(fixedAvatar ? { avatar_url: fixedAvatar } : {}) }));
       if (fixedAvatar) setPassportPhotoUri(null);
