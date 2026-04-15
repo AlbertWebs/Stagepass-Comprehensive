@@ -2,11 +2,16 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
     public function up(): void
     {
+        if (DB::getDriverName() !== 'sqlite') {
+            return;
+        }
+
         Schema::disableForeignKeyConstraints();
         Schema::dropIfExists('allowance_types');
         Schema::create('allowance_types', function (Blueprint $table) {
@@ -541,6 +546,10 @@ return new class extends Migration {
 
     public function down(): void
     {
+        if (DB::getDriverName() !== 'sqlite') {
+            return;
+        }
+
         Schema::disableForeignKeyConstraints();
         Schema::dropIfExists('task_user');
         Schema::dropIfExists('task_comments');
