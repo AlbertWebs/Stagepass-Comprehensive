@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\CommunicationController;
+use App\Http\Controllers\Api\DbHealthController;
 use App\Http\Controllers\Api\DocsController;
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\UserController;
@@ -29,6 +30,7 @@ use App\Http\Controllers\Api\DangerZoneController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
+Route::get('/health/db', DbHealthController::class);
 Route::get('/settings/public-app', [SettingsController::class, 'publicAppConfig']);
 Route::get('/login-display-name', [AuthController::class, 'loginDisplayName']);
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
