@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { InstallPrompt } from '@/components/InstallPrompt';
 import { Preloader } from '@/components/Preloader';
 import { useAuth } from '@/contexts/AuthContext';
@@ -38,9 +38,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  const location = useLocation();
+  const { token } = useAuth();
+  const showInstallPrompt = !token && location.pathname === '/login';
+
   return (
     <>
-      <InstallPrompt />
+      {showInstallPrompt ? <InstallPrompt /> : null}
       <Routes>
       <Route path="/login" element={<Login />} />
       <Route
