@@ -14,3 +14,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     </BrowserRouter>
   </React.StrictMode>
 );
+
+// Remove static HTML preloader once React takes over the app.
+const initialPreloader = document.getElementById('preloader');
+if (initialPreloader) {
+  initialPreloader.remove();
+}
