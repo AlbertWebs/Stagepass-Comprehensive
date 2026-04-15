@@ -25,6 +25,10 @@ class EventCrewController extends Controller
         if ($user->hasRole('super_admin') || $user->hasRole('director') || $user->hasRole('admin')) {
             return true;
         }
+        // Event creators should always be able to manage crew for events they created.
+        if ((int) $event->created_by_id === (int) $user->id) {
+            return true;
+        }
         if ((int) $event->team_leader_id === (int) $user->id) {
             return true;
         }
