@@ -34,6 +34,7 @@ import {
   unlockWithBiometric,
 } from '~/store/biometricLogin';
 import {
+  clearLoginLockout,
   clearSessionAfterAuthFailure,
   getLastUsername,
   getLoginLockoutUntil,
@@ -85,9 +86,10 @@ export default function LoginScreen() {
   useEffect(() => {
     // Login should default to system appearance (auto), not forced light/dark.
     setPreference('system');
-    getLoginLockoutUntil().then((until) => {
-      if (until && until > Date.now()) setLockoutUntil(until);
-      else setLockoutUntil(null);
+    // Clear stale lockout locally so QA/dev users can retry immediately.
+    clearLoginLockout().then(() => {
+      setLockoutUntil(null);
+      setFailedAttempts(0);
     });
     getLastUsername().then((u) => {
       if (u) setUsername(u);

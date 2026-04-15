@@ -269,7 +269,7 @@ export default function AdminLayout() {
     <div className="flex min-h-screen bg-slate-50/80">
       {/* Sidebar - explicit brand navy for reliable contrast */}
       <aside
-        className="fixed inset-y-0 left-0 z-30 flex w-64 flex-col shadow-lg"
+        className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col shadow-lg lg:flex"
         style={{ backgroundColor: '#0f1838' }}
       >
         <div className="flex h-16 flex-shrink-0 items-center gap-3 border-b border-white/15 px-6 py-4">
@@ -346,9 +346,9 @@ export default function AdminLayout() {
       </aside>
 
       {/* Main content – entrance animation when layout mounts (e.g. after login) */}
-      <div className="ml-64 flex min-h-screen flex-1 flex-col animate-[page-enter_0.45s_ease-out_forwards]">
+      <div className="flex min-h-screen flex-1 flex-col animate-[page-enter_0.45s_ease-out_forwards] lg:ml-64">
         {/* Header */}
-        <header className="sticky top-0 z-20 flex h-16 flex-shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/95 px-8 backdrop-blur-sm shadow-header">
+        <header className="sticky top-0 z-20 flex h-16 flex-shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/95 px-4 backdrop-blur-sm shadow-header sm:px-6 lg:px-8">
           <h1 className="text-xl font-semibold tracking-tight text-slate-900">{pageTitle}</h1>
           <div className="relative flex items-center" ref={userMenuRef}>
             <button
@@ -438,7 +438,7 @@ export default function AdminLayout() {
         </header>
 
         {/* Content area */}
-        <main className="flex-1 p-8">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-7xl">
             <Outlet />
           </div>
