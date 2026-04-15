@@ -2,10 +2,12 @@
  * StagepassLoader – the mobile app’s only preloader.
  * Used on app launch, API loading, login, check-in, and event loading.
  * Theme colors (blue + yellow), Stagepass AV branding, smooth animation.
+ * Dark: bright AV title + light logo tile on dark ground; light: deeper tones (vice versa).
  */
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
-import { themeBlue, themeYellow } from '@/constants/theme';
+import { StagePassColors, themeBlue, themeYellow } from '@/constants/theme';
+import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 
 type StagepassLoaderProps = {
   message?: string;
@@ -13,6 +15,7 @@ type StagepassLoaderProps = {
 };
 
 export function StagepassLoader({ message = 'Loading…', fullScreen = true }: StagepassLoaderProps) {
+  const { isDark } = useStagePassTheme();
   const spinValue = useRef(new Animated.Value(0)).current;
   const dot1 = useRef(new Animated.Value(0.6)).current;
   const dot2 = useRef(new Animated.Value(0.6)).current;
@@ -72,29 +75,92 @@ export function StagepassLoader({ message = 'Loading…', fullScreen = true }: S
   const scaleDot3 = dot3.interpolate({ inputRange: [0.6, 1], outputRange: [0.6, 1] });
   const opacityDot3 = dot3.interpolate({ inputRange: [0.6, 1], outputRange: [0.5, 1] });
 
+  const palette = useMemo(() => {
+    if (isDark) {
+      return {
+        overlay: 'rgba(15, 15, 15, 0.98)',
+        ringTop: StagePassColors.primaryLight,
+        ringRight: '#93C5FD',
+        innerLogo: StagePassColors.primaryLight,
+        sLetter: themeBlue,
+        title: '#FFFBEB',
+        message: 'rgba(253, 224, 71, 0.92)',
+        dot: StagePassColors.primaryLight,
+        innerShadow: StagePassColors.primaryLight,
+      };
+    }
+    return {
+      overlay: 'rgba(248, 250, 252, 0.98)',
+      ringTop: themeYellow,
+      ringRight: themeBlue,
+      innerLogo: StagePassColors.primaryDark,
+      sLetter: '#FFFFFF',
+      title: themeBlue,
+      message: StagePassColors.primaryDark,
+      dot: themeYellow,
+      innerShadow: themeYellow,
+    };
+  }, [isDark]);
+
   const content = (
     <View style={[styles.wrapper, fullScreen && styles.fullScreen]}>
       <View style={styles.logoRow}>
-        <Animated.View style={[styles.ring, { transform: [{ rotate: spin }] }]} />
-        <View style={styles.innerLogo}>
-          <Text style={styles.sLetter}>S</Text>
+        <Animated.View
+          style={[
+            styles.ring,
+            {
+              borderTopColor: palette.ringTop,
+              borderRightColor: palette.ringRight,
+              transform: [{ rotate: spin }],
+            },
+          ]}
+        />
+        <View
+          style={[
+            styles.innerLogo,
+            {
+              backgroundColor: palette.innerLogo,
+              shadowColor: palette.innerShadow,
+            },
+          ]}
+        >
+          <Text style={[styles.sLetter, { color: palette.sLetter }]}>S</Text>
         </View>
       </View>
       <View style={styles.textRow}>
-        <Text style={styles.title}>Stagepass AV</Text>
-        <Text style={styles.message}>{message}</Text>
+        <Text style={[styles.title, { color: palette.title }]}>Stagepass AV</Text>
+        <Text style={[styles.message, { color: palette.message }]}>{message}</Text>
       </View>
       <View style={styles.dots} pointerEvents="none">
-        <Animated.View style={[styles.dot, { transform: [{ scale: scaleDot1 }], opacity: opacityDot1 }]} />
-        <Animated.View style={[styles.dot, { transform: [{ scale: scaleDot2 }], opacity: opacityDot2 }]} />
-        <Animated.View style={[styles.dot, { transform: [{ scale: scaleDot3 }], opacity: opacityDot3 }]} />
+        <Animated.View
+          style={[
+            styles.dot,
+            { backgroundColor: palette.dot, transform: [{ scale: scaleDot1 }], opacity: opacityDot1 },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.dot,
+            { backgroundColor: palette.dot, transform: [{ scale: scaleDot2 }], opacity: opacityDot2 },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.dot,
+            { backgroundColor: palette.dot, transform: [{ scale: scaleDot3 }], opacity: opacityDot3 },
+          ]}
+        />
       </View>
     </View>
   );
 
   if (fullScreen) {
     return (
-      <View style={styles.overlay} accessibilityRole="progressbar" accessibilityLiveRegion="polite">
+      <View
+        style={[styles.overlay, { backgroundColor: palette.overlay }]}
+        accessibilityRole="progressbar"
+        accessibilityLiveRegion="polite"
+      >
         {content}
       </View>
     );
@@ -111,7 +177,6 @@ const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 100,
-    backgroundColor: 'rgba(248, 250, 252, 0.98)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -138,8 +203,6 @@ const styles = StyleSheet.create({
     height: SIZE,
     borderRadius: 12,
     borderWidth: 2,
-    borderTopColor: themeYellow,
-    borderRightColor: themeBlue,
     borderBottomColor: 'transparent',
     borderLeftColor: 'transparent',
   },
@@ -147,10 +210,8 @@ const styles = StyleSheet.create({
     width: INNER,
     height: INNER,
     borderRadius: 8,
-    backgroundColor: themeYellow,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: themeYellow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 12,
@@ -159,7 +220,6 @@ const styles = StyleSheet.create({
   sLetter: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#fff',
   },
   textRow: {
     alignItems: 'center',
@@ -168,12 +228,10 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 16,
     fontWeight: '700',
-    color: themeBlue,
     letterSpacing: 0.2,
   },
   message: {
     fontSize: 12,
-    color: themeYellow,
     marginTop: 4,
   },
   dots: {
@@ -185,7 +243,6 @@ const styles = StyleSheet.create({
     width: DOT,
     height: DOT,
     borderRadius: DOT / 2,
-    backgroundColor: themeYellow,
     marginHorizontal: 4,
   },
 });

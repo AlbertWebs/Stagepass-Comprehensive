@@ -50,9 +50,23 @@ function dateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-function parseEventDateLocal(input: string | undefined | null): Date | null {
-  if (!input || typeof input !== 'string') return null;
-  const trimmed = input.trim();
+/** Accept API date as string or rare wrapped/object shapes. */
+function eventDateInputToString(input: unknown): string | null {
+  if (input == null) return null;
+  if (typeof input === 'string') {
+    const t = input.trim();
+    return t.length ? t : null;
+  }
+  if (typeof input === 'object' && input !== null && 'date' in input) {
+    const inner = (input as { date?: unknown }).date;
+    if (typeof inner === 'string' && inner.trim()) return inner.trim();
+  }
+  return null;
+}
+
+function parseEventDateLocal(input: string | undefined | null | unknown): Date | null {
+  const trimmed = eventDateInputToString(input);
+  if (!trimmed) return null;
   const ymd = trimmed.length >= 10 ? trimmed.slice(0, 10) : trimmed;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
   if (!m) {
@@ -69,7 +83,7 @@ function parseEventDateLocal(input: string | undefined | null): Date | null {
 function eventMatchesDate(event: Event, date: Date): boolean {
   const startDate = parseEventDateLocal(event.date);
   if (!startDate) return false;
-  const endDate = parseEventDateLocal(event.end_date ?? null) ?? startDate;
+  const endDate = parseEventDateLocal(event.end_date) ?? startDate;
   startDate.setHours(0, 0, 0, 0);
   endDate.setHours(0, 0, 0, 0);
   const selected = new Date(date);
@@ -91,11 +105,20 @@ function sortByTime(a: Event, b: Event): number {
 function getEventDisplayStatus(event: Event, userId: number | undefined): EventDisplayStatus {
   if (event.status === 'completed' || event.status === 'closed') return 'completed';
   if (userId == null || !event.crew?.length) return 'created';
-  const me = event.crew.find((c) => c.id === userId);
+  const me = event.crew.find((c) => Number(c.id) === Number(userId));
   if (!me?.pivot) return 'created';
   if (me.pivot.checkout_time) return 'checked_out';
   if (me.pivot.checkin_time) return 'checked_in';
   return 'created';
+}
+
+/** Laravel paginator returns `{ data: Event[] }`; tolerate a bare array if a proxy changes the shape. */
+function extractEventsFromListResponse(body: unknown): Event[] {
+  if (!body || typeof body !== 'object') return [];
+  if (Array.isArray(body)) return body as Event[];
+  const o = body as Record<string, unknown>;
+  if (Array.isArray(o.data)) return o.data as Event[];
+  return [];
 }
 
 export default function EventsTab() {
@@ -120,11 +143,6 @@ export default function EventsTab() {
   const [animateKey, setAnimateKey] = useState(0);
   const scrollBottomPadding = TAB_BAR_HEIGHT;
 
-  useFocusEffect(
-    useCallback(() => {
-      setAnimateKey((k) => k + 1);
-    }, [])
-  );
   const isCrewOrTeamLeader = role === 'crew' || role === 'team_leader';
   const canAccessSettings = role === 'super_admin' || role === 'director' || role === 'admin';
 
@@ -139,40 +157,40 @@ export default function EventsTab() {
 
   const loadEvents = useCallback(async () => {
     try {
-      const res = await api.events.list({ per_page: 100, refresh: true });
-      const list = Array.isArray(res?.data) ? res.data : [];
-      // Fallback: some environments return an empty list despite a valid assignment.
-      if (list.length === 0) {
-        try {
-          const today = dateKey(new Date());
-          const todayRes = await api.events.myEventToday(today);
-          const assignedToday = todayRes?.event ? [todayRes.event] : [];
-          setEvents(assignedToday.sort(sortByTime));
-        } catch {
-          setEvents([]);
+      const today = dateKey(new Date());
+      const [listRes, todayRes] = await Promise.allSettled([
+        api.events.list({ per_page: 100, refresh: true }),
+        api.events.myEventToday(today),
+      ]);
+
+      const list = listRes.status === 'fulfilled' ? extractEventsFromListResponse(listRes.value) : [];
+      const assignedToday: Event[] =
+        todayRes.status === 'fulfilled' && todayRes.value?.event ? [todayRes.value.event] : [];
+
+      const merged = [...list, ...assignedToday];
+      const dedupedById = new Map<number, Event>();
+      for (const event of merged) {
+        const id = event?.id;
+        if (id != null && Number.isFinite(Number(id))) {
+          dedupedById.set(Number(id), event);
         }
-      } else {
-        setEvents(list.sort(sortByTime));
       }
+
+      setEvents(Array.from(dedupedById.values()).sort(sortByTime));
     } catch {
-      // Network/schema issues on /events should still try a lightweight endpoint.
-      try {
-        const today = dateKey(new Date());
-        const todayRes = await api.events.myEventToday(today);
-        const assignedToday = todayRes?.event ? [todayRes.event] : [];
-        setEvents(assignedToday.sort(sortByTime));
-      } catch {
-        setEvents([]);
-      }
+      setEvents([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => {
-    loadEvents();
-  }, [loadEvents]);
+  useFocusEffect(
+    useCallback(() => {
+      setAnimateKey((k) => k + 1);
+      loadEvents();
+    }, [loadEvents])
+  );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);

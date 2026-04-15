@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#172455" />
+    <meta name="color-scheme" content="light dark" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Stagepass Admin</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -12,23 +13,87 @@
   </head>
   <body>
     <div id="root">
-      <div id="preloader" style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.5rem;background:#f8fafc;font-family:system-ui,sans-serif;">
-        <div style="width:4rem;height:4rem;border-radius:1rem;background:#ca8a04;display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.5rem;font-weight:700;box-shadow:0 4px 14px rgba(202,138,4,0.35);">S</div>
+      <div id="preloader" class="preloader-root">
+        <div class="preloader-mark">S</div>
         <div style="text-align:center;">
-          <p style="font-size:1.125rem;font-weight:600;color:#1e293b;">Stagepass</p>
-          <p style="font-size:0.875rem;color:#64748b;margin-top:0.25rem;">Loading…</p>
+          <p class="preloader-title">Stagepass</p>
+          <p class="preloader-sub">Loading…</p>
         </div>
         <div style="display:flex;gap:0.375rem;">
-          <span style="width:0.5rem;height:0.5rem;border-radius:9999px;background:#ca8a04;opacity:0.6;animation:preloader-dot 1.4s ease-in-out 0s infinite both;"></span>
-          <span style="width:0.5rem;height:0.5rem;border-radius:9999px;background:#ca8a04;opacity:0.6;animation:preloader-dot 1.4s ease-in-out 0.2s infinite both;"></span>
-          <span style="width:0.5rem;height:0.5rem;border-radius:9999px;background:#ca8a04;opacity:0.6;animation:preloader-dot 1.4s ease-in-out 0.4s infinite both;"></span>
+          <span class="preloader-dot" style="animation:preloader-dot 1.4s ease-in-out 0s infinite both;"></span>
+          <span class="preloader-dot" style="animation:preloader-dot 1.4s ease-in-out 0.2s infinite both;"></span>
+          <span class="preloader-dot" style="animation:preloader-dot 1.4s ease-in-out 0.4s infinite both;"></span>
         </div>
       </div>
     </div>
     <style>
+      .preloader-root {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1.5rem;
+        font-family: system-ui, sans-serif;
+        background: #f8fafc;
+      }
+      /* Light: deeper gold mark, dark title text */
+      .preloader-mark {
+        width: 4rem;
+        height: 4rem;
+        border-radius: 1rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        font-weight: 700;
+        background: #b45309;
+        color: #fff;
+        box-shadow: 0 4px 14px rgba(161, 98, 7, 0.45);
+      }
+      .preloader-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: #0f172a;
+        margin: 0;
+      }
+      .preloader-sub {
+        font-size: 0.875rem;
+        color: #57534e;
+        margin: 0.25rem 0 0;
+      }
+      .preloader-dot {
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 9999px;
+        background: #b45309;
+        opacity: 0.6;
+      }
+      @media (prefers-color-scheme: dark) {
+        .preloader-root {
+          background: #020617;
+        }
+        /* Dark: bright mark + light title (Stagepass reads clearly) */
+        .preloader-mark {
+          background: #fde047;
+          color: #0f1838;
+          box-shadow: 0 4px 20px rgba(253, 224, 71, 0.35);
+        }
+        .preloader-title {
+          color: #fffbeb;
+        }
+        .preloader-sub {
+          color: rgba(253, 224, 71, 0.88);
+        }
+        .preloader-dot {
+          background: #fde047;
+        }
+      }
       @keyframes preloader-dot {
-        0%,80%,100%{transform:scale(0.6);opacity:0.5}
-        40%{transform:scale(1);opacity:1}
+        0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+        40% { transform: scale(1); opacity: 1; }
       }
     </style>
     <script type="module" src="/src/main.tsx"></script>

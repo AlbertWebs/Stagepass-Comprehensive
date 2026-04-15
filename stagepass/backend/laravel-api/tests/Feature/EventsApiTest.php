@@ -57,6 +57,46 @@ class EventsApiTest extends TestCase
         $this->assertArrayHasKey('data', $response->json());
     }
 
+    public function test_events_index_includes_event_when_user_is_on_crew(): void
+    {
+        $creator = User::factory()->create();
+        $crew = User::factory()->create();
+        $event = Event::create([
+            'name' => 'Crew Event',
+            'date' => now()->toDateString(),
+            'start_time' => '09:00',
+            'created_by_id' => $creator->id,
+            'status' => Event::STATUS_CREATED,
+        ]);
+        $event->crew()->attach($crew->id, ['role_in_event' => null]);
+
+        $response = $this->withHeaders($this->auth($crew))
+            ->getJson('/api/events');
+        $response->assertStatus(200);
+        $ids = collect($response->json('data'))->pluck('id')->all();
+        $this->assertContains($event->id, $ids);
+    }
+
+    public function test_events_index_includes_event_when_user_is_team_leader_only(): void
+    {
+        $creator = User::factory()->create();
+        $leader = User::factory()->create();
+        $event = Event::create([
+            'name' => 'Team leader event',
+            'date' => now()->toDateString(),
+            'start_time' => '09:00',
+            'created_by_id' => $creator->id,
+            'team_leader_id' => $leader->id,
+            'status' => Event::STATUS_CREATED,
+        ]);
+
+        $response = $this->withHeaders($this->auth($leader))
+            ->getJson('/api/events');
+        $response->assertStatus(200);
+        $ids = collect($response->json('data'))->pluck('id')->all();
+        $this->assertContains($event->id, $ids);
+    }
+
     public function test_events_store_creates_event(): void
     {
         $user = User::factory()->create();

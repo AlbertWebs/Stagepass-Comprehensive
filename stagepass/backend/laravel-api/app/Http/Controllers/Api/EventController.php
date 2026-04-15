@@ -58,6 +58,7 @@ class EventController extends Controller
         } else {
             $query->where(function ($q) use ($request) {
                 $q->where('created_by_id', $request->user()->id)
+                    ->orWhere('team_leader_id', $request->user()->id)
                     ->orWhereHas('crew', fn ($q) => $q->where('user_id', $request->user()->id));
             });
         }

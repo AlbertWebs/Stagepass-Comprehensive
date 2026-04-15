@@ -1338,7 +1338,14 @@ export function HomeDashboardScreen({
               return (
                 <Pressable
                   key={event.id}
-                  onPress={() => handleNav(() => router.push({ pathname: '/admin/events/[id]/operations', params: { id: String(event.id) } }))}
+                  onPress={() =>
+                    handleNav(() =>
+                      router.push({
+                        pathname: '/(tabs)/admin/events/[id]/operations',
+                        params: { id: String(event.id) },
+                      })
+                    )
+                  }
                   style={({ pressed }) => [
                     styles.eventCard,
                     { backgroundColor: cardBg, borderColor: homeBorderColor, borderLeftWidth: 3, borderLeftColor: isDark ? themeYellow : themeBlue, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },

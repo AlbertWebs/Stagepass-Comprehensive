@@ -272,7 +272,7 @@ export default function EventDetailScreen() {
               text: 'Done for the Day',
               onPress: () =>
                 router.push({
-                  pathname: '/admin/events/[id]/operations',
+                  pathname: '/(tabs)/admin/events/[id]/operations',
                   params: { id: String(event.id) },
                 }),
             },
@@ -603,10 +603,12 @@ export default function EventDetailScreen() {
               </View>
               <Pressable
                 onPress={() =>
-                  router.push({
-                    pathname: '/admin/events/[id]/operations',
-                    params: { id: String(event.id) },
-                  })
+                  handleNav(() =>
+                    router.push({
+                      pathname: '/(tabs)/admin/events/[id]/operations',
+                      params: { id: String(event.id) },
+                    })
+                  )
                 }
                 style={({ pressed }) => [
                   styles.leadOpsCard,

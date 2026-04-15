@@ -144,6 +144,8 @@ function isSafeGetCacheable(path: string): boolean {
   if (path.includes('/settings/public-app')) return false;
   // Admin may update office coordinates; avoid caching so home always sees current geofence.
   if (path.includes('/settings/office-checkin-config')) return false;
+  // Per-user assignment; cache key is URL-only so X-Local-Date would be ignored → stale "no event".
+  if (path.includes('/my-event-today')) return false;
   return !/\/(backup|payments|attendance\/checkin|attendance\/checkout)/.test(path);
 }
 
