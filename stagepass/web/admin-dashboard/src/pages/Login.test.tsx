@@ -61,4 +61,20 @@ describe('Login', () => {
     fireEvent.submit(screen.getByRole('button', { name: /sign in/i }).closest('form')!);
     expect(mockLogin).toHaveBeenCalledWith('admin@test.com', 'password123');
   });
+
+  it('toggles password visibility', () => {
+    render(
+      <MemoryRouter>
+        <Login />
+      </MemoryRouter>
+    );
+
+    const passwordInput = screen.getByLabelText(/password/i) as HTMLInputElement;
+    const toggle = screen.getByRole('button', { name: /show password/i });
+
+    expect(passwordInput.type).toBe('password');
+    fireEvent.click(toggle);
+    expect(passwordInput.type).toBe('text');
+    expect(screen.getByRole('button', { name: /hide password/i })).toBeInTheDocument();
+  });
 });
