@@ -141,9 +141,29 @@ export default function EventsTab() {
     try {
       const res = await api.events.list({ per_page: 100, refresh: true });
       const list = Array.isArray(res?.data) ? res.data : [];
-      setEvents(list.sort(sortByTime));
+      // Fallback: some environments return an empty list despite a valid assignment.
+      if (list.length === 0) {
+        try {
+          const today = dateKey(new Date());
+          const todayRes = await api.events.myEventToday(today);
+          const assignedToday = todayRes?.event ? [todayRes.event] : [];
+          setEvents(assignedToday.sort(sortByTime));
+        } catch {
+          setEvents([]);
+        }
+      } else {
+        setEvents(list.sort(sortByTime));
+      }
     } catch {
-      setEvents([]);
+      // Network/schema issues on /events should still try a lightweight endpoint.
+      try {
+        const today = dateKey(new Date());
+        const todayRes = await api.events.myEventToday(today);
+        const assignedToday = todayRes?.event ? [todayRes.event] : [];
+        setEvents(assignedToday.sort(sortByTime));
+      } catch {
+        setEvents([]);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
