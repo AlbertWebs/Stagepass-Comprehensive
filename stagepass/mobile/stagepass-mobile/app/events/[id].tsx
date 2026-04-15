@@ -4,7 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { HomeHeader } from '@/components/HomeHeader';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   SlideInRight,
@@ -312,49 +312,20 @@ export default function EventDetailScreen() {
   }, [checkinTime, rippleProgress, rippleProgress2]);
 
   const rippleStyle = useAnimatedStyle(() => {
-    const scale = 1 + 0.55 * rippleProgress.value;
-    const opacity = 0.7 * (1 - rippleProgress.value);
+    const scale = 1 + 0.72 * rippleProgress.value;
+    const opacity = 0.9 * (1 - rippleProgress.value);
     return { transform: [{ scale }], opacity };
   });
   const rippleStyle2 = useAnimatedStyle(() => {
-    const scale = 1 + 0.55 * rippleProgress2.value;
-    const opacity = 0.7 * (1 - rippleProgress2.value);
+    const scale = 1 + 0.72 * rippleProgress2.value;
+    const opacity = 0.9 * (1 - rippleProgress2.value);
     return { transform: [{ scale }], opacity };
   });
-
-  const headerBg = isDark ? '#1E212A' : '#F5F7FC';
-  const headerBackIconTint = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-  const headerBackIconBorder = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.10)';
-
-  const handleScreenBack = useCallback(() => {
-    handleNav(() => {
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace('/(tabs)/events');
-      }
-    });
-  }, [handleNav, router]);
 
   if (loading || !event) {
     return (
       <ThemedView style={styles.container}>
-        <HomeHeader title="Home" notificationCount={0} />
-        <Pressable
-          onPress={handleScreenBack}
-          style={({ pressed }) => [
-            styles.backBelowHeader,
-            { backgroundColor: headerBg, borderBottomColor: colors.border },
-            pressed && { opacity: NAV_PRESSED_OPACITY },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="Back to events"
-        >
-          <View style={[styles.backBelowIconWrap, { backgroundColor: headerBackIconTint, borderColor: headerBackIconBorder }]}>
-            <Ionicons name="chevron-back" size={Icons.header} color={colors.text} />
-          </View>
-          <ThemedText style={[styles.backBelowTitle, { color: colors.text }]}>Event details</ThemedText>
-        </Pressable>
+        <HomeHeader title="Event details" notificationCount={0} />
         <View style={[styles.scrollWrapper, styles.loaderArea]}>
           <StagepassLoader message="Loading event…" fullScreen={false} />
         </View>
@@ -366,29 +337,41 @@ export default function EventDetailScreen() {
   const locationLabel = event.location_name ?? 'No location';
   const timeLabel = formatEventTime(event.start_time);
   const dateLabel = formatEventDate(event.date);
+  const locationQuery = [event.location_name, event.address].filter(Boolean).join(', ').trim();
 
-  const accent = colors.text;
-  const iconWrapBg = themeYellow + '18';
-  const iconWrapBorder = themeYellow + '38';
+  const handleOpenTasks = () => {
+    handleNav(() => router.push('/(tabs)/tasks'));
+  };
+
+  const handleGetDirections = async () => {
+    const destination = locationQuery || locationLabel;
+    if (!destination || destination === 'No location') {
+      Alert.alert('Directions unavailable', 'This event does not have a location yet.');
+      return;
+    }
+    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination)}`;
+    try {
+      const canOpen = await Linking.canOpenURL(mapsUrl);
+      if (!canOpen) {
+        Alert.alert('Directions unavailable', 'Could not open maps on this device.');
+        return;
+      }
+      await Linking.openURL(mapsUrl);
+    } catch {
+      Alert.alert('Directions unavailable', 'Could not open maps on this device.');
+    }
+  };
+
+  const accent = isDark ? '#f8fafc' : '#0f172a';
+  const cardSurface = isDark ? '#0f172a' : '#ffffff';
+  const cardBorder = isDark ? '#334155' : '#dbeafe';
+  const iconWrapBg = isDark ? themeYellow + '2a' : themeYellow + '18';
+  const iconWrapBorder = isDark ? themeYellow + '56' : themeYellow + '38';
+  const sectionIconBg = isDark ? themeBlue + '3d' : themeBlue + '22';
 
   return (
     <ThemedView style={styles.container}>
-      <HomeHeader title="Home" notificationCount={0} />
-      <Pressable
-        onPress={handleScreenBack}
-        style={({ pressed }) => [
-          styles.backBelowHeader,
-          { backgroundColor: headerBg, borderBottomColor: colors.border },
-          pressed && { opacity: NAV_PRESSED_OPACITY },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel="Back to events"
-      >
-        <View style={[styles.backBelowIconWrap, { backgroundColor: headerBackIconTint, borderColor: headerBackIconBorder }]}>
-          <Ionicons name="chevron-back" size={Icons.header} color={colors.text} />
-        </View>
-        <ThemedText style={[styles.backBelowTitle, { color: colors.text }]}>Event details</ThemedText>
-      </Pressable>
+      <HomeHeader title="Event details" notificationCount={0} />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + Spacing.xxl }]}
@@ -396,152 +379,50 @@ export default function EventDetailScreen() {
       >
         <Animated.View entering={SlideInRight.duration(320)}>
           {/* Hero: event name */}
-          <View style={[styles.heroCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.heroCard, { backgroundColor: isDark ? '#111827' : '#f8fbff', borderColor: isDark ? '#475569' : '#93c5fd' }]}>
             <View style={[styles.heroIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
               <Ionicons name="calendar" size={Icons.xl} color={themeYellow} />
             </View>
             <ThemedText style={[styles.eventName, { color: colors.text }]} numberOfLines={2}>{event.name}</ThemedText>
             <ThemedText style={[styles.heroDate, { color: colors.textSecondary }]}>{dateLabel}</ThemedText>
-          </View>
-
-          {/* Details section */}
-          <View style={styles.sectionTitleRow}>
-            <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
-            <View style={[styles.sectionTitleIconWrap, { backgroundColor: iconWrapBg }]}>
-              <Ionicons name="information-circle-outline" size={Icons.small} color={themeYellow} />
-            </View>
-            <ThemedText style={[styles.sectionTitle, { color: accent }]}>Details</ThemedText>
-          </View>
-          <View style={[styles.detailsCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            {timeLabel ? (
-              <View style={[styles.detailRow, { borderBottomColor: colors.border }]}>
-                <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                  <Ionicons name="time-outline" size={Icons.small} color={themeYellow} />
-                </View>
-                <View style={styles.detailTextWrap}>
-                  <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Time</ThemedText>
-                  <ThemedText style={[styles.detailValue, { color: colors.text }]}>{timeLabel}</ThemedText>
-                </View>
-              </View>
-            ) : null}
-            <View style={[styles.detailRow, { borderBottomColor: colors.border }, teamLeader == null && myAssignment == null && styles.detailRowLast]}>
-              <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                <Ionicons name="location-outline" size={Icons.small} color={themeYellow} />
-              </View>
-              <View style={styles.detailTextWrap}>
-                <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Venue</ThemedText>
-                <ThemedText style={[styles.detailValue, { color: colors.text }]} numberOfLines={2}>{locationLabel}</ThemedText>
-              </View>
-            </View>
-            {teamLeader ? (
-              <View style={[styles.detailRow, { borderBottomColor: colors.border }, myAssignment == null && styles.detailRowLast]}>
-                <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                  <Ionicons name="person-outline" size={Icons.small} color={themeYellow} />
-                </View>
-                <View style={styles.detailTextWrap}>
-                  <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Team leader</ThemedText>
-                  <ThemedText style={[styles.detailValue, { color: colors.text }]}>{teamLeader.name}</ThemedText>
-                </View>
-              </View>
-            ) : null}
-            {myAssignment != null ? (
-              <View style={[styles.detailRow, styles.detailRowLast]}>
-                <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                  <Ionicons name="ribbon-outline" size={Icons.small} color={themeYellow} />
-                </View>
-                <View style={styles.detailTextWrap}>
-                  <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Your role</ThemedText>
-                  <ThemedText style={[styles.detailValue, { color: colors.text }]}>
-                    {myRoleInEvent && myRoleInEvent.trim() ? myRoleInEvent : 'Crew'}
-                  </ThemedText>
-                </View>
-              </View>
-            ) : null}
-          </View>
-
-          {event.description ? (
-            <>
-              <View style={styles.sectionTitleRow}>
-                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
-                <View style={[styles.sectionTitleIconWrap, { backgroundColor: iconWrapBg }]}>
-                  <Ionicons name="document-text-outline" size={Icons.small} color={themeYellow} />
-                </View>
-                <ThemedText style={[styles.sectionTitle, { color: accent }]}>About</ThemedText>
-              </View>
-              <View style={[styles.descCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <ThemedText style={[styles.desc, { color: colors.textSecondary }]}>{event.description}</ThemedText>
-              </View>
-            </>
-          ) : null}
-
-          {event.daily_allowance != null && event.daily_allowance > 0 ? (
-            <>
-              <View style={styles.sectionTitleRow}>
-                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
-                <View style={[styles.sectionTitleIconWrap, { backgroundColor: iconWrapBg }]}>
-                  <Ionicons name="wallet-outline" size={Icons.small} color={themeYellow} />
-                </View>
-                <ThemedText style={[styles.sectionTitle, { color: accent }]}>Allowance</ThemedText>
-              </View>
-              <View style={[styles.allowanceCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <View style={[styles.allowanceIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                  <Ionicons name="wallet-outline" size={Icons.standard} color={themeYellow} />
-                </View>
-                <View style={styles.allowanceTextWrap}>
-                  <ThemedText style={[styles.allowanceValue, { color: colors.text }]}>
-                    KES {Number(event.daily_allowance).toLocaleString()}
-                  </ThemedText>
-                  <ThemedText style={[styles.allowanceLabel, { color: colors.textSecondary }]}>Daily allowance</ThemedText>
-                </View>
-              </View>
-            </>
-          ) : null}
-
-          {canManageEventCrew ? (
-            <>
-              <View style={styles.sectionTitleRow}>
-                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
-                <View style={[styles.sectionTitleIconWrap, { backgroundColor: iconWrapBg }]}>
-                  <Ionicons name="people-outline" size={Icons.small} color={themeYellow} />
-                </View>
-                <ThemedText style={[styles.sectionTitle, { color: accent }]}>Crew</ThemedText>
-              </View>
+            <View style={styles.heroMetaRow}>
               <Pressable
-                onPress={() =>
-                  router.push({
-                    pathname: '/admin/events/[id]/operations',
-                    params: { id: String(event.id) },
-                  })
-                }
+                onPress={handleOpenTasks}
                 style={({ pressed }) => [
-                  styles.leadOpsCard,
-                  { backgroundColor: colors.surface, borderColor: colors.border },
-                  pressed && { opacity: 0.92 },
+                  styles.heroActionButton,
+                  { backgroundColor: isDark ? '#3a2f00' : '#fff8db', borderColor: isDark ? '#facc15aa' : '#facc15' },
+                  pressed && { opacity: NAV_PRESSED_OPACITY },
                 ]}
               >
-                <View style={[styles.leadOpsIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                  <Ionicons name="briefcase-outline" size={Icons.standard} color={themeYellow} />
-                </View>
-                <View style={styles.leadOpsTextWrap}>
-                  <ThemedText style={[styles.leadOpsTitle, { color: colors.text }]}>Event operations</ThemedText>
-                  <ThemedText style={[styles.leadOpsSub, { color: colors.textSecondary }]}>
-                    Onboard crew, checklist, check-in, and end event
-                  </ThemedText>
-                </View>
-                <Ionicons name="chevron-forward" size={22} color={colors.textSecondary} />
+                <Ionicons name="checkmark-done-outline" size={15} color={themeYellow} />
+                <ThemedText style={[styles.heroActionText, { color: themeYellow }]}>Tasks</ThemedText>
               </Pressable>
-            </>
-          ) : null}
+              <Pressable
+                onPress={handleGetDirections}
+                style={({ pressed }) => [
+                  styles.heroActionButton,
+                  { backgroundColor: isDark ? '#102a4a' : '#e0edff', borderColor: isDark ? '#60a5fa' : '#3b82f6' },
+                  pressed && { opacity: NAV_PRESSED_OPACITY },
+                ]}
+              >
+                <Ionicons name="navigate-outline" size={15} color={themeBlue} />
+                <ThemedText style={[styles.heroActionText, { color: isDark ? '#dbeafe' : themeBlue }]}>
+                  Get Directions
+                </ThemedText>
+              </Pressable>
+            </View>
+          </View>
 
           {/* Check-in / Check-out actions */}
           <View style={styles.sectionTitleRow}>
-            <View style={[styles.sectionTitleAccent, { backgroundColor: themeBlue }]} />
-            <View style={[styles.sectionTitleIconWrap, { backgroundColor: themeBlue + '28' }]}>
-              <Ionicons name="location" size={Icons.small} color={themeBlue} />
+            <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+            <View style={[styles.sectionTitleIconWrap, { backgroundColor: sectionIconBg }]}>
+              <Ionicons name="location" size={Icons.small} color={themeYellow} />
             </View>
             <ThemedText style={[styles.sectionTitle, { color: accent }]}>Attendance</ThemedText>
           </View>
-          <View style={styles.actions}>
+          <View style={[styles.attendanceCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+            <View style={styles.actions}>
             {!checkinTime ? (
               <View style={styles.roundCheckInWrap}>
                 <Animated.View style={styles.roundCheckInButtonWrap}>
@@ -597,7 +478,7 @@ export default function EventDetailScreen() {
                 disabled={actionLoading}
                 style={({ pressed }) => [
                   styles.ctaButtonSecondary,
-                  { borderColor: themeYellow, backgroundColor: themeYellow + '12', opacity: actionLoading ? 0.7 : pressed ? 0.9 : 1 },
+                  { borderColor: themeYellow, backgroundColor: isDark ? '#352d06' : '#fff7cc', opacity: actionLoading ? 0.7 : pressed ? 0.9 : 1 },
                 ]}
               >
                 <Ionicons name="exit-outline" size={Icons.header} color={themeYellow} />
@@ -606,15 +487,145 @@ export default function EventDetailScreen() {
                 </ThemedText>
               </Pressable>
             )}
-          </View>
-          {checkinTime && !checkoutTime ? (
-            <View style={[styles.liveHoursCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            </View>
+            {checkinTime && !checkoutTime ? (
+              <View style={[styles.liveHoursCard, { backgroundColor: isDark ? '#0b1220' : '#f1f5ff', borderColor: cardBorder }]}>
               <ThemedText style={[styles.liveHoursTitle, { color: colors.text }]}>Active session</ThemedText>
               <ThemedText style={[styles.liveHoursValue, { color: colors.textSecondary }]}>Time worked: {formatHoursLabel(sessionStats.totalHours)}</ThemedText>
               <ThemedText style={[styles.liveHoursValue, { color: sessionStats.extraHours > 0 ? '#f97316' : colors.textSecondary }]}>
                 Extra hours: {formatHoursLabel(sessionStats.extraHours)}
               </ThemedText>
             </View>
+            ) : null}
+          </View>
+
+          {/* Details section */}
+          <View style={styles.sectionTitleRow}>
+            <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+            <View style={[styles.sectionTitleIconWrap, { backgroundColor: sectionIconBg }]}>
+              <Ionicons name="information-circle-outline" size={Icons.small} color={themeYellow} />
+            </View>
+            <ThemedText style={[styles.sectionTitle, { color: accent }]}>Event details</ThemedText>
+          </View>
+          <View style={[styles.detailsCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+            {timeLabel ? (
+              <View style={[styles.detailRow, { borderBottomColor: colors.border }]}>
+                <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
+                  <Ionicons name="time-outline" size={Icons.small} color={themeYellow} />
+                </View>
+                <View style={styles.detailTextWrap}>
+                  <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Time</ThemedText>
+                  <ThemedText style={[styles.detailValue, { color: colors.text }]}>{timeLabel}</ThemedText>
+                </View>
+              </View>
+            ) : null}
+              <View style={[styles.detailRow, { borderBottomColor: cardBorder }, teamLeader == null && myAssignment == null && styles.detailRowLast]}>
+              <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
+                <Ionicons name="location-outline" size={Icons.small} color={themeYellow} />
+              </View>
+              <View style={styles.detailTextWrap}>
+                <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Venue</ThemedText>
+                <ThemedText style={[styles.detailValue, { color: colors.text }]} numberOfLines={2}>{locationLabel}</ThemedText>
+              </View>
+            </View>
+            {teamLeader ? (
+              <View style={[styles.detailRow, { borderBottomColor: cardBorder }, myAssignment == null && styles.detailRowLast]}>
+                <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
+                  <Ionicons name="person-outline" size={Icons.small} color={themeYellow} />
+                </View>
+                <View style={styles.detailTextWrap}>
+                  <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Team leader</ThemedText>
+                  <ThemedText style={[styles.detailValue, { color: colors.text }]}>{teamLeader.name}</ThemedText>
+                </View>
+              </View>
+            ) : null}
+            {myAssignment != null ? (
+              <View style={[styles.detailRow, styles.detailRowLast]}>
+                <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
+                  <Ionicons name="ribbon-outline" size={Icons.small} color={themeYellow} />
+                </View>
+                <View style={styles.detailTextWrap}>
+                  <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Your role</ThemedText>
+                  <ThemedText style={[styles.detailValue, { color: colors.text }]}>
+                    {myRoleInEvent && myRoleInEvent.trim() ? myRoleInEvent : 'Crew'}
+                  </ThemedText>
+                </View>
+              </View>
+            ) : null}
+          </View>
+
+          {event.description ? (
+            <>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                <View style={[styles.sectionTitleIconWrap, { backgroundColor: sectionIconBg }]}>
+                  <Ionicons name="document-text-outline" size={Icons.small} color={themeYellow} />
+                </View>
+                <ThemedText style={[styles.sectionTitle, { color: accent }]}>About</ThemedText>
+              </View>
+              <View style={[styles.descCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+                <ThemedText style={[styles.desc, { color: colors.textSecondary }]}>{event.description}</ThemedText>
+              </View>
+            </>
+          ) : null}
+
+          {event.daily_allowance != null && event.daily_allowance > 0 ? (
+            <>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                <View style={[styles.sectionTitleIconWrap, { backgroundColor: sectionIconBg }]}>
+                  <Ionicons name="wallet-outline" size={Icons.small} color={themeYellow} />
+                </View>
+                <ThemedText style={[styles.sectionTitle, { color: accent }]}>Allowance</ThemedText>
+              </View>
+              <View style={[styles.allowanceCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+                <View style={[styles.allowanceIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
+                  <Ionicons name="wallet-outline" size={Icons.standard} color={themeYellow} />
+                </View>
+                <View style={styles.allowanceTextWrap}>
+                  <ThemedText style={[styles.allowanceValue, { color: colors.text }]}>
+                    KES {Number(event.daily_allowance).toLocaleString()}
+                  </ThemedText>
+                  <ThemedText style={[styles.allowanceLabel, { color: colors.textSecondary }]}>Daily allowance</ThemedText>
+                </View>
+              </View>
+            </>
+          ) : null}
+
+          {canManageEventCrew ? (
+            <>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                <View style={[styles.sectionTitleIconWrap, { backgroundColor: sectionIconBg }]}>
+                  <Ionicons name="people-outline" size={Icons.small} color={themeYellow} />
+                </View>
+                <ThemedText style={[styles.sectionTitle, { color: accent }]}>Crew</ThemedText>
+              </View>
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname: '/admin/events/[id]/operations',
+                    params: { id: String(event.id) },
+                  })
+                }
+                style={({ pressed }) => [
+                  styles.leadOpsCard,
+                  { backgroundColor: cardSurface, borderColor: cardBorder },
+                  pressed && { opacity: 0.92 },
+                ]}
+              >
+                <View style={[styles.leadOpsIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
+                  <Ionicons name="briefcase-outline" size={Icons.standard} color={themeYellow} />
+                </View>
+                <View style={styles.leadOpsTextWrap}>
+                  <ThemedText style={[styles.leadOpsTitle, { color: colors.text }]}>Event operations</ThemedText>
+                  <ThemedText style={[styles.leadOpsSub, { color: colors.textSecondary }]}>
+                    Onboard crew, checklist, check-in, and end event
+                  </ThemedText>
+                </View>
+                <Ionicons name="chevron-forward" size={22} color={colors.textSecondary} />
+              </Pressable>
+            </>
           ) : null}
 
           {canManageEventCrew && !isEventEnded && crewAttendanceRows.length > 0 ? (
@@ -691,28 +702,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minHeight: 200,
   },
-  backBelowHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm + 2,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm + 2,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  backBelowIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  backBelowTitle: {
-    fontSize: Typography.titleCard,
-    fontWeight: Typography.titleLargeWeight,
-    letterSpacing: 0.35,
-    flex: 1,
-  },
   scroll: { flex: 1 },
   content: { padding: Spacing.lg },
   heroCard: {
@@ -721,6 +710,11 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     marginBottom: Spacing.xl,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 3,
   },
   heroIconWrap: {
     width: 48,
@@ -740,6 +734,27 @@ const styles = StyleSheet.create({
   heroDate: {
     fontSize: Typography.bodySmall,
     letterSpacing: 0.2,
+  },
+  heroMetaRow: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  heroActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+  },
+  heroActionText: {
+    fontSize: Typography.bodySmall,
+    fontWeight: Typography.buttonTextWeight,
   },
   sectionTitleRow: {
     flexDirection: 'row',
@@ -766,11 +781,28 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     flex: 1,
   },
+  attendanceHint: {
+    fontSize: Typography.bodySmall,
+    marginBottom: Spacing.md,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  attendanceCard: {
+    borderRadius: Cards.borderRadius,
+    borderWidth: 1,
+    padding: Spacing.md,
+    marginBottom: Spacing.lg,
+  },
   detailsCard: {
     borderRadius: Cards.borderRadius,
     borderWidth: 1,
     padding: Spacing.md,
     marginBottom: Spacing.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
   detailRow: {
     flexDirection: 'row',
@@ -915,7 +947,7 @@ const styles = StyleSheet.create({
     borderRadius: 48,
     left: 0,
     top: 0,
-    borderWidth: 3,
+    borderWidth: 4,
     backgroundColor: 'transparent',
   },
   roundCheckInButton: {

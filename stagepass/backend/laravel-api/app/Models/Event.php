@@ -20,7 +20,7 @@ class Event extends Model
 
     protected $fillable = [
         'name', 'description', 'date', 'end_date', 'start_time', 'expected_end_time',
-        'location_name', 'latitude', 'longitude', 'geofence_radius', 'daily_allowance',
+        'location_name', 'latitude', 'longitude', 'geofence_radius', 'daily_allowance', 'per_diem_enabled',
         'team_leader_id', 'client_id', 'status', 'created_by_id',
         'ended_at', 'ended_by_id', 'end_comment',
         'closed_at', 'closed_by', 'closing_comment',
@@ -33,6 +33,7 @@ class Event extends Model
             'end_date' => 'date',
             'geofence_radius' => 'integer',
             'daily_allowance' => 'decimal:2',
+            'per_diem_enabled' => 'boolean',
             'ended_at' => 'datetime',
             'closed_at' => 'datetime',
         ];

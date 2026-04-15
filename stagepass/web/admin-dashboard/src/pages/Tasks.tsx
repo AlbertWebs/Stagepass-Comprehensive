@@ -378,10 +378,10 @@ export default function Tasks() {
           </button>
         }
       />
-      <SectionCard>
+      <SectionCard className="p-5 sm:p-6 lg:p-7">
         <h2 className="text-base font-semibold text-slate-800">Tasks</h2>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div className="sm:col-span-2 lg:col-span-2">
             <label htmlFor="tasks-search" className="mb-1 block text-xs font-medium text-slate-500">
               Search
@@ -474,29 +474,29 @@ export default function Tasks() {
             </button>
           </div>
         ) : (
-          <div className="mt-6 overflow-x-auto rounded-lg border border-slate-200">
+          <div className="mt-7 overflow-x-auto rounded-xl border border-slate-200 bg-white">
             <table className="w-full min-w-[720px] border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50/80">
-                  <th className="text-left py-3.5 px-4 text-xs font-semibold uppercase tracking-wider text-slate-600">
+                  <th className="text-left py-4 px-5 text-xs font-semibold uppercase tracking-wider text-slate-600">
                     Title
                   </th>
-                  <th className="text-left py-3.5 px-4 text-xs font-semibold uppercase tracking-wider text-slate-600">
+                  <th className="text-left py-4 px-5 text-xs font-semibold uppercase tracking-wider text-slate-600">
                     Event
                   </th>
-                  <th className="text-left py-3.5 px-4 text-xs font-semibold uppercase tracking-wider text-slate-600">
+                  <th className="text-left py-4 px-5 text-xs font-semibold uppercase tracking-wider text-slate-600">
                     Assigned
                   </th>
-                  <th className="text-left py-3.5 px-4 text-xs font-semibold uppercase tracking-wider text-slate-600">
+                  <th className="text-left py-4 px-5 text-xs font-semibold uppercase tracking-wider text-slate-600">
                     Priority
                   </th>
-                  <th className="text-left py-3.5 px-4 text-xs font-semibold uppercase tracking-wider text-slate-600">
+                  <th className="text-left py-4 px-5 text-xs font-semibold uppercase tracking-wider text-slate-600">
                     Status
                   </th>
-                  <th className="text-left py-3.5 px-4 text-xs font-semibold uppercase tracking-wider text-slate-600">
+                  <th className="text-left py-4 px-5 text-xs font-semibold uppercase tracking-wider text-slate-600">
                     Due
                   </th>
-                  <th className="text-right py-3.5 px-4 text-xs font-semibold uppercase tracking-wider text-slate-600">
+                  <th className="text-right py-4 px-5 text-xs font-semibold uppercase tracking-wider text-slate-600">
                     Actions
                   </th>
                 </tr>
@@ -504,7 +504,7 @@ export default function Tasks() {
               <tbody className="divide-y divide-slate-100">
                 {tasks.map((t) => (
                   <tr key={t.id} className="bg-white transition-colors hover:bg-slate-50/80">
-                    <td className="py-3.5 px-4">
+                    <td className="py-4 px-5">
                       <button
                         type="button"
                         onClick={() => openDetail(t)}
@@ -513,11 +513,11 @@ export default function Tasks() {
                         {t.title}
                       </button>
                     </td>
-                    <td className="py-3.5 px-4 text-sm text-slate-600">{t.event?.name ?? '—'}</td>
-                    <td className="py-3.5 px-4 text-sm text-slate-600">
+                    <td className="py-4 px-5 text-sm text-slate-600">{t.event?.name ?? '—'}</td>
+                    <td className="py-4 px-5 text-sm text-slate-600">
                       {t.assignees?.length ? t.assignees.map((a) => a.name).join(', ') : '—'}
                     </td>
-                    <td className="py-3.5 px-4">
+                    <td className="py-4 px-5">
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
                           t.priority === 'high'
@@ -530,7 +530,7 @@ export default function Tasks() {
                         {PRIORITY_OPTIONS.find((o) => o.value === t.priority)?.label ?? t.priority}
                       </span>
                     </td>
-                    <td className="py-3.5 px-4">
+                    <td className="py-4 px-5">
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
                           t.status === 'completed'
@@ -543,9 +543,9 @@ export default function Tasks() {
                         {STATUS_OPTIONS.find((o) => o.value === t.status)?.label ?? t.status}
                       </span>
                     </td>
-                    <td className="py-3.5 px-4 text-sm text-slate-600">{formatDate(t.due_date)}</td>
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
+                    <td className="py-4 px-5 text-sm text-slate-600">{formatDate(t.due_date)}</td>
+                    <td className="py-4 px-5 text-right">
+                      <div className="flex items-center justify-end gap-3">
                         <button
                           type="button"
                           onClick={() => openEdit(t)}

@@ -85,6 +85,10 @@ class PaymentController extends Controller
             $perDiem = $amount;
             $allowances = 0;
         }
+        $isNairobiEvent = str_contains(strtolower((string) ($event->location_name ?? '')), 'nairobi');
+        if (! (bool) ($event->per_diem_enabled ?? false) || $isNairobiEvent) {
+            $perDiem = 0;
+        }
         $total = $perDiem + $allowances;
         $paymentDate = $request->filled('payment_date')
             ? $request->date('payment_date')

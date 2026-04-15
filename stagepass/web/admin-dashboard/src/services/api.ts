@@ -133,6 +133,7 @@ export interface Event {
   longitude?: number;
   geofence_radius: number;
   daily_allowance?: number | null;
+  per_diem_enabled?: boolean;
   team_leader_id?: number;
   client_id?: number | null;
   status: string;

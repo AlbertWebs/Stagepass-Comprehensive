@@ -100,8 +100,16 @@ let authToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
 let unauthorizedSuppressedUntil = 0;
 
+function clearGetCache() {
+  getResponseCache.clear();
+  inFlightGetRequests.clear();
+}
+
 export function setAuthToken(token: string | null) {
   authToken = token;
+  if (!token) {
+    clearGetCache();
+  }
 }
 /** Call when 401 is received – app can clear token, Redux, and redirect to login */
 export function setOnUnauthorized(callback: (() => void) | null) {
@@ -267,6 +275,10 @@ async function request<T>(
             expiresAt: Date.now() + GET_CACHE_TTL_MS,
             data,
           });
+        } else if (method !== 'GET') {
+          // Any successful mutation may impact cached GET responses (e.g. /me).
+          // Clear cache so relogin/profile screens always reflect latest server data.
+          clearGetCache();
         }
         return data as T;
       } catch (e) {
@@ -424,8 +436,15 @@ export const api = {
   },
   events: {
     /** List events. Backend returns only assigned for crew; admins get all. */
-    list: (params?: { status?: string; page?: number; per_page?: number }) =>
-      request<{ data: Event[] }>('/events', { params: params as Record<string, string> | undefined }),
+    list: (params?: { status?: string; page?: number; per_page?: number; refresh?: boolean }) =>
+      request<{ data: Event[] }>('/events', {
+        params: params
+          ? ({
+              ...params,
+              refresh: params.refresh ? '1' : undefined,
+            } as Record<string, string>)
+          : undefined,
+      }),
     get: (id: number) => request<Event>(`/events/${id}`),
     /** Event assigned to current user for today (crew/leader home). Pass localDate (YYYY-MM-DD) so backend uses device date. */
     myEventToday: (localDate?: string) =>
@@ -629,7 +648,7 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ payment_id: paymentId, rejection_reason: reason }),
       }),
-    earnedAllowances: (params?: { event_id?: number; status?: string; search?: string; page?: number; per_page?: number }) =>
+    earnedAllowances: (params?: { event_id?: number; crew_id?: number; status?: string; search?: string; page?: number; per_page?: number }) =>
       request<{ data: EarnedAllowanceEventGroup[]; pagination: { current_page: number; last_page: number; total: number; per_page: number } }>(
         '/payments/earned-allowances',
         {

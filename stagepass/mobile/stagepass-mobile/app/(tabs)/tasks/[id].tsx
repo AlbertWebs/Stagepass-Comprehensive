@@ -121,7 +121,7 @@ export default function TaskDetailScreen() {
   if (loading || !task) {
     return (
       <ThemedView style={styles.container}>
-        <AppHeader title="Task" showBack />
+        <AppHeader title="Task Details" />
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={themeYellow} />
           <ThemedText style={[styles.loadingText, { color: colors.textSecondary }]}>
@@ -134,7 +134,7 @@ export default function TaskDetailScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <AppHeader title={task.title} showBack />
+      <AppHeader title="Task Details" />
       <KeyboardAvoidingView
         style={styles.keyboard}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

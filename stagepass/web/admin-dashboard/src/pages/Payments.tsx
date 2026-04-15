@@ -31,6 +31,14 @@ type PaymentFormState = {
   allowances: string;
 };
 
+type EarnedAllowanceFormState = {
+  event_id: string;
+  crew_id: string;
+  allowance_type_id: string;
+  amount: string;
+  description: string;
+};
+
 function emptyForm(): PaymentFormState {
   return {
     event_id: '',
@@ -39,6 +47,16 @@ function emptyForm(): PaymentFormState {
     hours: '',
     per_diem: '',
     allowances: '0',
+  };
+}
+
+function emptyEarnedAllowanceForm(): EarnedAllowanceFormState {
+  return {
+    event_id: '',
+    crew_id: '',
+    allowance_type_id: '',
+    amount: '',
+    description: '',
   };
 }
 
@@ -74,6 +92,8 @@ export default function Payments() {
   const [allowanceTypeName, setAllowanceTypeName] = useState('');
   const [allowanceStatusFilter, setAllowanceStatusFilter] = useState('');
   const [allowanceSearch, setAllowanceSearch] = useState('');
+  const [allowanceForm, setAllowanceForm] = useState<EarnedAllowanceFormState>(emptyEarnedAllowanceForm());
+  const [allocatingAllowance, setAllocatingAllowance] = useState(false);
 
   const fetchPayments = useCallback(() => {
     api.payments
@@ -189,9 +209,45 @@ export default function Payments() {
     }
   };
 
+  const handleAllocateAllowance = async () => {
+    const eventId = Number(allowanceForm.event_id);
+    const crewId = Number(allowanceForm.crew_id);
+    const typeId = Number(allowanceForm.allowance_type_id);
+    const amount = Number(allowanceForm.amount);
+    if (!eventId || !crewId || !typeId || !Number.isFinite(amount) || amount <= 0) {
+      setError('Select event, crew, allowance type, and a valid amount.');
+      return;
+    }
+    setAllocatingAllowance(true);
+    setError(null);
+    try {
+      await api.payments.addEarnedAllowance({
+        event_id: eventId,
+        crew_id: crewId,
+        allowance_type_id: typeId,
+        amount,
+        description: allowanceForm.description.trim() || undefined,
+      });
+      setAllowanceForm((prev) => ({
+        ...prev,
+        crew_id: '',
+        amount: '',
+        description: '',
+      }));
+      fetchAllowances();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to allocate allowance');
+    } finally {
+      setAllocatingAllowance(false);
+    }
+  };
+
   const selectedEventId = form.event_id ? Number(form.event_id) : null;
   const selectedEvent = selectedEventId ? events.find((e) => e.id === selectedEventId) : null;
   const crewForSelect = selectedEvent?.crew ?? [];
+  const selectedAllowanceEventId = allowanceForm.event_id ? Number(allowanceForm.event_id) : null;
+  const selectedAllowanceEvent = selectedAllowanceEventId ? events.find((e) => e.id === selectedAllowanceEventId) : null;
+  const allowanceCrewForSelect = selectedAllowanceEvent?.crew ?? [];
 
   return (
     <div className="flex max-h-[calc(100vh-6rem)] flex-col gap-6 overflow-y-auto scrollbar-hide">
@@ -223,13 +279,14 @@ export default function Payments() {
         />
         <button
           type="button"
-          onClick={openCreate}
+          onClick={segment === 'allowances' ? handleAllocateAllowance : openCreate}
           className="btn-brand inline-flex items-center gap-2 rounded-xl px-5 py-2.5 shadow-sm"
+          disabled={segment === 'allowances' ? allocatingAllowance : false}
         >
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
           </svg>
-          Create payment request
+          {segment === 'allowances' ? (allocatingAllowance ? 'Allocating…' : 'Allocate allowance') : 'Create payment request'}
         </button>
       </div>
 
@@ -431,6 +488,77 @@ export default function Payments() {
       {segment === 'allowances' && (
         <SectionCard sectionLabel="Earned allowances by event">
           <div className="space-y-4 p-6">
+            <div className="rounded-xl border border-slate-200 p-4">
+              <div className="mb-3 text-sm font-medium text-slate-700">Allocate allowance to crew</div>
+              <p className="mb-3 text-xs text-slate-500">
+                Create an allowance allocation for a crew member. It will appear in their mobile app allowances screen.
+              </p>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <select
+                  className="form-select"
+                  value={allowanceForm.event_id}
+                  onChange={(e) => setAllowanceForm((f) => ({ ...f, event_id: e.target.value, crew_id: '' }))}
+                >
+                  <option value="">Select event</option>
+                  {events.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.name} ({formatDate(e.date)})
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="form-select"
+                  value={allowanceForm.crew_id}
+                  onChange={(e) => setAllowanceForm((f) => ({ ...f, crew_id: e.target.value }))}
+                  disabled={!selectedAllowanceEventId}
+                >
+                  <option value="">Select crew</option>
+                  {allowanceCrewForSelect.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="form-select"
+                  value={allowanceForm.allowance_type_id}
+                  onChange={(e) => setAllowanceForm((f) => ({ ...f, allowance_type_id: e.target.value }))}
+                >
+                  <option value="">Allowance type</option>
+                  {allowanceTypes
+                    .filter((t) => t.is_active)
+                    .map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                </select>
+                <input
+                  className="form-input"
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  placeholder="Amount"
+                  value={allowanceForm.amount}
+                  onChange={(e) => setAllowanceForm((f) => ({ ...f, amount: e.target.value }))}
+                />
+                <button
+                  type="button"
+                  className="btn-brand"
+                  onClick={handleAllocateAllowance}
+                  disabled={allocatingAllowance}
+                >
+                  {allocatingAllowance ? 'Allocating…' : 'Allocate'}
+                </button>
+              </div>
+              <input
+                className="form-input mt-3"
+                placeholder="Optional description"
+                value={allowanceForm.description}
+                onChange={(e) => setAllowanceForm((f) => ({ ...f, description: e.target.value }))}
+              />
+            </div>
+
             <div className="rounded-xl border border-slate-200 p-4">
               <div className="mb-3 text-sm font-medium text-slate-700">Allowance types</div>
               <div className="flex flex-wrap items-center gap-2">

@@ -41,7 +41,6 @@ import { BorderRadius, Spacing, StatusColors, themeBlue, themeYellow, VibrantCol
 import { getOfficeCheckinConfig } from '@/constants/officeCheckin';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
-import { getActivityAccentColor, useRecentCheckinActivities } from '~/hooks/useRecentCheckinActivities';
 import { useGeofence } from '~/hooks/useGeofence';
 import { api, type User as ApiUser, type Payment } from '~/services/api';
 import type { Event as EventType } from '~/services/api';
@@ -452,8 +451,6 @@ export function HomeDashboardScreen({
       ? 'Sunday'
       : 'Normal day';
   const officeExtraAlertShownRef = useRef(false);
-
-  const recentCheckinActivities = useRecentCheckinActivities(user, eventToday ?? null, optimisticOfficeCheckinTime);
 
   const isWithinOfficeCheckinWindow = ((): boolean => {
     const [startH, startM] = officeCheckinWindow.start.split(':').map(Number);
@@ -968,10 +965,10 @@ export function HomeDashboardScreen({
           ) : null}
         </AnimatedReanimated.View>
 
-        {/* Main CTA: Event check-in / check-out (when event today), or Daily (office) check-in. Daily check-in hidden when user has approved time off today. */}
+        {/* Main CTA: Office check-in / checkout only. Event check-in remains on the event details screen. */}
         {(role === 'crew' || role === 'team_leader' || role === 'admin') && (
           <AnimatedReanimated.View entering={FadeInDown.duration(380).delay(50)} style={styles.dailyCheckInSection}>
-            {eventToday ? (
+            {false ? (
               /* Event day: Check-in → Check-out (with confirm) → Checked out */
               <>
               {hasEventCheckedOut ? (
@@ -1101,17 +1098,11 @@ export function HomeDashboardScreen({
                         </AnimatedReanimated.View>
                     </View>
                   ) : (
-                    <View style={styles.roundCheckInWrap}>
-                        <Pressable
-                          onPress={() => eventToday && handleNav(() => router.push(`/events/${eventToday.id}`))}
-                          style={({ pressed }) => [styles.roundCheckInButton, styles.roundCheckInButtonEvent, pressed && styles.roundCheckInButtonPressed]}
-                        >
-                          <LinearGradient colors={['#2563eb', '#1e3a5f', themeBlue]} style={styles.roundCheckInGradient}>
-                            <Ionicons name="location" size={Icons.standard} color="#fff" />
-                            <ThemedText style={[styles.roundCheckInLabel, { color: '#fff' }]} numberOfLines={1}>Check in at event</ThemedText>
-                            <ThemedText style={[styles.roundCheckInSub, { color: 'rgba(255,255,255,0.95)' }]} numberOfLines={1}>OPEN EVENT</ThemedText>
-                          </LinearGradient>
-                        </Pressable>
+                    <View style={[styles.dailyCheckInStatus, styles.dailyCheckInStatusCompact, { backgroundColor: cardBg, borderColor: homeBorderColor }]}>
+                      <Ionicons name="calendar-outline" size={Icons.standard} color={colors.textSecondary} />
+                      <ThemedText style={[styles.dailyCheckInStatusTextCompact, { color: colors.textSecondary }]}>
+                        Open My Events to check in at event
+                      </ThemedText>
                     </View>
                   )}
                 </View>
@@ -1278,8 +1269,8 @@ export function HomeDashboardScreen({
               return rows.map((row, rowIndex) => (
                 <View key={rowIndex} style={styles.quickGridRow}>
                   {row.map((action, colIndex) => {
-                    const href = action.id === 'checkin' && eventToday ? `/events/${eventToday.id}` : action.href;
-                    const showEventDot = hasAssignedEventTodayForUser && (action.id === 'events' || action.id === 'checkin');
+                    const href = action.href;
+                    const showEventDot = hasAssignedEventTodayForUser && action.id === 'events';
                     const index = rowIndex * COLS + colIndex;
                     return (
                       <AnimatedReanimated.View
@@ -1359,68 +1350,6 @@ export function HomeDashboardScreen({
               </Pressable>
             )}
           </AnimatedReanimated.View>
-        )}
-
-        {/* Recent Activity – at bottom of page */}
-        {(role === 'crew' || role === 'team_leader') && sectionVisible.recent_activities && (
-          <AnimatedReanimated.View entering={FadeInDown.duration(360).delay(120)} style={styles.section}>
-            <View style={styles.sectionTitleRow}>
-              <View style={[styles.sectionTitleAccent, styles.sectionTitleAccentVibe, { backgroundColor: isDark ? VibrantColors.amber : themeBlue }]} />
-              <View style={[styles.sectionTitleIconWrap, { backgroundColor: isDark ? 'rgba(249,250,251,0.12)' : themeBlue + '28' }]}>
-                <Ionicons name="pulse" size={Icons.small} color={isDark ? '#F9FAFB' : themeBlue} />
-              </View>
-              <ThemedText style={[styles.sectionTitle, { color: isDark ? '#F9FAFB' : '#0F172A' }]}>
-                Recent activity
-              </ThemedText>
-              <Pressable onPress={() => handleNav(() => router.push('/(tabs)/recent-activity'))} style={({ pressed }) => ({ opacity: pressed ? NAV_PRESSED_OPACITY : 1 })}>
-                <ThemedText style={[styles.seeAllLink, { color: isDark ? colors.brandText : themeBlue }]}>See all</ThemedText>
-              </Pressable>
-            </View>
-            <View style={[styles.activityCard, { backgroundColor: cardBg, borderColor: homeBorderColor }]}>
-              {recentCheckinActivities.length === 0 ? (
-                <View style={styles.activityItem}>
-                  <View style={[styles.activityDotLarge, { backgroundColor: (isDark ? VibrantColors.amber : themeBlue) + '22', borderColor: isDark ? VibrantColors.amber : themeBlue }]}>
-                    <Ionicons name="pulse-outline" size={Icons.header} color={isDark ? VibrantColors.amber : themeBlue} />
-                  </View>
-                  <View style={styles.activityContent}>
-                    <ThemedText style={[styles.activityTitle, { color: colors.text }]}>Your activity</ThemedText>
-                    <ThemedText style={[styles.activitySub, { color: colors.textSecondary }]}>Office and event check-ins will appear here</ThemedText>
-                    <ThemedText style={[styles.activityTime, { color: colors.textSecondary }]}>Pull to refresh after checking in</ThemedText>
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.activityTimeline}>
-                  {recentCheckinActivities.map((item, index) => {
-                    const accent = getActivityAccentColor(item.type, isDark);
-                    const isLast = index === recentCheckinActivities.length - 1;
-                    return (
-                      <View key={item.key} style={[styles.activityItem, index > 0 && styles.activityItemNotFirst]}>
-                        <View style={styles.activityLeftColumn}>
-                          <View style={[styles.activityDotLarge, { backgroundColor: accent + '28', borderColor: accent }]}>
-                            <Ionicons name={item.icon} size={Icons.small} color={accent} />
-                          </View>
-                          {!isLast && <View style={[styles.activityTimelineLine, { backgroundColor: isDark ? colors.border : themeBlue + '33' }]} />}
-                        </View>
-                        <View style={styles.activityContent}>
-                          <ThemedText style={[styles.activityTitle, { color: colors.text }]}>{item.title}</ThemedText>
-                          <ThemedText style={[styles.activitySub, { color: colors.textSecondary }]}>{item.sub}</ThemedText>
-                          <View style={styles.activityTimeRow}>
-                            <ThemedText style={[styles.activityTime, { color: accent }]}>{item.time}</ThemedText>
-                            {item.relativeTime !== item.time && item.relativeTime !== '—' && (
-                              <ThemedText style={[styles.activityTimeAgo, { color: colors.textSecondary }]}> · {item.relativeTime}</ThemedText>
-                            )}
-                          </View>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-          </AnimatedReanimated.View>
-        )}
-        {(role === 'crew' || role === 'team_leader') && sectionVisible.recent_activities && (
-          <View style={[styles.softSectionBreak, { backgroundColor: isDark ? colors.border + '99' : '#D1D5DB' }]} />
         )}
 
         {/* Active Streak (Pull Up Rate) – crew/team_leader only (keep as last item) */}

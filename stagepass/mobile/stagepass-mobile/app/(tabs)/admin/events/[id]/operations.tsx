@@ -179,7 +179,7 @@ export default function AdminEventOperationsScreen() {
               <Ionicons name="location" size={18} color={themeYellow} />
               <ThemedText style={styles.quickNavPillText}>Check-in</ThemedText>
             </Pressable>
-            <Pressable style={({ pressed }) => [styles.quickNavPill, { backgroundColor: themeBlue }, pressed && styles.quickNavPillPressed]} onPress={() => handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(eventId) } }))}>
+            <Pressable style={({ pressed }) => [styles.quickNavPill, { backgroundColor: themeBlue }, pressed && styles.quickNavPillPressed]} onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(eventId) } }))}>
               <Ionicons name="calendar" size={18} color={themeYellow} />
               <ThemedText style={styles.quickNavPillText}>View event</ThemedText>
             </Pressable>
@@ -291,7 +291,7 @@ export default function AdminEventOperationsScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.opsRow, styles.opsRowLast, { borderBottomColor: colors.border }, pressed && styles.opsRowPressed]}
-            onPress={() => handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(eventId) } }))}
+            onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(eventId) } }))}
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
               <Ionicons name="calendar" size={20} color={themeBlue} />

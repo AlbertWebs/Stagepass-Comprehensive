@@ -536,9 +536,7 @@ export default function ProfileScreen() {
                       pressed && { opacity: 0.9 },
                     ]}
                   >
-                    <View style={[styles.appearanceOptionChip, { backgroundColor: selected ? themeBlue + '22' : (mode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.06)') }]}>
-                      <Ionicons name={icon} size={Icons.standard} color={selected ? themeBlue : fg} />
-                    </View>
+                    <Ionicons name={icon} size={Icons.standard} color={selected ? themeBlue : fg} />
                     <Text style={[styles.appearanceOptionText, { color: selected ? themeBlue : fg }]} numberOfLines={1}>
                       {label}
                     </Text>
@@ -668,6 +666,8 @@ export default function ProfileScreen() {
                   { borderColor: themeYellow + '66', backgroundColor: colors.surface },
                   pressed && !uploadingPhoto && { opacity: 0.85 },
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel="Update profile photo"
               >
                 {(passportPhotoUri || user?.avatar_url) ? (
                   <Image
@@ -685,14 +685,28 @@ export default function ProfileScreen() {
                     </ThemedText>
                   </View>
                 )}
+                <View style={[styles.passportPhotoBadge, { backgroundColor: colors.surface, borderColor: themeYellow + '66' }]}>
+                  <Ionicons name="camera-outline" size={Icons.xs} color={themeYellow} />
+                </View>
               </Pressable>
-              <StagePassButton
-                title={uploadingPhoto ? 'Uploading…' : 'Change photo'}
-                onPress={showPhotoPicker}
-                disabled={uploadingPhoto}
-                variant="outline"
-                style={styles.passportUploadBtn}
-              />
+              <View style={styles.passportPhotoActions}>
+                <ThemedText style={[styles.passportPhotoActionTitle, { color: colors.text }]}>
+                  {passportPhotoUri || user?.avatar_url ? 'Update your photo' : 'Add your profile photo'}
+                </ThemedText>
+                <ThemedText style={[styles.passportPhotoActionSub, { color: colors.textSecondary }]}>
+                  Use a clear headshot so team members can identify you quickly.
+                </ThemedText>
+                <StagePassButton
+                  title={uploadingPhoto ? 'Uploading…' : 'Choose photo'}
+                  onPress={showPhotoPicker}
+                  disabled={uploadingPhoto}
+                  variant="outline"
+                  style={styles.passportUploadBtn}
+                />
+                <ThemedText style={[styles.passportPhotoHint, { color: colors.textSecondary }]}>
+                  Tip: portrait image, good lighting, face centered.
+                </ThemedText>
+              </View>
             </View>
             <Pressable
               onPress={() => handleNav(() => router.push('/(tabs)/preferences'))}
@@ -1090,15 +1104,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: P.sm,
   },
-  /** Full-width horizontal rounded rectangle for the icon (not a square). */
-  appearanceOptionChip: {
-    alignSelf: 'stretch',
-    width: '100%',
-    height: P.swatchH,
-    borderRadius: P.radiusSm,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   appearanceOptionText: {
     fontSize: Typography.bodySmall,
     fontWeight: Typography.buttonTextWeight,
@@ -1154,16 +1159,17 @@ const styles = StyleSheet.create({
   cardButton: { marginTop: P.sm },
   passportPhotoRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: P.lg,
+    alignItems: 'stretch',
+    gap: P.md,
     marginTop: P.sm,
   },
   passportPhotoWrap: {
-    width: P.passportW,
-    height: P.passportH,
+    width: Math.max(P.passportW + 16, 104),
+    height: Math.max(P.passportW + 16, 104),
     borderRadius: P.radiusMd,
     borderWidth: 1,
     overflow: 'hidden',
+    position: 'relative',
   },
   passportPhotoWrapVibrant: {
     shadowColor: '#000',
@@ -1182,12 +1188,47 @@ const styles = StyleSheet.create({
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: P.xs,
   },
   passportPhotoPlaceholderText: {
-    fontSize: Typography.titleSection,
+    fontSize: Typography.bodySmall,
+    fontWeight: '600',
+    marginTop: P.xs,
+    textAlign: 'center',
+  },
+  passportPhotoBadge: {
+    position: 'absolute',
+    right: P.xs,
+    bottom: P.xs,
+    width: P.avatarBadge,
+    height: P.avatarBadge,
+    borderRadius: P.avatarBadge / 2,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  passportPhotoActions: {
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: Math.max(P.passportW + 16, 104),
+  },
+  passportPhotoActionTitle: {
+    fontSize: Typography.body,
+    fontWeight: Typography.titleCardWeight,
+  },
+  passportPhotoActionSub: {
+    fontSize: Typography.bodySmall,
+    marginTop: 2,
+    marginBottom: P.sm,
+    lineHeight: 18,
+  },
+  passportUploadBtn: {
+    width: '100%',
+  },
+  passportPhotoHint: {
+    fontSize: Typography.labelSmall,
     marginTop: P.xs,
   },
-  passportUploadBtn: { flex: 1 },
   logoutCard: {
     borderRadius: P.radiusMd,
     borderWidth: 1,

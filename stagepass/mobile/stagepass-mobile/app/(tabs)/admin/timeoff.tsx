@@ -162,7 +162,7 @@ export default function AdminTimeOffScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <AppHeader title="Request time off" showBack />
+      <AppHeader title="Request time off" />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.keyboard}

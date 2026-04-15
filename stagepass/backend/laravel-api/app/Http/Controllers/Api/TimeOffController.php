@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\TimeOffRequest;
+use App\Models\User;
+use App\Notifications\TimeOffRequestSubmittedNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -121,8 +123,24 @@ class TimeOffController extends Controller
             'notes' => $request->notes,
             'status' => TimeOffRequest::STATUS_PENDING,
         ]);
+        $timeOff->load('user');
+        $this->notifyAdminsOfSubmittedRequest($timeOff);
 
         return response()->json($timeOff->load(['user', 'attachments']), 201);
+    }
+
+    private function notifyAdminsOfSubmittedRequest(TimeOffRequest $timeOff): void
+    {
+        $adminUsers = User::query()
+            ->whereNotNull('email')
+            ->whereHas('roles', function ($query): void {
+                $query->whereIn('name', ['super_admin', 'director', 'admin']);
+            })
+            ->get();
+
+        foreach ($adminUsers as $adminUser) {
+            $adminUser->notify(new TimeOffRequestSubmittedNotification($timeOff));
+        }
     }
 
     public function uploadAttachments(Request $request, int $id): JsonResponse

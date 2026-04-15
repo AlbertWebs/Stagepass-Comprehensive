@@ -126,10 +126,20 @@ class EventCrewController extends Controller
             ->where('user_id', $request->user_id)
             ->firstOrFail();
 
-        $targetEvent->crew()->attach($request->user_id, [
-            'role_in_event' => $assignment->role_in_event,
+        $roleInEvent = $assignment->role_in_event;
+        $transferredUserId = (int) $request->user_id;
+
+        $targetEvent->crew()->attach($transferredUserId, [
+            'role_in_event' => $roleInEvent,
         ]);
         $assignment->delete();
+
+        $transferredUser = User::find($transferredUserId);
+        if ($transferredUser) {
+            $transferredUser->notify(new CrewAddedToEventReminder($targetEvent->fresh(), $roleInEvent));
+            ReminderLog::logSent($targetEvent->id, $transferredUser->id, ReminderLog::TYPE_ADDED, ReminderLog::CHANNEL_EMAIL);
+            ReminderLog::logSent($targetEvent->id, $transferredUser->id, ReminderLog::TYPE_ADDED, ReminderLog::CHANNEL_SMS);
+        }
 
         return response()->json([
             'message' => 'User transferred successfully',

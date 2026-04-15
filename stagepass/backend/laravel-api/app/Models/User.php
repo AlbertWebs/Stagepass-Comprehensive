@@ -26,6 +26,8 @@ class User extends Authenticatable
         'password',
         'pin',
         'phone',
+        'address',
+        'emergency_contact',
         'fcm_token',
         'avatar_url',
         'is_permanent_employee',

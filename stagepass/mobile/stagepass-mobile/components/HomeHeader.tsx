@@ -484,8 +484,8 @@ const styles = StyleSheet.create({
   },
   bellBadge: {
     position: 'absolute',
-    top: -2,
-    right: -2,
+    top: -4,
+    right: -4,
     minWidth: 16,
     height: 16,
     borderRadius: 8,
@@ -493,10 +493,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 4,
     overflow: 'hidden',
+    zIndex: 2,
   },
   bellBadgeText: {
     fontSize: 9,
     fontWeight: '800',
+    lineHeight: 10,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   moreOverlay: {
     flex: 1,

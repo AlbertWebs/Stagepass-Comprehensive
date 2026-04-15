@@ -82,11 +82,13 @@ class EventController extends Controller
             'longitude' => 'nullable|numeric',
             'geofence_radius' => 'nullable|integer|min:50|max:5000',
             'daily_allowance' => 'nullable|numeric|min:0',
+            'per_diem_enabled' => 'nullable|boolean',
             'team_leader_id' => 'nullable|exists:users,id',
             'client_id' => 'nullable|exists:clients,id',
         ]);
 
         $validated['geofence_radius'] = $validated['geofence_radius'] ?? 100;
+        $validated['per_diem_enabled'] = (bool) ($validated['per_diem_enabled'] ?? false);
         $validated['status'] = Event::STATUS_CREATED;
         $validated['created_by_id'] = $request->user()->id;
 
@@ -186,6 +188,7 @@ class EventController extends Controller
             'longitude' => 'nullable|numeric',
             'geofence_radius' => 'nullable|integer|min:50|max:5000',
             'daily_allowance' => 'nullable|numeric|min:0',
+            'per_diem_enabled' => 'nullable|boolean',
             'team_leader_id' => 'nullable|exists:users,id',
             'client_id' => 'nullable|exists:clients,id',
             'status' => 'sometimes|in:created,active,completed,closed,done_for_the_day',

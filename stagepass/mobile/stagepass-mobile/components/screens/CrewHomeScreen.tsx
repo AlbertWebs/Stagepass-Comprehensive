@@ -141,7 +141,7 @@ export function CrewHomeScreen({ event, onRefresh }: Props) {
       <View style={styles.cards}>
         <Pressable
           style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={() => router.push(`/events/${event.id}`)}
+          onPress={() => router.push(`/(tabs)/events/${event.id}`)}
         >
           <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Event Info</ThemedText>
           <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>

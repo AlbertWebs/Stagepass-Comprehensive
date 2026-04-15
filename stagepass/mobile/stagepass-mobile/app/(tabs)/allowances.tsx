@@ -6,13 +6,14 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { SlideInRight } from 'react-native-reanimated';
+import { useSelector } from 'react-redux';
 import { HomeHeader } from '@/components/HomeHeader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { themeBlue, themeYellow, StatusColors } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { useAppRole } from '~/hooks/useAppRole';
-import { api, type Event as EventType, type Payment } from '~/services/api';
+import { api, type EarnedAllowanceDetail, type Event as EventType, type Payment } from '~/services/api';
 
 const U = { sm: 8, md: 12, lg: 16, xl: 20, section: 24 };
 const CARD_RADIUS = 16;
@@ -31,10 +32,12 @@ function isEventToday(event: EventType, today: string): boolean {
 export default function AllowancesScreen() {
   const router = useRouter();
   const role = useAppRole();
+  const currentUserId = useSelector((s: { auth: { user: { id?: number } | null } }) => s.auth.user?.id ?? null);
   const { colors, isDark } = useStagePassTheme();
   const [animateKey, setAnimateKey] = useState(0);
   const [approvedAllowances, setApprovedAllowances] = useState<Payment[]>([]);
   const [allowanceToday, setAllowanceToday] = useState<number | null>(null);
+  const [allocatedAllowances, setAllocatedAllowances] = useState<Array<EarnedAllowanceDetail & { event_name: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   useFocusEffect(useCallback(() => { setAnimateKey((k) => k + 1); }, []));
@@ -61,14 +64,32 @@ export default function AllowancesScreen() {
       } else {
         setAllowanceToday(null);
       }
+
+      const earnedRes = await api.payments.earnedAllowances({ per_page: 100 });
+      const groups = Array.isArray(earnedRes?.data) ? earnedRes.data : [];
+      const flattened = groups.flatMap((group) =>
+        (group.details ?? []).map((detail) => ({
+          ...detail,
+          event_name: group.event_name,
+        }))
+      );
+      const mine = flattened
+        .filter((d) => currentUserId == null || d.crew_id === currentUserId)
+        .sort((a, b) => {
+          const at = a.recorded_at ? new Date(a.recorded_at).getTime() : 0;
+          const bt = b.recorded_at ? new Date(b.recorded_at).getTime() : 0;
+          return bt - at;
+        });
+      setAllocatedAllowances(mine);
     } catch {
       setApprovedAllowances([]);
       setAllowanceToday(null);
+      setAllocatedAllowances([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [currentUserId]);
 
   useEffect(() => {
     load();
@@ -124,6 +145,39 @@ export default function AllowancesScreen() {
             </ThemedText>
             <ThemedText style={[styles.summaryLabel, { color: colors.textSecondary }]}>Today&apos;s rate</ThemedText>
           </View>
+        </View>
+
+        <View style={styles.section}>
+          <View style={[styles.sectionTitleRow, styles.approvedSectionTitleRow]}>
+            <View style={[styles.accent, { backgroundColor: themeYellow }]} />
+            <View style={[styles.iconWrap, { backgroundColor: themeYellow + '28' }]}>
+              <Ionicons name="cash-outline" size={14} color={themeYellow} />
+            </View>
+            <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Allocated allowances</ThemedText>
+          </View>
+          {allocatedAllowances.length === 0 ? (
+            <View style={[styles.card, { backgroundColor: cardBg, borderColor: colors.border }]}>
+              <ThemedText style={[styles.emptyText, { color: colors.textSecondary }]}>
+                No allowance allocations yet. Once admin allocates, they will show here.
+              </ThemedText>
+            </View>
+          ) : (
+            <View style={[styles.card, { backgroundColor: cardBg, borderColor: colors.border }]}>
+              {allocatedAllowances.map((a) => (
+                <View key={a.id} style={styles.row}>
+                  <View style={[styles.dot, { backgroundColor: a.status === 'paid' ? StatusColors.checkedIn : themeYellow }]} />
+                  <View style={styles.rowContent}>
+                    <ThemedText style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
+                      {a.allowance_type} · {a.event_name}
+                    </ThemedText>
+                    <ThemedText style={[styles.rowSub, { color: colors.textSecondary }]}>
+                      KES {Number(a.amount).toLocaleString('en-GB', { minimumFractionDigits: 2 })} · {a.status}
+                    </ThemedText>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         <View style={styles.section}>

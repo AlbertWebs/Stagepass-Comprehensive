@@ -30,7 +30,7 @@ export function LeaderHomeScreen({ eventToday, onOpenEvent }: Props) {
           </ThemedText>
           <StagePassButton
             title="Check in / Event"
-            onPress={() => handleNav(() => (onOpenEvent ? onOpenEvent(eventToday.id) : router.push(`/events/${eventToday.id}`)))}
+            onPress={() => handleNav(() => (onOpenEvent ? onOpenEvent(eventToday.id) : router.push(`/(tabs)/events/${eventToday.id}`)))}
             variant="primary"
             style={styles.cta}
           />

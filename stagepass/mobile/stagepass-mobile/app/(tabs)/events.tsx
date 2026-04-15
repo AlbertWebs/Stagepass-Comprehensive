@@ -50,16 +50,31 @@ function dateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-function eventMatchesDate(event: Event, date: Date): boolean {
-  try {
-    const d = new Date(event.date);
-    d.setHours(0, 0, 0, 0);
-    const sel = new Date(date);
-    sel.setHours(0, 0, 0, 0);
-    return d.getTime() === sel.getTime();
-  } catch {
-    return false;
+function parseEventDateLocal(input: string | undefined | null): Date | null {
+  if (!input || typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  const ymd = trimmed.length >= 10 ? trimmed.slice(0, 10) : trimmed;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!m) {
+    const fallback = new Date(trimmed);
+    return Number.isNaN(fallback.getTime()) ? null : fallback;
   }
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  return new Date(year, month - 1, day, 0, 0, 0, 0);
+}
+
+function eventMatchesDate(event: Event, date: Date): boolean {
+  const startDate = parseEventDateLocal(event.date);
+  if (!startDate) return false;
+  const endDate = parseEventDateLocal(event.end_date ?? null) ?? startDate;
+  startDate.setHours(0, 0, 0, 0);
+  endDate.setHours(0, 0, 0, 0);
+  const selected = new Date(date);
+  selected.setHours(0, 0, 0, 0);
+  return selected.getTime() >= startDate.getTime() && selected.getTime() <= endDate.getTime();
 }
 
 function sortByTime(a: Event, b: Event): number {
@@ -124,7 +139,7 @@ export default function EventsTab() {
 
   const loadEvents = useCallback(async () => {
     try {
-      const res = await api.events.list();
+      const res = await api.events.list({ per_page: 100, refresh: true });
       const list = Array.isArray(res?.data) ? res.data : [];
       setEvents(list.sort(sortByTime));
     } catch {
@@ -449,7 +464,7 @@ export default function EventsTab() {
                 }}
                 displayStatus={getEventDisplayStatus(item, userId)}
                 borderOnly={isTodaySelected}
-                onPress={() => handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(item.id) } }))}
+                onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(item.id) } }))}
               />
             ))}
           </ScrollView>

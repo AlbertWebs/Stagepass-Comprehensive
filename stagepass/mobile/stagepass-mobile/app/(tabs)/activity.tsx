@@ -182,7 +182,7 @@ export default function ActivityScreen() {
                 <View style={[styles.statusDot, { backgroundColor: themeYellow }]} />
               </View>
               <Pressable
-                onPress={() => handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(today.id) } }))}
+                onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(today.id) } }))}
                 style={({ pressed }) => [
                   styles.todayCard,
                   {
@@ -271,7 +271,7 @@ export default function ActivityScreen() {
                 <ThemedText style={[styles.quickLabel, { color: colors.text }]}>My Events</ThemedText>
               </Pressable>
               <Pressable
-                onPress={() => today && handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(today.id) } }))}
+                onPress={() => today && handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(today.id) } }))}
                 style={({ pressed }) => [
                   styles.quickCard,
                   { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
@@ -300,14 +300,14 @@ export default function ActivityScreen() {
                 <EventCard
                   key={item.id}
                   event={item}
-                  onPress={() => handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(item.id) } }))}
+                  onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(item.id) } }))}
                 />
               ))}
               {past.slice(0, 3).map((item) => (
                 <EventCard
                   key={item.id}
                   event={item}
-                  onPress={() => handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(item.id) } }))}
+                  onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(item.id) } }))}
                 />
               ))}
             </View>

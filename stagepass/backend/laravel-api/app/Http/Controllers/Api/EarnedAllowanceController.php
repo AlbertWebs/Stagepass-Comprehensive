@@ -55,12 +55,14 @@ class EarnedAllowanceController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        if (! $this->canManage($request)) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
+        $canManage = $this->canManage($request);
 
         $query = EventAllowance::query()
             ->with(['event:id,name,date,location_name,team_leader_id', 'event.teamLeader:id,name', 'crew:id,name', 'type:id,name', 'recorder:id,name']);
+
+        if (! $canManage) {
+            $query->where('crew_id', (int) $request->user()->id);
+        }
 
         if ($request->filled('event_id')) {
             $query->where('event_id', (int) $request->event_id);

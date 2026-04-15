@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Event;
 use App\Models\Setting;
 use App\Models\User;
+use App\Notifications\AssignedEventOnLoginPush;
 use App\Services\AttendanceOvertimeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -79,13 +81,14 @@ class AuthController extends Controller
         }
 
         $user->forceFill(['fcm_token' => $request->fcm_token])->save();
+        $this->sendAssignedEventPushOnLogin($request, $user);
 
         $token = $user->createToken('mobile')->plainTextToken;
 
         return response()->json([
             'token' => $token,
             'token_type' => 'Bearer',
-            'user' => $user->load('roles'),
+            'user' => $this->formatUserPayload($user->load('roles')),
         ]);
     }
 
@@ -105,6 +108,34 @@ class AuthController extends Controller
             return response()->json(['message' => 'Not found'], 404);
         }
         return response()->json(['name' => $user->name]);
+    }
+
+    private function sendAssignedEventPushOnLogin(Request $request, User $user): void
+    {
+        if (empty($user->fcm_token)) {
+            return;
+        }
+
+        $localDate = $request->header('X-Local-Date');
+        $today = $localDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $localDate)
+            ? $localDate
+            : now('Africa/Nairobi')->toDateString();
+
+        $event = Event::query()
+            ->spansDate($today)
+            ->where(function ($q) use ($user) {
+                $q->where('team_leader_id', $user->id)
+                    ->orWhereHas('crew', fn ($crewQ) => $crewQ->where('user_id', $user->id));
+            })
+            ->whereNotIn('status', [Event::STATUS_COMPLETED, Event::STATUS_CLOSED, Event::STATUS_DONE_FOR_DAY])
+            ->orderBy('start_time')
+            ->first();
+
+        if (! $event) {
+            return;
+        }
+
+        $user->notify(new AssignedEventOnLoginPush($event));
     }
 
     public function logout(Request $request): JsonResponse
@@ -158,7 +189,7 @@ class AuthController extends Controller
             ->whereDate('end_date', '>=', $today)
             ->exists();
 
-        $payload = $user->toArray();
+        $payload = $this->formatUserPayload($user);
         $payload['office_checked_in_today'] = $officeCheckedInToday;
         $payload['office_checkin_time'] = $officeCheckinTime;
         $payload['office_checked_out_today'] = $officeCheckedOutToday;
@@ -189,6 +220,10 @@ class AuthController extends Controller
         $rules = [
             'name' => 'sometimes|string|max:255',
             'email' => 'sometimes|email|unique:users,email,' . $user->id,
+            'phone' => 'sometimes|nullable|string|max:20',
+            'phone_number' => 'sometimes|nullable|string|max:20',
+            'address' => 'sometimes|nullable|string|max:1000',
+            'emergency_contact' => 'sometimes|nullable|string|max:255',
             'password' => 'nullable|string|min:8|confirmed',
             'current_pin' => 'required_with:new_pin|nullable|string|max:20',
             'new_pin' => 'nullable|string|min:4|max:20|confirmed',
@@ -201,6 +236,16 @@ class AuthController extends Controller
         }
         if (! empty($validated['email'])) {
             $user->email = $validated['email'];
+        }
+        if (array_key_exists('phone_number', $validated) || array_key_exists('phone', $validated)) {
+            $phone = $validated['phone_number'] ?? $validated['phone'] ?? null;
+            $user->phone = $phone !== '' ? $phone : null;
+        }
+        if (array_key_exists('address', $validated)) {
+            $user->address = ($validated['address'] ?? '') !== '' ? $validated['address'] : null;
+        }
+        if (array_key_exists('emergency_contact', $validated)) {
+            $user->emergency_contact = ($validated['emergency_contact'] ?? '') !== '' ? $validated['emergency_contact'] : null;
         }
         if (! empty($validated['password'])) {
             $user->password = $validated['password'];
@@ -221,7 +266,7 @@ class AuthController extends Controller
             $user->pin = $validated['new_pin'];
         }
         $user->save();
-        return response()->json($user->fresh()->load('roles'));
+        return response()->json($this->formatUserPayload($user->fresh()->load('roles')));
     }
 
     private function allowBiometricMobileLogin(): bool
@@ -304,6 +349,19 @@ class AuthController extends Controller
         $user->avatar_url = $base . '/storage/' . $path;
         $user->save();
 
-        return response()->json($user->fresh()->load('roles'));
+        return response()->json($this->formatUserPayload($user->fresh()->load('roles')));
+    }
+
+    /**
+     * Keep payload backward compatible with mobile app fields.
+     */
+    private function formatUserPayload(User $user): array
+    {
+        $payload = $user->toArray();
+        $payload['phone_number'] = $user->phone;
+        $payload['address'] = $user->address;
+        $payload['emergency_contact'] = $user->emergency_contact;
+
+        return $payload;
     }
 }

@@ -55,4 +55,5 @@ class EarnedAllowancesApiTest extends TestCase
             ->assertJsonPath('data.0.event_id', $event->id)
             ->assertJsonPath('data.0.total_allowances', 800);
     }
+
 }

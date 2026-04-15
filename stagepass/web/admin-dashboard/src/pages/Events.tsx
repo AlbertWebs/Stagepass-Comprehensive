@@ -39,6 +39,7 @@ type EventFormState = {
   latitude: number | '';
   longitude: number | '';
   geofence_radius: number;
+  per_diem_enabled: boolean;
   team_leader_id: string;
   client_id: string;
   status: string;
@@ -58,6 +59,7 @@ function emptyForm(): EventFormState {
     latitude: '',
     longitude: '',
     geofence_radius: 100,
+    per_diem_enabled: false,
     team_leader_id: '',
     client_id: '',
     status: 'created',
@@ -76,6 +78,7 @@ function eventToForm(e: Event): EventFormState {
     latitude: e.latitude != null ? e.latitude : '',
     longitude: e.longitude != null ? e.longitude : '',
     geofence_radius: e.geofence_radius ?? 100,
+    per_diem_enabled: Boolean(e.per_diem_enabled),
     team_leader_id: e.team_leader_id ? String(e.team_leader_id) : '',
     client_id: e.client_id != null ? String(e.client_id) : '',
     status: e.status ?? 'created',
@@ -171,6 +174,7 @@ export default function Events() {
         latitude: form.latitude !== '' ? Number(form.latitude) : undefined,
         longitude: form.longitude !== '' ? Number(form.longitude) : undefined,
         geofence_radius: form.geofence_radius,
+        per_diem_enabled: form.per_diem_enabled,
         team_leader_id: form.team_leader_id ? Number(form.team_leader_id) : undefined,
         client_id: form.client_id ? Number(form.client_id) : undefined,
       });
@@ -203,6 +207,7 @@ export default function Events() {
         latitude: form.latitude !== '' ? Number(form.latitude) : undefined,
         longitude: form.longitude !== '' ? Number(form.longitude) : undefined,
         geofence_radius: form.geofence_radius,
+        per_diem_enabled: form.per_diem_enabled,
         team_leader_id: form.team_leader_id ? Number(form.team_leader_id) : undefined,
         client_id: form.client_id ? Number(form.client_id) : undefined,
         status: form.status,
@@ -327,6 +332,20 @@ export default function Events() {
               className="form-input"
             />
           </div>
+        </div>
+        <div className="form-field">
+          <label className="form-label form-label-optional">Per diem policy</label>
+          <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={form.per_diem_enabled}
+              onChange={(e) => setForm((f) => ({ ...f, per_diem_enabled: e.target.checked }))}
+            />
+            Enable per diem for this event (use only for events outside Nairobi)
+          </label>
+          <p className="mt-1 text-xs text-slate-500">
+            Per diem is automatically ignored during payment allocation when this is off.
+          </p>
         </div>
         {/* Client (optional) */}
         <div className="form-field">
