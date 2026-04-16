@@ -67,13 +67,13 @@ export default function AllowancesScreen() {
       setApprovedAllowances(list);
 
       const events = Array.isArray(eventsRes?.data) ? eventsRes.data : [];
-      const mine = events.filter(
+      const leaderEvents = events.filter(
         (e) =>
           (currentUserId != null && e.team_leader_id === currentUserId) ||
           e.team_leader?.id === currentUserId ||
           e.teamLeader?.id === currentUserId
       );
-      setEventsForAllocation(mine);
+      setEventsForAllocation(leaderEvents);
       const todayEvent = events.find((e) => isEventToday(e, today));
       if (todayEvent?.daily_allowance != null) {
         setAllowanceToday(Number(todayEvent.daily_allowance));
