@@ -47,15 +47,24 @@ export default function EventReportPreviewScreen() {
         return;
       }
       try {
-        const [eventData, reportData, me] = await Promise.all([
+        const [eventRes, reportRes, meRes] = await Promise.allSettled([
           api.events.get(eventId),
           api.reports.endOfDay({ event_id: eventId }),
           api.auth.me(),
         ]);
         if (!alive) return;
-        setEvent(eventData);
-        setReport(reportData);
-        setConfirmedBy(me?.name ?? '');
+        if (eventRes.status === 'fulfilled') {
+          setEvent(eventRes.value);
+        }
+        if (reportRes.status === 'fulfilled') {
+          setReport(reportRes.value);
+        }
+        if (meRes.status === 'fulfilled') {
+          setConfirmedBy(meRes.value?.name ?? '');
+        }
+        if (eventRes.status === 'rejected' && reportRes.status === 'rejected') {
+          Alert.alert('Error', 'Failed to load event report.');
+        }
       } catch (e) {
         if (!alive) return;
         Alert.alert('Error', e instanceof Error ? e.message : 'Failed to load event report.');
@@ -127,8 +136,10 @@ export default function EventReportPreviewScreen() {
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.xl }]}>
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Basic event details</ThemedText>
-          <ThemedText style={[styles.meta, { color: colors.textSecondary }]}>Name: {event?.name || '—'}</ThemedText>
-          <ThemedText style={[styles.meta, { color: colors.textSecondary }]}>Date and time: {formatEventDateTime(event) || '—'}</ThemedText>
+          <ThemedText style={[styles.meta, { color: colors.textSecondary }]}>Name: {event?.name || reportRow?.event_name || '—'}</ThemedText>
+          <ThemedText style={[styles.meta, { color: colors.textSecondary }]}>
+            Date and time: {formatEventDateTime(event) || reportRow?.date || '—'}
+          </ThemedText>
           <ThemedText style={[styles.meta, { color: colors.textSecondary }]}>Location: {event?.location_name || '—'}</ThemedText>
           <ThemedText style={[styles.meta, { color: colors.textSecondary }]}>Team leader: {event?.team_leader?.name || event?.teamLeader?.name || '—'}</ThemedText>
           <ThemedText style={[styles.meta, { color: colors.textSecondary }]}>Status: {event?.status || '—'}</ThemedText>

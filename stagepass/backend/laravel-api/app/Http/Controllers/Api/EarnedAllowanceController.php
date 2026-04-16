@@ -14,7 +14,11 @@ class EarnedAllowanceController extends Controller
     private function canManage(Request $request): bool
     {
         $u = $request->user();
-        return $u->hasRole('super_admin') || $u->hasRole('director') || $u->hasRole('admin') || $u->hasRole('team_leader');
+        return $u->hasRole('super_admin')
+            || $u->hasRole('director')
+            || $u->hasRole('admin')
+            || $u->hasRole('team_leader')
+            || $u->hasRole('teamleader');
     }
 
     public function typeIndex(Request $request): JsonResponse

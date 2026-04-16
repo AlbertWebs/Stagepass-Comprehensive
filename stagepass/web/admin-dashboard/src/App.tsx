@@ -28,12 +28,44 @@ import CrewMemberTimeOff from '@/pages/CrewMemberTimeOff';
 import TimeOff from '@/pages/TimeOff';
 import Users from '@/pages/Users';
 
+function getRoleNames(user: { roles?: Array<{ name?: string }> } | null): string[] {
+  return (user?.roles ?? [])
+    .map((r) => String(r?.name ?? '').trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function hasAdminAccess(user: { roles?: Array<{ name?: string }> } | null): boolean {
+  const names = getRoleNames(user);
+  return names.some((n) => n === 'admin' || n === 'super_admin' || n === 'director');
+}
+
+function isTeamLeaderOnly(user: { roles?: Array<{ name?: string }> } | null): boolean {
+  const names = getRoleNames(user);
+  const isTeamLeader = names.includes('team_leader') || names.includes('teamleader');
+  const isAdmin = names.some((n) => n === 'admin' || n === 'super_admin' || n === 'director');
+  return isTeamLeader && !isAdmin;
+}
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token, loading } = useAuth();
   if (loading) {
     return <Preloader message="Checking session…" />;
   }
   if (!token) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+function RoleRoute({
+  children,
+  requireAdmin = false,
+}: {
+  children: React.ReactNode;
+  requireAdmin?: boolean;
+}) {
+  const { user } = useAuth();
+  if (requireAdmin && !hasAdminAccess(user)) {
+    return <Navigate to="/dashboard" replace />;
+  }
   return <>{children}</>;
 }
 
@@ -62,25 +94,25 @@ export default function App() {
         <Route path="crew" element={<Users title="Crew" subtitle="Manage crew members. Search, create, edit or delete and assign roles." sectionLabel="Crew members" createButtonLabel="Add crew" />} />
         <Route path="event-operations" element={<EventOperations />} />
         <Route path="tasks" element={<Tasks />} />
-        <Route path="equipment" element={<Equipment />} />
-        <Route path="transport" element={<Transport />} />
-        <Route path="payments" element={<Payments />} />
+        <Route path="equipment" element={<RoleRoute requireAdmin><Equipment /></RoleRoute>} />
+        <Route path="transport" element={<RoleRoute requireAdmin><Transport /></RoleRoute>} />
+        <Route path="payments" element={<RoleRoute requireAdmin><Payments /></RoleRoute>} />
         <Route path="allowances" element={<Allowances />} />
-        <Route path="holidays" element={<Holidays />} />
-        <Route path="clients" element={<Clients />} />
-        <Route path="reports" element={<Reports />} />
-        <Route path="checkins" element={<Checkins />} />
+        <Route path="holidays" element={<RoleRoute requireAdmin><Holidays /></RoleRoute>} />
+        <Route path="clients" element={<RoleRoute requireAdmin><Clients /></RoleRoute>} />
+        <Route path="reports" element={<RoleRoute requireAdmin><Reports /></RoleRoute>} />
+        <Route path="checkins" element={<RoleRoute requireAdmin><Checkins /></RoleRoute>} />
         <Route path="communication" element={<Communication />} />
-        <Route path="approvals" element={<Approvals />} />
-        <Route path="users" element={<Users title="Users & Permissions" subtitle="Manage users and assign roles. Full access for admins." sectionLabel="Users" createButtonLabel="Create user" />} />
-        <Route path="settings" element={<Settings />} />
-        <Route path="audit-logs" element={<AuditLogs />} />
+        <Route path="approvals" element={<RoleRoute requireAdmin><Approvals /></RoleRoute>} />
+        <Route path="users" element={<RoleRoute requireAdmin><Users title="Users & Permissions" subtitle="Manage users and assign roles. Full access for admins." sectionLabel="Users" createButtonLabel="Create user" /></RoleRoute>} />
+        <Route path="settings" element={<RoleRoute requireAdmin><Settings /></RoleRoute>} />
+        <Route path="audit-logs" element={<RoleRoute requireAdmin><AuditLogs /></RoleRoute>} />
         <Route path="help" element={<Help />} />
-        <Route path="time-off" element={<TimeOff />} />
-        <Route path="time-off/crew/:userId" element={<CrewMemberTimeOff />} />
+        <Route path="time-off" element={<RoleRoute requireAdmin><TimeOff /></RoleRoute>} />
+        <Route path="time-off/crew/:userId" element={<RoleRoute requireAdmin><CrewMemberTimeOff /></RoleRoute>} />
         <Route path="profile" element={<Settings />} />
-        <Route path="backup" element={<Settings />} />
-        <Route path="danger-zone" element={<DangerZone />} />
+        <Route path="backup" element={<RoleRoute requireAdmin><Settings /></RoleRoute>} />
+        <Route path="danger-zone" element={<RoleRoute requireAdmin><DangerZone /></RoleRoute>} />
         <Route path="more" element={<Placeholder title="More" />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

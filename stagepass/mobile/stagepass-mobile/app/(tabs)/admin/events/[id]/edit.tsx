@@ -18,11 +18,15 @@ function normalizeTimeToHM(value: string | undefined | null): string {
   if (!value) return '';
   const raw = value.trim();
   if (!raw) return '';
-  const match = raw.match(/^(\d{1,2}):(\d{2})/);
-  if (!match) return raw;
-  const h = Number(match[1]);
+  const matches = Array.from(raw.matchAll(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?/gi));
+  const match = matches.length > 0 ? matches[matches.length - 1] : null;
+  if (!match) return '';
+  let h = Number(match[1]);
   const m = Number(match[2]);
+  const ampm = (match[3] ?? '').toUpperCase();
   if (!Number.isFinite(h) || !Number.isFinite(m)) return raw;
+  if (ampm === 'AM' && h === 12) h = 0;
+  if (ampm === 'PM' && h < 12) h += 12;
   if (h < 0 || h > 23 || m < 0 || m > 59) return raw;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
@@ -69,6 +73,16 @@ export default function AdminEditEventScreen() {
     try {
       const normalizedStartTime = normalizeTimeToHM(startTime);
       const normalizedEndTime = normalizeTimeToHM(endTime);
+      if (!/^\d{2}:\d{2}$/.test(normalizedStartTime)) {
+        Alert.alert('Invalid start time', 'Use 24-hour format HH:mm, for example 09:00 or 17:30.');
+        setSubmitting(false);
+        return;
+      }
+      if (normalizedEndTime && !/^\d{2}:\d{2}$/.test(normalizedEndTime)) {
+        Alert.alert('Invalid end time', 'Use 24-hour format HH:mm, for example 17:00.');
+        setSubmitting(false);
+        return;
+      }
       await api.events.update(Number(id), {
         name: trimmedName,
         date: date.trim() || undefined,

@@ -254,6 +254,30 @@ export default function AdminLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const roleNames = (user?.roles ?? []).map((r) => String(r?.name ?? '').trim().toLowerCase());
+  const isTeamLeader = roleNames.includes('team_leader') || roleNames.includes('teamleader');
+  const isAdminRole = roleNames.some((n) => n === 'admin' || n === 'super_admin' || n === 'director');
+  const isTeamLeaderOnly = isTeamLeader && !isAdminRole;
+  const adminOnlyLinks = new Set([
+    '/equipment',
+    '/transport',
+    '/payments',
+    '/allowances',
+    '/holidays',
+    '/clients',
+    '/reports',
+    '/checkins',
+    '/time-off',
+    '/approvals',
+    '/users',
+    '/settings',
+    '/audit-logs',
+  ]);
+  const filteredNav = nav.filter((item) => {
+    if (item.type !== 'link') return true;
+    if (isAdminRole) return true;
+    return !adminOnlyLinks.has(item.to);
+  });
   const pageTitle = getPageTitle(location.pathname);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -282,15 +306,15 @@ export default function AdminLayout() {
               className="ml-2 rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
               style={{ backgroundColor: 'rgba(202,138,4,0.35)', color: '#fef9e7' }}
             >
-              Admin
+              {isTeamLeaderOnly ? 'Team Leader' : 'Admin'}
             </span>
           </div>
         </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto scrollbar-thin px-3 py-4">
-          {nav.map((item, idx) => {
+          {filteredNav.map((item, idx) => {
             if (item.type === 'section') {
-              const linksInSection = nav.slice(idx + 1).findIndex((i) => i.type === 'section');
-              const count = linksInSection === -1 ? nav.length - idx - 1 : linksInSection;
+              const linksInSection = filteredNav.slice(idx + 1).findIndex((i) => i.type === 'section');
+              const count = linksInSection === -1 ? filteredNav.length - idx - 1 : linksInSection;
               if (count < 2) return null;
               return (
                 <div
