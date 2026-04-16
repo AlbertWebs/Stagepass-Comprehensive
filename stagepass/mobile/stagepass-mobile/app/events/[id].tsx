@@ -1,4 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { Image } from 'expo-image';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -68,6 +69,15 @@ function formatHoursLabel(hours: number): string {
   return `${h}h ${m}m`;
 }
 
+function parseCoord(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const n = Number.parseFloat(value.trim().replace(/,/g, '.'));
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -84,6 +94,7 @@ export default function EventDetailScreen() {
   const [extraNotified, setExtraNotified] = useState(false);
   const [leaderCheckInUserId, setLeaderCheckInUserId] = useState<number | null>(null);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [attendanceMapSourceIndex, setAttendanceMapSourceIndex] = useState(0);
   const { checkCanCheckIn } = useGeofence();
 
   const fetchEvent = useCallback(() => {
@@ -321,6 +332,26 @@ export default function EventDetailScreen() {
     const opacity = 0.9 * (1 - rippleProgress2.value);
     return { transform: [{ scale }], opacity };
   });
+  const attendanceMapCenter = useMemo(() => {
+    const lat = parseCoord(event?.latitude);
+    const lon = parseCoord(event?.longitude);
+    if (lat != null && lon != null) return { latitude: lat, longitude: lon };
+    return userLocation;
+  }, [event?.latitude, event?.longitude, userLocation]);
+  const attendanceMapUrls = useMemo(() => {
+    if (!attendanceMapCenter) return [];
+    const lat = attendanceMapCenter.latitude.toFixed(6);
+    const lon = attendanceMapCenter.longitude.toFixed(6);
+    return [
+      `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=15&size=900x520&markers=${lat},${lon},red-pushpin`,
+      `https://static-maps.yandex.ru/1.x/?lang=en-US&ll=${lon},${lat}&z=15&l=map&size=650,360&pt=${lon},${lat},pm2rdm`,
+    ];
+  }, [attendanceMapCenter]);
+  const attendanceMapUrl = attendanceMapUrls[attendanceMapSourceIndex] ?? null;
+
+  useEffect(() => {
+    setAttendanceMapSourceIndex(0);
+  }, [attendanceMapCenter?.latitude, attendanceMapCenter?.longitude]);
 
   if (loading || !event) {
     return (
@@ -336,31 +367,6 @@ export default function EventDetailScreen() {
   const isEventEnded = event.status === 'completed' || event.status === 'closed' || event.status === 'done_for_the_day';
   const locationLabel = event.location_name ?? 'No location';
   const timeLabel = formatEventTime(event.start_time);
-  const dateLabel = formatEventDate(event.date);
-  const locationQuery = [event.location_name, event.address].filter(Boolean).join(', ').trim();
-
-  const handleOpenTasks = () => {
-    handleNav(() => router.push('/(tabs)/tasks'));
-  };
-
-  const handleGetDirections = async () => {
-    const destination = locationQuery || locationLabel;
-    if (!destination || destination === 'No location') {
-      Alert.alert('Directions unavailable', 'This event does not have a location yet.');
-      return;
-    }
-    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination)}`;
-    try {
-      const canOpen = await Linking.canOpenURL(mapsUrl);
-      if (!canOpen) {
-        Alert.alert('Directions unavailable', 'Could not open maps on this device.');
-        return;
-      }
-      await Linking.openURL(mapsUrl);
-    } catch {
-      Alert.alert('Directions unavailable', 'Could not open maps on this device.');
-    }
-  };
 
   const accent = isDark ? '#f8fafc' : '#0f172a';
   const cardSurface = colors.surface;
@@ -378,115 +384,83 @@ export default function EventDetailScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Animated.View entering={SlideInRight.duration(320)}>
-          {/* Hero: event name */}
-          <View style={[styles.heroCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
-            <View style={[styles.heroIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-              <Ionicons name="calendar" size={Icons.xl} color={themeYellow} />
-            </View>
-            <ThemedText style={[styles.eventName, { color: colors.text }]} numberOfLines={2}>{event.name}</ThemedText>
-            <ThemedText style={[styles.heroDate, { color: colors.textSecondary }]}>{dateLabel}</ThemedText>
-            <View style={styles.heroMetaRow}>
-              <Pressable
-                onPress={handleOpenTasks}
-                style={({ pressed }) => [
-                  styles.heroActionButton,
-                  { backgroundColor: isDark ? '#3a2f00' : '#fff8db', borderColor: isDark ? '#facc15aa' : '#facc15' },
-                  pressed && { opacity: NAV_PRESSED_OPACITY },
-                ]}
-              >
-                <Ionicons name="checkmark-done-outline" size={15} color={themeYellow} />
-                <ThemedText style={[styles.heroActionText, { color: themeYellow }]}>Tasks</ThemedText>
-              </Pressable>
-              <Pressable
-                onPress={handleGetDirections}
-                style={({ pressed }) => [
-                  styles.heroActionButton,
-                  { backgroundColor: isDark ? '#1f2937' : '#f8fafc', borderColor: cardBorder },
-                  pressed && { opacity: NAV_PRESSED_OPACITY },
-                ]}
-              >
-                <Ionicons name="navigate-outline" size={15} color={themeBlue} />
-                <ThemedText style={[styles.heroActionText, { color: isDark ? '#dbeafe' : themeBlue }]}>
-                  Get Directions
-                </ThemedText>
-              </Pressable>
-            </View>
-          </View>
-
-          {/* Check-in / Check-out actions */}
+          {/* Map first: selected venue + check-in / check-out */}
           <View style={styles.sectionTitleRow}>
             <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
             <View style={[styles.sectionTitleIconWrap, { backgroundColor: sectionIconBg }]}>
               <Ionicons name="location" size={Icons.small} color={themeYellow} />
             </View>
-            <ThemedText style={[styles.sectionTitle, { color: accent }]}>Attendance</ThemedText>
+            <ThemedText style={[styles.sectionTitle, { color: accent }]}>Selected Venue</ThemedText>
           </View>
           <View style={[styles.attendanceCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
-            <View style={styles.actions}>
-            {!checkinTime ? (
-              <View style={styles.roundCheckInWrap}>
-                <Animated.View style={styles.roundCheckInButtonWrap}>
-<Animated.View style={[styles.rippleRing, { borderColor: isDark ? themeYellow : themeBlue }, rippleStyle]} pointerEvents="none" />
-                <Animated.View style={[styles.rippleRing, { borderColor: isDark ? themeYellow : themeBlue }, rippleStyle2]} pointerEvents="none" />
-                  <Pressable
-                    onPress={handleCheckIn}
-                    disabled={actionLoading || !userLocation}
-                    style={({ pressed }) => [
-                      styles.roundCheckInButton,
-                      styles.roundCheckInButtonEvent,
-                      (actionLoading || !userLocation) && styles.roundCheckInButtonDisabled,
-                      (actionLoading || !userLocation) && { backgroundColor: themeBlue + '22' },
-                      pressed && !actionLoading && userLocation && styles.roundCheckInButtonPressed,
-                    ]}
-                  >
-                    {(actionLoading || !userLocation) ? (
-                      <View style={styles.roundCheckInInner}>
-                        <Ionicons name="location" size={Icons.standard} color={colors.textSecondary} />
-                        <ThemedText style={[styles.roundCheckInLabel, { color: colors.textSecondary }]} numberOfLines={1}>
-                          {actionLoading ? 'Checking in…' : 'Getting location…'}
-                        </ThemedText>
-                        <ThemedText style={[styles.roundCheckInSub, { color: colors.textSecondary }]} numberOfLines={1}>AT VENUE</ThemedText>
-                      </View>
-                    ) : (
-                      <LinearGradient colors={['#2563eb', '#1e3a5f', themeBlue]} style={styles.roundCheckInGradient}>
-                        <Ionicons name="location" size={Icons.standard} color="#fff" />
-                        <ThemedText style={[styles.roundCheckInLabel, { color: '#fff' }]} numberOfLines={1}>Check in</ThemedText>
-                        <ThemedText style={[styles.roundCheckInSub, { color: 'rgba(255,255,255,0.95)' }]} numberOfLines={1}>AT VENUE</ThemedText>
-                      </LinearGradient>
-                    )}
-                  </Pressable>
-                </Animated.View>
-              </View>
-            ) : checkoutTime ? (
-              <View style={[styles.checkedOutBadge, { backgroundColor: StatusColors.checkedIn + '18', borderColor: StatusColors.checkedIn + '44' }]}>
-                <View style={[styles.checkedOutIconWrap, { backgroundColor: StatusColors.checkedIn + '28' }]}>
-                  <Ionicons name="checkmark-done-circle" size={Icons.xl} color={StatusColors.checkedIn} />
+            <View style={styles.attendanceMapCard}>
+              {attendanceMapUrl ? (
+                <Image
+                  source={{ uri: attendanceMapUrl }}
+                  style={styles.attendanceMapImage}
+                  contentFit="cover"
+                  transition={150}
+                  onError={() => {
+                    setAttendanceMapSourceIndex((idx) => (idx + 1 < attendanceMapUrls.length ? idx + 1 : idx));
+                  }}
+                />
+              ) : null}
+              <View style={[styles.attendanceMapTint, { backgroundColor: isDark ? 'rgba(2,6,23,0.5)' : 'rgba(15,23,42,0.38)' }]} />
+              <View style={styles.attendanceMapGrid} />
+              <View style={styles.mapActionOverlay}>
+                <View style={styles.roundCheckInWrap}>
+                  <Animated.View style={styles.roundCheckInButtonWrap}>
+                    {!checkinTime ? (
+                      <>
+                        <Animated.View style={[styles.rippleRing, styles.rippleRingPrimary, { borderColor: themeYellow }, rippleStyle]} pointerEvents="none" />
+                        <Animated.View style={[styles.rippleRing, styles.rippleRingSecondary, { borderColor: themeYellow + 'bb' }, rippleStyle2]} pointerEvents="none" />
+                      </>
+                    ) : null}
+                    <Pressable
+                      onPress={!checkinTime ? handleCheckIn : !checkoutTime ? handleCheckOut : undefined}
+                      disabled={actionLoading || (!checkinTime && !userLocation) || !!checkoutTime}
+                      style={({ pressed }) => [
+                        styles.roundCheckInButton,
+                        styles.roundCheckInButtonEvent,
+                        !checkinTime && { backgroundColor: themeYellow, shadowColor: themeYellow, shadowOpacity: 0.38 },
+                        checkinTime && !checkoutTime && { backgroundColor: themeBlue, shadowColor: themeBlue, shadowOpacity: 0.4 },
+                        checkoutTime && { backgroundColor: '#334155', shadowColor: '#334155', shadowOpacity: 0.2 },
+                        (actionLoading || (!checkinTime && !userLocation) || !!checkoutTime) && styles.roundCheckInButtonDisabled,
+                        (actionLoading || (!checkinTime && !userLocation) || !!checkoutTime) && { backgroundColor: themeBlue + '22' },
+                        pressed && !actionLoading && styles.roundCheckInButtonPressed,
+                      ]}
+                    >
+                      {(actionLoading || (!checkinTime && !userLocation)) ? (
+                        <View style={styles.roundCheckInInner}>
+                          <Ionicons name="location" size={Icons.standard} color={colors.textSecondary} />
+                          <ThemedText style={[styles.roundCheckInLabel, { color: colors.textSecondary }]} numberOfLines={1}>
+                            {actionLoading ? (!checkinTime ? 'Checking in…' : 'Checking out…') : 'Getting location…'}
+                          </ThemedText>
+                          <ThemedText style={[styles.roundCheckInSub, { color: colors.textSecondary }]} numberOfLines={1}>AT VENUE</ThemedText>
+                        </View>
+                      ) : !checkinTime ? (
+                        <View style={styles.roundCheckInInner}>
+                          <Ionicons name="location" size={Icons.standard} color={themeBlue} />
+                          <ThemedText style={[styles.roundCheckInLabel, { color: themeBlue }]} numberOfLines={1}>Check in</ThemedText>
+                          <ThemedText style={[styles.roundCheckInSub, { color: themeBlue }]} numberOfLines={1}>AT VENUE</ThemedText>
+                        </View>
+                      ) : !checkoutTime ? (
+                        <View style={styles.roundCheckInInner}>
+                          <Ionicons name="exit-outline" size={Icons.standard} color="#fff" />
+                          <ThemedText style={[styles.roundCheckInLabel, { color: '#fff' }]} numberOfLines={1}>Check out</ThemedText>
+                          <ThemedText style={[styles.roundCheckInSub, { color: 'rgba(255,255,255,0.95)' }]} numberOfLines={1}>END SHIFT</ThemedText>
+                        </View>
+                      ) : (
+                        <View style={styles.roundCheckInInner}>
+                          <Ionicons name="checkmark-done-circle" size={Icons.standard} color={StatusColors.checkedIn} />
+                          <ThemedText style={[styles.roundCheckInLabel, { color: StatusColors.checkedIn }]} numberOfLines={1}>Done</ThemedText>
+                          <ThemedText style={[styles.roundCheckInSub, { color: StatusColors.checkedIn }]} numberOfLines={1}>CHECKED OUT</ThemedText>
+                        </View>
+                      )}
+                    </Pressable>
+                  </Animated.View>
                 </View>
-                <View style={styles.checkedOutTextWrap}>
-                  <ThemedText style={[styles.checkedOutTitle, { color: StatusColors.checkedIn }]}>Shift complete</ThemedText>
-                  <ThemedText style={[styles.checkedOutText, { color: colors.textSecondary }]}>
-                    {checkoutTimeFormatted ? `Checked out at ${checkoutTimeFormatted}` : 'You’re checked out'}
-                  </ThemedText>
-                  <ThemedText style={[styles.checkedOutText, { color: colors.textSecondary }]}>
-                    Total: {formatHoursLabel(sessionStats.totalHours)} · Extra: {formatHoursLabel(sessionStats.extraHours)} · {sessionStats.dayType === 'holiday' ? (pivotData.holiday_name || 'Holiday') : (sessionStats.dayType === 'sunday' ? 'Sunday' : 'Normal day')}
-                  </ThemedText>
-                </View>
               </View>
-            ) : (
-              <Pressable
-                onPress={handleCheckOut}
-                disabled={actionLoading}
-                style={({ pressed }) => [
-                  styles.ctaButtonSecondary,
-                  { borderColor: themeYellow, backgroundColor: isDark ? '#352d06' : '#fff7cc', opacity: actionLoading ? 0.7 : pressed ? 0.9 : 1 },
-                ]}
-              >
-                <Ionicons name="exit-outline" size={Icons.header} color={themeYellow} />
-                <ThemedText style={[styles.ctaButtonTextSecondary, { color: themeYellow }]}>
-                  {actionLoading ? 'Checking out…' : 'Check out'}
-                </ThemedText>
-              </Pressable>
-            )}
             </View>
             {checkinTime && !checkoutTime ? (
               <View style={[styles.liveHoursCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
@@ -790,10 +764,38 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   attendanceCard: {
-    borderRadius: Cards.borderRadius,
+    borderRadius: 22,
     borderWidth: 1,
-    padding: Spacing.md,
+    padding: 0,
     marginBottom: Spacing.lg,
+    overflow: 'hidden',
+  },
+  attendanceMapCard: {
+    height: 320,
+    borderRadius: 22,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  attendanceMapImage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  attendanceMapTint: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  attendanceMapGrid: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.2,
+    borderWidth: 1,
+    borderColor: '#64748b',
+  },
+  mapActionOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   detailsCard: {
     borderRadius: Cards.borderRadius,
@@ -951,6 +953,14 @@ const styles = StyleSheet.create({
     top: 0,
     borderWidth: 4,
     backgroundColor: 'transparent',
+  },
+  rippleRingPrimary: {
+    borderWidth: 5,
+    zIndex: 1,
+  },
+  rippleRingSecondary: {
+    borderWidth: 4,
+    zIndex: 1,
   },
   roundCheckInButton: {
     width: 96,

@@ -35,18 +35,34 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
   const [loading, setLoading] = useState(false);
   const [officeConfig, setOfficeConfig] = useState<{ latitude: number; longitude: number; radiusMeters: number } | null>(null);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [mapSourceIndex, setMapSourceIndex] = useState(0);
   const rippleA = useRef(new Animated.Value(0)).current;
   const rippleB = useRef(new Animated.Value(0)).current;
 
   const officeCheckedInToday = user?.office_checked_in_today ?? false;
   const officeCheckedOutToday = user?.office_checked_out_today ?? false;
   const canCheckout = officeCheckedInToday && !officeCheckedOutToday;
-  const officeMapUrl = useMemo(() => {
-    if (!officeConfig) return null;
-    const lat = officeConfig.latitude.toFixed(6);
-    const lon = officeConfig.longitude.toFixed(6);
-    return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=15&size=900x640&markers=${lat},${lon},red-pushpin`;
-  }, [officeConfig]);
+  const mapCenter = useMemo(
+    () =>
+      officeConfig
+        ? { latitude: officeConfig.latitude, longitude: officeConfig.longitude }
+        : userLocation,
+    [officeConfig, userLocation]
+  );
+  const mapUrls = useMemo(() => {
+    if (!mapCenter) return [];
+    const lat = mapCenter.latitude.toFixed(6);
+    const lon = mapCenter.longitude.toFixed(6);
+    return [
+      `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=15&size=900x640&markers=${lat},${lon},red-pushpin`,
+      `https://static-maps.yandex.ru/1.x/?lang=en-US&ll=${lon},${lat}&z=15&l=map&size=650,450&pt=${lon},${lat},pm2rdm`,
+    ];
+  }, [mapCenter]);
+  const mapUrl = mapUrls[mapSourceIndex] ?? null;
+
+  useEffect(() => {
+    setMapSourceIndex(0);
+  }, [mapCenter?.latitude, mapCenter?.longitude]);
 
   const buttonLabel = useMemo(() => {
     if (loading) return canCheckout ? 'Checking out...' : 'Checking in...';
@@ -187,15 +203,18 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
       <HomeHeader title="Home" notificationCount={0} />
       <View style={styles.content}>
         <View style={[styles.mapCard, { backgroundColor: isDark ? '#121723' : '#0F172A' }]}>
-          {officeMapUrl ? (
+          {mapUrl ? (
             <Image
-              source={{ uri: officeMapUrl }}
+              source={{ uri: mapUrl }}
               style={styles.mapImage}
               contentFit="cover"
               transition={150}
+              onError={() => {
+                setMapSourceIndex((idx) => (idx + 1 < mapUrls.length ? idx + 1 : idx));
+              }}
             />
           ) : null}
-          <View style={[styles.mapOverlayTint, { backgroundColor: isDark ? 'rgba(2,6,23,0.38)' : 'rgba(15,23,42,0.28)' }]} />
+          <View style={[styles.mapOverlayTint, { backgroundColor: isDark ? 'rgba(2,6,23,0.5)' : 'rgba(15,23,42,0.38)' }]} />
           <View style={styles.gridOverlay} />
           <View style={styles.centerActionWrap}>
             <Animated.View
@@ -237,9 +256,74 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
         </View>
 
         <View style={[styles.panel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <ThemedText style={[styles.panelTitle, { color: colors.text }]}>Office check-in</ThemedText>
+          <View style={styles.panelTopRow}>
+            <View>
+              <ThemedText style={[styles.panelEyebrow, { color: colors.textSecondary }]}>OFFICE SHIFT</ThemedText>
+              <ThemedText style={[styles.panelTitle, { color: colors.text }]}>Check-in status</ThemedText>
+            </View>
+            <View
+              style={[
+                styles.stateChip,
+                {
+                  backgroundColor: officeCheckedOutToday
+                    ? StatusColors.checkedIn + '20'
+                    : canCheckout
+                      ? themeBlue + '20'
+                      : themeYellow + '22',
+                  borderColor: officeCheckedOutToday
+                    ? StatusColors.checkedIn + '55'
+                    : canCheckout
+                      ? themeBlue + '55'
+                      : themeYellow + '66',
+                },
+              ]}
+            >
+              <ThemedText
+                style={[
+                  styles.stateChipText,
+                  {
+                    color: officeCheckedOutToday
+                      ? StatusColors.checkedIn
+                      : canCheckout
+                        ? themeBlue
+                        : themeYellow,
+                  },
+                ]}
+              >
+                {officeCheckedOutToday ? 'Done' : canCheckout ? 'Checked in' : 'Pending'}
+              </ThemedText>
+            </View>
+          </View>
+
           <ThemedText style={[styles.panelSub, { color: colors.textSecondary }]}>{subLabel}</ThemedText>
-          <ThemedText style={[styles.statusText, { color: colors.text }]}>{buttonLabel}</ThemedText>
+
+          <View
+            style={[
+              styles.primaryActionCard,
+              {
+                backgroundColor: officeCheckedOutToday
+                  ? '#334155'
+                  : canCheckout
+                    ? themeBlue + '14'
+                    : themeYellow + '16',
+                borderColor: officeCheckedOutToday
+                  ? '#475569'
+                  : canCheckout
+                    ? themeBlue + '55'
+                    : themeYellow + '66',
+              },
+            ]}
+          >
+            <Ionicons
+              name={officeCheckedOutToday ? 'checkmark-done-circle' : canCheckout ? 'exit-outline' : 'location'}
+              size={18}
+              color={officeCheckedOutToday ? '#e2e8f0' : canCheckout ? themeBlue : themeYellow}
+            />
+            <ThemedText style={[styles.primaryActionText, { color: officeCheckedOutToday ? '#e2e8f0' : colors.text }]}>
+              {buttonLabel}
+            </ThemedText>
+          </View>
+
           {(officeCheckedInToday || officeCheckedOutToday) ? (
             <View style={styles.statusRow}>
               <Ionicons
@@ -322,12 +406,49 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     gap: Spacing.sm,
   },
+  panelTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+  },
+  panelEyebrow: {
+    fontSize: 11,
+    letterSpacing: 0.9,
+    fontWeight: '700',
+  },
   panelTitle: {
     fontSize: 20,
     fontWeight: '700',
   },
+  stateChip: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+  },
+  stateChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.25,
+  },
   panelSub: {
     fontSize: 14,
+    marginTop: 2,
+  },
+  primaryActionCard: {
+    marginTop: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  primaryActionText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   statusRow: {
     flexDirection: 'row',
