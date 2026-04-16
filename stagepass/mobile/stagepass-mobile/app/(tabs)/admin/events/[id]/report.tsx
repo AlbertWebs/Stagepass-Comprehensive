@@ -18,9 +18,29 @@ function formatAmount(value: number | undefined): string {
 
 function formatEventDateTime(event: Event | null): string {
   if (!event) return '';
-  const parts = [event.date];
-  if (event.start_time) parts.push(event.start_time.slice(0, 5));
-  if (event.expected_end_time) parts.push(`- ${event.expected_end_time.slice(0, 5)}`);
+  const formatDate = (value?: string | null): string => {
+    if (!value) return '';
+    const dateOnly = value.includes('T') ? value.slice(0, 10) : value.slice(0, 10);
+    const dt = new Date(`${dateOnly}T00:00:00`);
+    if (Number.isNaN(dt.getTime())) return dateOnly;
+    return dt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+  const formatTime = (value?: string | null): string => {
+    if (!value) return '';
+    const m = value.match(/(\d{1,2}):(\d{2})/);
+    if (!m) return value;
+    const h = Number(m[1]);
+    const mm = m[2];
+    if (!Number.isFinite(h) || h < 0 || h > 23) return value;
+    const h12 = h % 12 || 12;
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    return `${h12}:${mm} ${ampm}`;
+  };
+  const parts = [formatDate(event.date)];
+  const start = formatTime(event.start_time);
+  const end = formatTime(event.expected_end_time);
+  if (start) parts.push(start);
+  if (end) parts.push(`- ${end}`);
   return parts.join(' ');
 }
 
@@ -35,6 +55,7 @@ export default function EventReportPreviewScreen() {
   const [exporting, setExporting] = useState(false);
   const [event, setEvent] = useState<Event | null>(null);
   const [report, setReport] = useState<ReportEndOfDayResponse | null>(null);
+  const [crewAllowances, setCrewAllowances] = useState<Array<{ crewName: string; amount: number }>>([]);
   const [confirmedBy, setConfirmedBy] = useState('');
   const [signature, setSignature] = useState('');
   const [acknowledged, setAcknowledged] = useState(false);
@@ -62,6 +83,19 @@ export default function EventReportPreviewScreen() {
         if (meRes.status === 'fulfilled') {
           setConfirmedBy(meRes.value?.name ?? '');
         }
+        const earnedRes = await api.payments.earnedAllowances({ event_id: eventId, per_page: 200 });
+        const groups = Array.isArray(earnedRes?.data) ? earnedRes.data : [];
+        const eventGroup = groups.find((g) => g.event_id === eventId);
+        const totals = new Map<string, number>();
+        (eventGroup?.details ?? []).forEach((d) => {
+          const key = d.crew_name || `Crew #${d.crew_id}`;
+          totals.set(key, (totals.get(key) ?? 0) + Number(d.amount ?? 0));
+        });
+        setCrewAllowances(
+          Array.from(totals.entries())
+            .map(([crewName, amount]) => ({ crewName, amount }))
+            .sort((a, b) => b.amount - a.amount)
+        );
         if (eventRes.status === 'rejected' && reportRes.status === 'rejected') {
           Alert.alert('Error', 'Failed to load event report.');
         }
@@ -173,6 +207,19 @@ export default function EventReportPreviewScreen() {
             variant="outline"
             style={styles.previewBtn}
           />
+          <View style={[styles.crewWrap, { borderColor: colors.border }]}>
+            <ThemedText style={[styles.crewTitle, { color: colors.text }]}>Allowance per crew member</ThemedText>
+            {crewAllowances.length === 0 ? (
+              <ThemedText style={{ color: colors.textSecondary }}>No crew allowance allocations yet.</ThemedText>
+            ) : (
+              crewAllowances.map((row) => (
+                <View key={row.crewName} style={[styles.kpiRow, { borderBottomColor: colors.border }]}>
+                  <ThemedText style={{ color: colors.textSecondary }}>{row.crewName}</ThemedText>
+                  <ThemedText style={[styles.kpiValue, { color: colors.text }]}>{formatAmount(row.amount)}</ThemedText>
+                </View>
+              ))
+            )}
+          </View>
         </View>
 
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -231,6 +278,8 @@ const styles = StyleSheet.create({
   },
   kpiValue: { fontSize: 14, fontWeight: '700' },
   previewBtn: { marginTop: Spacing.md },
+  crewWrap: { marginTop: Spacing.md, borderWidth: 1, borderRadius: BorderRadius.md, padding: Spacing.md },
+  crewTitle: { fontSize: 14, fontWeight: '700', marginBottom: Spacing.xs },
   input: { marginBottom: Spacing.md },
   checkboxRow: {
     borderWidth: 1,

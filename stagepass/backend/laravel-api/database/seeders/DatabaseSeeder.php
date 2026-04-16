@@ -28,6 +28,7 @@ class DatabaseSeeder extends Seeder
             SessionsTableSeeder::class,
             SettingsTableSeeder::class,
             UsersTableSeeder::class,
+            AssignAdminRoleToDefaultAdminSeeder::class,
             VehiclesTableSeeder::class,
             PermissionRoleTableSeeder::class,
             ActivityLogsTableSeeder::class,

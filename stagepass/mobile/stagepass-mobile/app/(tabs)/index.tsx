@@ -1,8 +1,10 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
+import { useSelector } from 'react-redux';
 import Animated, { SlideInRight } from 'react-native-reanimated';
 import { HomeDashboardScreen } from '@/components/screens/HomeDashboardScreen';
+import { MinimalCrewHomeScreen } from '@/components/screens/MinimalCrewHomeScreen';
 import { useAppRole } from '~/hooks/useAppRole';
 import { api, type Event as EventType, type Payment } from '~/services/api';
 import { setUser } from '~/store/authSlice';
@@ -34,6 +36,9 @@ function isPastEvent(event: EventType): boolean {
 export default function HomeScreen() {
   const dispatch = useDispatch();
   const role = useAppRole();
+  const hasResolvedRoles = useSelector((s: { auth: { user: { roles?: Array<{ name?: string }> } | null } }) =>
+    Array.isArray(s.auth.user?.roles) && s.auth.user!.roles!.length > 0
+  );
   const [animateKey, setAnimateKey] = useState(0);
   const [eventToday, setEventToday] = useState<EventType | null | undefined>(undefined);
   const [pastEvents, setPastEvents] = useState<EventType[]>([]);
@@ -183,18 +188,22 @@ export default function HomeScreen() {
 
   return (
     <Animated.View key={animateKey} entering={SlideInRight.duration(320)} style={{ flex: 1 }}>
-      <HomeDashboardScreen
-      eventToday={eventToday ?? null}
-      allowanceToday={eventToday?.daily_allowance ?? null}
-      eventsTodayList={eventsTodayList}
-      taskCount={taskCount}
-      notificationCount={0}
-      onRefresh={onRefresh}
-      role={role}
-      pastEvents={role === 'admin' ? pastEvents : []}
-      equipmentCount={equipmentCount}
-      approvedAllowances={approvedAllowances}
-    />
+      {role === 'crew' && hasResolvedRoles ? (
+        <MinimalCrewHomeScreen onRefresh={onRefresh} />
+      ) : (
+        <HomeDashboardScreen
+          eventToday={eventToday ?? null}
+          allowanceToday={eventToday?.daily_allowance ?? null}
+          eventsTodayList={eventsTodayList}
+          taskCount={taskCount}
+          notificationCount={0}
+          onRefresh={onRefresh}
+          role={role}
+          pastEvents={role === 'admin' ? pastEvents : []}
+          equipmentCount={equipmentCount}
+          approvedAllowances={approvedAllowances}
+        />
+      )}
     </Animated.View>
   );
 }

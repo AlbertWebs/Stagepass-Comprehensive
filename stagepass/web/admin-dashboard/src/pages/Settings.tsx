@@ -121,7 +121,10 @@ export default function Settings() {
       setPageReady(true);
       setName(user.name ?? '');
       setEmail(user.email ?? '');
-      const canEdit = user.roles?.some((r) => r.name === 'super_admin' || r.name === 'director' || r.name === 'admin');
+      const roleNames = (user.roles ?? [])
+        .map((r) => String(r?.name ?? '').trim().toLowerCase())
+        .filter(Boolean);
+      const canEdit = roleNames.some((name) => name === 'super_admin' || name === 'director' || name === 'admin');
       setCanEditSettings(!!canEdit);
       if (canEdit) {
         api.settings
