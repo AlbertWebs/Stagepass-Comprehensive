@@ -25,7 +25,8 @@ class ReportsController extends Controller
             $user->hasRole('super_admin') ||
             $user->hasRole('director') ||
             $user->hasRole('admin') ||
-            $user->hasRole('team_leader')
+            $user->hasRole('team_leader') ||
+            $user->hasRole('teamleader')
         );
     }
 
