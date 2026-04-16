@@ -234,12 +234,6 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
               <Ionicons name={canCheckout ? 'exit-outline' : 'location'} size={22} color={officeCheckedOutToday || canCheckout ? '#fff' : themeBlue} />
             </Pressable>
           </View>
-          <View style={styles.mapMeta}>
-            <ThemedText style={styles.mapTitle}>Office location</ThemedText>
-            <ThemedText style={styles.mapSub}>
-              {officeConfig ? `Radius ${Math.round(officeConfig.radiusMeters)}m` : 'Office geofence pending'}
-            </ThemedText>
-          </View>
         </View>
 
         <View style={[styles.panel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -321,18 +315,6 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 5 },
     elevation: 5,
-  },
-  mapMeta: {
-    gap: 3,
-  },
-  mapTitle: {
-    color: '#F8FAFC',
-    fontSize: 19,
-    fontWeight: '700',
-  },
-  mapSub: {
-    color: '#CBD5E1',
-    fontSize: 13,
   },
   panel: {
     borderRadius: 18,

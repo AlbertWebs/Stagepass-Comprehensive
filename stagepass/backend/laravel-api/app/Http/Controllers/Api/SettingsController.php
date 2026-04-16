@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Setting;
-use Database\Seeders\SettingsSeeder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -12,6 +11,37 @@ use Illuminate\Support\Facades\Schema;
 
 class SettingsController extends Controller
 {
+    private const ALLOWED_SETTING_KEYS = [
+        'app_name',
+        'company_name',
+        'app_support_email',
+        'support_phone',
+        'support_whatsapp_phone',
+        'timezone',
+        'date_format',
+        'time_format',
+        'default_geofence_radius_m',
+        'default_event_start_time',
+        'default_event_end_time',
+        'checkin_allowed_minutes_before',
+        'notifications_email_enabled',
+        'notifications_sms_enabled',
+        'reminder_lead_hours',
+        'default_equipment_condition',
+        'default_event_status',
+        'items_per_page',
+        'allow_crew_self_checkin',
+        'require_geofence_for_checkin',
+        'payment_currency',
+        'allow_time_off_requests',
+        'allow_biometric_mobile_login',
+        'office_location_name',
+        'office_latitude',
+        'office_longitude',
+        'office_radius_m',
+        'office_checkin_start_time',
+        'office_checkin_end_time',
+    ];
     /**
      * Minimal app policy for unauthenticated clients (e.g. login screen before token).
      */
@@ -103,7 +133,7 @@ class SettingsController extends Controller
             return response()->json(['message' => 'Invalid payload: send JSON body { "settings": { "key": "value", ... } }'], 422);
         }
 
-        $allowed = array_keys(SettingsSeeder::DEFAULTS);
+        $allowed = self::ALLOWED_SETTING_KEYS;
         $toSet = [];
         foreach ($settingsInput as $key => $value) {
             if (in_array($key, $allowed, true)) {
