@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { api, PAYMENT_PURPOSES, type Client, type Event, type EventChecklistItem, type EquipmentItem, type PaymentItem, type User } from '@/services/api';
+import { api, PAYMENT_PURPOSES, type Client, type Event, type EquipmentItem, type PaymentItem, type User } from '@/services/api';
 import { FormModal } from '@/components/FormModal';
 import { PageHeader } from '@/components/PageHeader';
 import { Preloader } from '@/components/Preloader';
@@ -45,10 +45,6 @@ export default function EventDetail() {
   const [teamLeaderSaving, setTeamLeaderSaving] = useState(false);
   const [clientSaving, setClientSaving] = useState(false);
   const [dailyAllowanceSaving, setDailyAllowanceSaving] = useState(false);
-  const [checklistItems, setChecklistItems] = useState<EventChecklistItem[]>([]);
-  const [checklistLoading, setChecklistLoading] = useState(false);
-  const [checklistCreating, setChecklistCreating] = useState(false);
-  const [checklistTogglingId, setChecklistTogglingId] = useState<number | null>(null);
   const [endEventOpen, setEndEventOpen] = useState(false);
   const [endComment, setEndComment] = useState('');
   const [endSaving, setEndSaving] = useState(false);
@@ -98,33 +94,6 @@ export default function EventDetail() {
     if (id) fetchEventPayments();
   }, [id, fetchEventPayments]);
 
-  const fetchChecklist = useCallback(() => {
-    if (!id) return;
-    setChecklistLoading(true);
-    api.events.checklist
-      .list(Number(id))
-      .then((r) => setChecklistItems(r.data ?? []))
-      .catch(() => setChecklistItems([]))
-      .finally(() => setChecklistLoading(false));
-  }, [id]);
-
-  useEffect(() => {
-    if (id) fetchChecklist();
-  }, [id, fetchChecklist]);
-
-  const handleCreateChecklist = async () => {
-    if (!event) return;
-    setChecklistCreating(true);
-    setError(null);
-    try {
-      const r = await api.events.checklist.create(event.id);
-      setChecklistItems(r.data ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create checklist');
-    } finally {
-      setChecklistCreating(false);
-    }
-  };
 
   const isEventEnded = event?.status === 'completed' || event?.status === 'closed';
 
@@ -150,20 +119,6 @@ export default function EventDetail() {
     }
   };
 
-  const handleChecklistToggle = async (item: EventChecklistItem) => {
-    if (!event) return;
-    const next = !item.is_checked;
-    setChecklistTogglingId(item.id);
-    setError(null);
-    try {
-      const updated = await api.events.checklist.toggleItem(event.id, item.id, next);
-      setChecklistItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, ...updated } : i)));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update item');
-    } finally {
-      setChecklistTogglingId(null);
-    }
-  };
 
   const crewIds = new Set((event?.crew ?? []).map((u) => u.id));
   const availableUsers = users.filter((u) => !crewIds.has(u.id));
@@ -360,9 +315,6 @@ export default function EventDetail() {
     event.start_time,
     event.status,
   ].join(' · ');
-
-  const checklistChecked = checklistItems.filter((i) => i.is_checked).length;
-  const checklistTotal = checklistItems.length;
 
   return (
     <div className="space-y-6">
@@ -644,98 +596,7 @@ export default function EventDetail() {
         </SectionCard>
       </div>
 
-      <SectionCard sectionLabel="Event checklist">
-        <div className="flex flex-col">
-          <div
-            className="flex flex-shrink-0 items-center justify-between border-b px-6 py-3.5"
-            style={{ borderColor: '#b3c1e1', background: 'linear-gradient(90deg, #eef1f9 0%, #f8f9fc 100%)' }}
-          >
-            <span className="text-sm font-medium text-brand-800">
-              Crew and equipment to carry. Check off from this dashboard or from the mobile app.
-            </span>
-            {checklistTotal === 0 && (
-              <button
-                type="button"
-                onClick={handleCreateChecklist}
-                disabled={checklistCreating || (event.crew?.length ?? 0) + (event.event_equipment?.length ?? 0) === 0}
-                className="btn-brand text-sm disabled:opacity-50"
-              >
-                {checklistCreating ? 'Creating…' : 'Create Event checklist'}
-              </button>
-            )}
-          </div>
-          <div className="p-4 sm:px-6">
-            {checklistLoading ? (
-              <div className="flex items-center gap-3 py-8 text-brand-600">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" />
-                <span className="text-sm">Loading checklist…</span>
-              </div>
-            ) : checklistTotal === 0 ? (
-              <div className="py-8 text-center">
-                <p className="text-sm text-slate-600">No checklist yet. Create one from the current crew and event equipment.</p>
-                <p className="mt-1 text-xs text-slate-500">Crew can check items off from the mobile app.</p>
-                <button
-                  type="button"
-                  onClick={handleCreateChecklist}
-                  disabled={checklistCreating || (event.crew?.length ?? 0) + (event.event_equipment?.length ?? 0) === 0}
-                  className="btn-brand mt-4 text-sm disabled:opacity-50"
-                >
-                  {checklistCreating ? 'Creating…' : 'Create Event checklist'}
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="mb-4 flex items-center gap-3">
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-brand-100">
-                    <div
-                      className="h-full rounded-full bg-brand-accent transition-all"
-                      style={{ width: `${checklistTotal ? (checklistChecked / checklistTotal) * 100 : 0}%` }}
-                    />
-                  </div>
-                  <span className="text-sm font-medium text-brand-800">
-                    {checklistChecked} of {checklistTotal} checked
-                  </span>
-                </div>
-                <ul className="space-y-2">
-                  {checklistItems.map((item) => (
-                    <li
-                      key={item.id}
-                      className={`flex items-center gap-3 rounded-lg border px-4 py-3 transition ${
-                        item.is_checked ? 'border-green-200 bg-green-50/80' : 'border-slate-200 bg-white'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => handleChecklistToggle(item)}
-                        disabled={checklistTogglingId === item.id}
-                        className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border-2 transition focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-1 disabled:opacity-50 ${
-                          item.is_checked ? 'border-brand-accent bg-brand-accent' : 'border-slate-300 bg-white'
-                        }`}
-                        aria-pressed={item.is_checked}
-                        aria-label={item.is_checked ? `Uncheck ${item.label}` : `Check ${item.label}`}
-                      >
-                        {item.is_checked && (
-                          <svg className="h-4 w-4 text-white" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
-                        )}
-                      </button>
-                      <span className={`flex-1 text-sm font-medium ${item.is_checked ? 'text-slate-500 line-through' : 'text-slate-900'}`}>
-                        {item.label}
-                      </span>
-                      <span className={`rounded px-2 py-0.5 text-xs font-medium ${item.type === 'crew' ? 'bg-brand-100 text-brand-800' : 'bg-slate-100 text-slate-700'}`}>
-                        {item.type === 'crew' ? 'Crew' : 'Equipment'}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </div>
-        </div>
-      </SectionCard>
-
-      <SectionCard sectionLabel="Arrival checklist">
+      <SectionCard sectionLabel="Crew arrivals">
         <div className="p-4 sm:px-6">
           <p className="mb-4 text-sm text-slate-600">
             As team leader, mark crew members who have arrived when they cannot check in themselves (e.g. no device or geofence issue).
@@ -815,7 +676,7 @@ export default function EventDetail() {
                 </tbody>
               </table>
             ) : (
-              <p className="py-6 text-center text-sm text-slate-500">No crew assigned. Add crew above to use the arrival checklist.</p>
+              <p className="py-6 text-center text-sm text-slate-500">No crew assigned. Add crew above to track arrivals.</p>
             )}
           </div>
         </div>

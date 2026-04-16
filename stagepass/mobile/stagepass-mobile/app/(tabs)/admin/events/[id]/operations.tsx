@@ -59,7 +59,12 @@ function formatEventTime(start?: string, end?: string): string {
 }
 
 export default function AdminEventOperationsScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, report_ready, report_confirmed_by, report_signature } = useLocalSearchParams<{
+    id: string;
+    report_ready?: string;
+    report_confirmed_by?: string;
+    report_signature?: string;
+  }>();
   const router = useRouter();
   const handleNav = useNavigationPress();
   const { colors } = useStagePassTheme();
@@ -73,6 +78,9 @@ export default function AdminEventOperationsScreen() {
   const eventId = id ? Number(id) : 0;
   const isEnded = event?.status === 'completed' || event?.status === 'closed' || event?.status === 'done_for_the_day';
   const crewCount = event?.crew?.length ?? 0;
+  const reportReady = report_ready === '1';
+  const reportConfirmedBy = (report_confirmed_by ?? '').trim();
+  const reportSignature = (report_signature ?? '').trim();
 
   const loadEvent = useCallback(async () => {
     if (!eventId) return;
@@ -91,6 +99,26 @@ export default function AdminEventOperationsScreen() {
   }, [loadEvent]);
 
   const handleEndEvent = async () => {
+    if (!reportReady || !reportConfirmedBy || !reportSignature) {
+      Alert.alert(
+        'Generate event report first',
+        'Before ending this event, preview and sign the event report from Operations.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Open report',
+            onPress: () =>
+              handleNav(() =>
+                router.push({
+                  pathname: '/(tabs)/admin/events/[id]/report',
+                  params: { id: String(eventId) },
+                })
+              ),
+          },
+        ]
+      );
+      return;
+    }
     const comment = endComment.trim();
     if (!comment) {
       Alert.alert('Required', "Leave a comment about today's work.");
@@ -98,7 +126,8 @@ export default function AdminEventOperationsScreen() {
     }
     setEnding(true);
     try {
-      await api.events.doneForDay(eventId, comment);
+      const signedComment = `${comment}\n\nEvent report confirmed by: ${reportConfirmedBy}\nSignature: ${reportSignature}`;
+      await api.events.doneForDay(eventId, signedComment);
       await loadEvent();
       setEndModalVisible(false);
       setEndComment('');
@@ -121,7 +150,7 @@ export default function AdminEventOperationsScreen() {
           onPress: async () => {
             try {
               await api.events.delete(eventId);
-              Alert.alert('Deleted', 'Event has been deleted.', [{ text: 'OK', onPress: () => router.replace('/admin/events') }]);
+              Alert.alert('Deleted', 'Event has been deleted.', [{ text: 'OK', onPress: () => router.replace('/(tabs)/admin/events') }]);
             } catch (e) {
               Alert.alert('Error', e instanceof Error ? e.message : 'Could not delete event.');
             }
@@ -154,7 +183,7 @@ export default function AdminEventOperationsScreen() {
         {/* Back to events + quick nav */}
         <Pressable
           style={({ pressed }) => [styles.backStrip, { backgroundColor: themeBlue }, pressed && { opacity: NAV_PRESSED_OPACITY }]}
-          onPress={() => handleNav(() => router.replace('/admin/events'))}
+          onPress={() => handleNav(() => router.replace('/(tabs)/admin/events'))}
         >
           <Ionicons name="arrow-back" size={20} color={themeYellow} />
           <ThemedText style={styles.backStripText}>Back to events</ThemedText>
@@ -163,25 +192,17 @@ export default function AdminEventOperationsScreen() {
         <View style={[styles.quickNavWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <ThemedText style={[styles.quickNavTitle, { color: colors.text }]}>Jump to</ThemedText>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickNavScroll}>
-            <Pressable style={({ pressed }) => [styles.quickNavPill, { backgroundColor: themeBlue }, pressed && styles.quickNavPillPressed]} onPress={navTo('/admin/events/[id]/crew')}>
+            <Pressable style={({ pressed }) => [styles.quickNavPill, { backgroundColor: themeBlue }, pressed && styles.quickNavPillPressed]} onPress={navTo('/(tabs)/admin/events/[id]/crew')}>
               <Ionicons name="people" size={18} color={themeYellow} />
               <ThemedText style={styles.quickNavPillText}>Crew</ThemedText>
             </Pressable>
-            <Pressable style={({ pressed }) => [styles.quickNavPill, { backgroundColor: themeBlue }, pressed && styles.quickNavPillPressed]} onPress={navTo('/admin/events/[id]/checklist')}>
-              <Ionicons name="checkbox" size={18} color={themeYellow} />
-              <ThemedText style={styles.quickNavPillText}>Checklist</ThemedText>
-            </Pressable>
-            <Pressable style={({ pressed }) => [styles.quickNavPill, { backgroundColor: themeBlue }, pressed && styles.quickNavPillPressed]} onPress={navTo('/admin/events/[id]/message')}>
+            <Pressable style={({ pressed }) => [styles.quickNavPill, { backgroundColor: themeBlue }, pressed && styles.quickNavPillPressed]} onPress={navTo('/(tabs)/admin/events/[id]/message')}>
               <Ionicons name="chatbubble-ellipses" size={18} color={themeYellow} />
               <ThemedText style={styles.quickNavPillText}>Message</ThemedText>
             </Pressable>
-            <Pressable style={({ pressed }) => [styles.quickNavPill, { backgroundColor: themeBlue }, pressed && styles.quickNavPillPressed]} onPress={navTo('/admin/events/[id]/manage-checkin')}>
+            <Pressable style={({ pressed }) => [styles.quickNavPill, { backgroundColor: themeBlue }, pressed && styles.quickNavPillPressed]} onPress={navTo('/(tabs)/admin/events/[id]/manage-checkin')}>
               <Ionicons name="location" size={18} color={themeYellow} />
               <ThemedText style={styles.quickNavPillText}>Check-in</ThemedText>
-            </Pressable>
-            <Pressable style={({ pressed }) => [styles.quickNavPill, { backgroundColor: themeBlue }, pressed && styles.quickNavPillPressed]} onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(eventId) } }))}>
-              <Ionicons name="calendar" size={18} color={themeYellow} />
-              <ThemedText style={styles.quickNavPillText}>View event</ThemedText>
             </Pressable>
           </ScrollView>
         </View>
@@ -210,7 +231,7 @@ export default function AdminEventOperationsScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.opsRow, { borderBottomColor: colors.border }, pressed && styles.opsRowPressed]}
-            onPress={() => handleNav(() => router.push({ pathname: '/admin/events/[id]/edit', params: { id: String(eventId) } }))}
+            onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/admin/events/[id]/edit', params: { id: String(eventId) } }))}
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
               <Ionicons name="pencil" size={20} color={themeBlue} />
@@ -221,7 +242,7 @@ export default function AdminEventOperationsScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.opsRow, { borderBottomColor: colors.border }, pressed && styles.opsRowPressed]}
-            onPress={navTo('/admin/events/[id]/crew')}
+            onPress={navTo('/(tabs)/admin/events/[id]/crew')}
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
               <Ionicons name="people" size={20} color={themeBlue} />
@@ -235,7 +256,7 @@ export default function AdminEventOperationsScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.opsRow, { borderBottomColor: colors.border }, pressed && styles.opsRowPressed]}
-            onPress={navTo('/admin/events/[id]/manage-checkin')}
+            onPress={navTo('/(tabs)/admin/events/[id]/manage-checkin')}
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
               <Ionicons name="location" size={20} color={themeBlue} />
@@ -249,21 +270,7 @@ export default function AdminEventOperationsScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.opsRow, { borderBottomColor: colors.border }, pressed && styles.opsRowPressed]}
-            onPress={navTo('/admin/events/[id]/checklist')}
-          >
-            <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
-              <Ionicons name="checkbox" size={20} color={themeBlue} />
-            </View>
-            <View style={styles.opsLabelWrap}>
-              <ThemedText style={[styles.opsLabel, { color: colors.text }]}>Checklist</ThemedText>
-              <ThemedText style={[styles.opsSub, { color: colors.textSecondary }]}>View checklist progress</ThemedText>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [styles.opsRow, { borderBottomColor: colors.border }, pressed && styles.opsRowPressed]}
-            onPress={navTo('/admin/events/[id]/message')}
+            onPress={navTo('/(tabs)/admin/events/[id]/message')}
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
               <Ionicons name="chatbubble-ellipses" size={20} color={themeBlue} />
@@ -277,7 +284,7 @@ export default function AdminEventOperationsScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.opsRow, { borderBottomColor: colors.border }, pressed && styles.opsRowPressed]}
-            onPress={navTo('/admin/events/[id]/create-task')}
+            onPress={navTo('/(tabs)/admin/events/[id]/create-task')}
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
               <Ionicons name="list" size={20} color={themeBlue} />
@@ -289,17 +296,40 @@ export default function AdminEventOperationsScreen() {
             <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
           </Pressable>
 
-          <Pressable
-            style={({ pressed }) => [styles.opsRow, styles.opsRowLast, { borderBottomColor: colors.border }, pressed && styles.opsRowPressed]}
-            onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(eventId) } }))}
-          >
-            <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
-              <Ionicons name="calendar" size={20} color={themeBlue} />
-            </View>
-            <ThemedText style={[styles.opsLabel, { color: colors.text }]}>View event (check-in)</ThemedText>
-            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-          </Pressable>
         </View>
+
+        {!isEnded && (
+          <View style={[styles.card, styles.cardWithAccent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.cardAccent, { backgroundColor: themeYellow }]} />
+            <View style={styles.cardInner}>
+              <View style={styles.sectionHeader}>
+                <View style={[styles.sectionAccent, { backgroundColor: themeBlue }]} />
+                <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Event report</ThemedText>
+              </View>
+              <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>
+                Preview event report, confirm key details and allowances, then sign before ending event.
+              </ThemedText>
+              {reportReady ? (
+                <ThemedText style={[styles.meta, { color: colors.textSecondary }]}>
+                  Signed by {reportConfirmedBy || '—'}
+                </ThemedText>
+              ) : null}
+              <StagePassButton
+                title={reportReady ? 'Review signed report' : 'Preview and sign report'}
+                variant="outline"
+                onPress={() =>
+                  handleNav(() =>
+                    router.push({
+                      pathname: '/(tabs)/admin/events/[id]/report',
+                      params: { id: String(eventId) },
+                    })
+                  )
+                }
+                style={[styles.endDeleteBtn, { borderColor: themeBlue }]}
+              />
+            </View>
+          </View>
+        )}
 
         {!isEnded && (
           <View style={[styles.card, styles.cardWithAccent, { backgroundColor: colors.surface, borderColor: themeYellow }]}>
@@ -312,11 +342,22 @@ export default function AdminEventOperationsScreen() {
               <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>
                 Mark this event as done for the day. Crew will no longer be able to check in.
               </ThemedText>
+              {!reportReady ? (
+                <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>
+                  You must preview and sign the event report first.
+                </ThemedText>
+              ) : null}
               <View style={styles.endDeleteRow}>
                 <StagePassButton
                   title="Done for the day"
                   variant="outline"
-                  onPress={() => setEndModalVisible(true)}
+                  onPress={() => {
+                    if (!reportReady) {
+                      Alert.alert('Report required', 'Preview and sign the event report before ending this event.');
+                      return;
+                    }
+                    setEndModalVisible(true);
+                  }}
                   style={[styles.endDeleteBtn, { borderColor: themeBlue }]}
                 />
                 <StagePassButton

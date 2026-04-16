@@ -198,11 +198,6 @@ class Event extends Model
         return $this->hasMany(EventNote::class);
     }
 
-    public function checklistItems(): HasMany
-    {
-        return $this->hasMany(EventChecklistItem::class)->orderBy('sort_order')->orderBy('id');
-    }
-
     public function eventVehicles(): HasMany
     {
         return $this->hasMany(EventVehicle::class);

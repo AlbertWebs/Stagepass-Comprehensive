@@ -495,9 +495,6 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(body),
       }),
-    /** Admin/team leader: checklist progress */
-    eventChecklistProgress: (eventId: number) =>
-      request<{ data: ChecklistProgressItem[] }>(`/events/${eventId}/checklist-progress`),
     /** Admin/team leader: report issue */
     eventReportIssue: (eventId: number, body: { title: string; description?: string; severity?: string; photo_url?: string }) =>
       request<unknown>(`/events/${eventId}/report-issue`, { method: 'POST', body: JSON.stringify(body) }),
@@ -686,10 +683,6 @@ export const api = {
   myTasks: () => request<{ data: MyTask[] }>('/my-tasks'),
   taskComplete: (taskId: number, body?: { comment?: string; photo_url?: string }) =>
     request<MyTask>(`/task/${taskId}/complete`, { method: 'POST', body: JSON.stringify(body ?? {}) }),
-  /** Crew: my checklists (GET /api/my-checklists) */
-  myChecklists: () => request<{ data: MyChecklist[] }>('/my-checklists'),
-  checklistUpdate: (itemId: number, body: { is_checked: boolean; note?: string; photo_url?: string }) =>
-    request<unknown>('/checklist/update', { method: 'POST', body: JSON.stringify({ checklist_item_id: itemId, ...body }) }),
   /** Admin: dashboard (optional backend endpoint; fallback: use events + users) */
   adminDashboard: () =>
     request<AdminDashboardData>('/admin/dashboard').catch(() => ({ today_events: 0, active_events: 0, total_crew: 0 })),
@@ -923,12 +916,6 @@ export interface PaginatedResponse<T> {
   total: number;
 }
 
-export interface MyChecklist {
-  id: number;
-  event_id: number;
-  items: { id: number; label: string; is_checked: boolean; sort_order: number }[];
-}
-
 export interface CrewStatusItem {
   user_id: number;
   name: string;
@@ -942,12 +929,6 @@ export interface CrewStatusItem {
   transport_amount?: number | null;
   total_hours?: number;
   extra_hours?: number;
-}
-
-export interface ChecklistProgressItem {
-  checklist_id: number;
-  total: number;
-  completed: number;
 }
 
 export interface AdminDashboardData {

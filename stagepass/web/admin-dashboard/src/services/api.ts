@@ -221,19 +221,6 @@ export interface TransportAssignment {
   driver?: User | null;
 }
 
-export interface EventChecklistItem {
-  id: number;
-  event_id: number;
-  type: 'crew' | 'equipment';
-  source_id: number | null;
-  label: string;
-  sort_order: number;
-  is_checked: boolean;
-  checked_at: string | null;
-  checked_by_id: number | null;
-  checked_by?: User | null;
-}
-
 /** Purpose for payment allocation (e.g. fair, lunch, dinner) */
 export const PAYMENT_PURPOSES = ['fair', 'lunch', 'dinner', 'transport', 'accommodation', 'other'] as const;
 export type PaymentPurpose = (typeof PAYMENT_PURPOSES)[number];
@@ -411,17 +398,6 @@ export const api = {
     notes: (eventId: number) => request<Paginated<{ id: number; note: string; user: User }>>(`/events/${eventId}/notes`),
     end: (eventId: number, body: { end_comment: string }) =>
       request<Event>(`/events/${eventId}/end`, { method: 'POST', body: JSON.stringify(body) }),
-    checklist: {
-      list: (eventId: number) =>
-        request<{ data: EventChecklistItem[] }>(`/events/${eventId}/checklist`),
-      create: (eventId: number) =>
-        request<{ data: EventChecklistItem[] }>(`/events/${eventId}/checklist`, { method: 'POST' }),
-      toggleItem: (eventId: number, itemId: number, isChecked: boolean) =>
-        request<EventChecklistItem>(`/events/${eventId}/checklist/${itemId}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ is_checked: isChecked }),
-        }),
-    },
   },
   equipment: {
     list: (params?: { search?: string; page?: number; per_page?: number }) =>

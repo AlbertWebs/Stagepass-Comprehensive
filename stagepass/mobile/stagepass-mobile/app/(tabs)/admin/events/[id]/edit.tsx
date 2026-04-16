@@ -14,6 +14,19 @@ import { BorderRadius, Spacing, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { api } from '~/services/api';
 
+function normalizeTimeToHM(value: string | undefined | null): string {
+  if (!value) return '';
+  const raw = value.trim();
+  if (!raw) return '';
+  const match = raw.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return raw;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return raw;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return raw;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 export default function AdminEditEventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -36,8 +49,8 @@ export default function AdminEditEventScreen() {
         setName(e.name ?? '');
         setDate(e.date ?? '');
         setEndDate(e.end_date ?? '');
-        setStartTime(e.start_time ?? '');
-        setEndTime(e.expected_end_time ?? '');
+        setStartTime(normalizeTimeToHM(e.start_time ?? ''));
+        setEndTime(normalizeTimeToHM(e.expected_end_time ?? ''));
         setLocation(e.location_name ?? '');
         setDescription(e.description ?? '');
       })
@@ -54,12 +67,14 @@ export default function AdminEditEventScreen() {
     }
     setSubmitting(true);
     try {
+      const normalizedStartTime = normalizeTimeToHM(startTime);
+      const normalizedEndTime = normalizeTimeToHM(endTime);
       await api.events.update(Number(id), {
         name: trimmedName,
         date: date.trim() || undefined,
         end_date: endDate.trim() || null,
-        start_time: startTime.trim() || undefined,
-        expected_end_time: endTime.trim() || undefined,
+        start_time: normalizedStartTime || undefined,
+        expected_end_time: normalizedEndTime || undefined,
         location_name: location.trim() || undefined,
         description: description.trim() || undefined,
       });
@@ -74,7 +89,14 @@ export default function AdminEditEventScreen() {
   if (loading) {
     return (
       <ThemedView style={styles.container}>
-        <AppHeader title="Edit event" />
+        <AppHeader
+          title="Edit event"
+          showBack
+          onBack={() => {
+            if (router.canGoBack()) router.back();
+            else router.replace('/(tabs)/admin/events');
+          }}
+        />
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ThemedText style={{ color: colors.textSecondary }}>Loading…</ThemedText>
         </View>
@@ -84,7 +106,14 @@ export default function AdminEditEventScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <AppHeader title="Edit event" />
+      <AppHeader
+        title="Edit event"
+        showBack
+        onBack={() => {
+          if (router.canGoBack()) router.back();
+          else router.replace('/(tabs)/admin/events');
+        }}
+      />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboard}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>

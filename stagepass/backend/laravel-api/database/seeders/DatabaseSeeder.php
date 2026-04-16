@@ -38,7 +38,6 @@ class DatabaseSeeder extends Seeder
             TimeOffRequestsTableSeeder::class,
             CommunicationsTableSeeder::class,
             EventAllowancesTableSeeder::class,
-            EventChecklistItemsTableSeeder::class,
             EventEquipmentTableSeeder::class,
             EventExpensesTableSeeder::class,
             EventMealsTableSeeder::class,

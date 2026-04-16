@@ -10,10 +10,37 @@ use Illuminate\Http\Request;
 
 class TaskController extends Controller
 {
-    private function isAdmin(\Illuminate\Http\Request $request): bool
+    /**
+     * Some environments store Team Leader role as "teamleader" instead of "team_leader".
+     */
+    private function hasAnyRole(Request $request, array $roleNames): bool
     {
         $user = $request->user();
-        return $user && ($user->hasRole('super_admin') || $user->hasRole('director'));
+        if (! $user) {
+            return false;
+        }
+        foreach ($roleNames as $roleName) {
+            if ($user->hasRole($roleName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function isAdmin(\Illuminate\Http\Request $request): bool
+    {
+        return $this->hasAnyRole($request, ['super_admin', 'director', 'admin']);
+    }
+
+    private function canCreateTasks(\Illuminate\Http\Request $request): bool
+    {
+        return $this->hasAnyRole($request, [
+            'super_admin',
+            'director',
+            'admin',
+            'team_leader',
+            'teamleader',
+        ]);
     }
 
     /**
@@ -58,12 +85,12 @@ class TaskController extends Controller
     }
 
     /**
-     * Create task (admin only).
+     * Create task (admin + team leader).
      */
     public function store(Request $request): JsonResponse
     {
-        if (! $this->isAdmin($request)) {
-            return response()->json(['message' => 'Only admins can create tasks.'], 403);
+        if (! $this->canCreateTasks($request)) {
+            return response()->json(['message' => 'Only admins or team leaders can create tasks.'], 403);
         }
 
         $validated = $request->validate([

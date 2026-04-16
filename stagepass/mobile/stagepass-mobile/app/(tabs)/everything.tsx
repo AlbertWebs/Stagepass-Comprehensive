@@ -37,7 +37,6 @@ const ADMIN_TOOLS: LinkItem[] = [
   { label: 'Time off', href: '/admin/timeoff', icon: 'time-outline' },
   { label: 'Settings', href: '/admin/settings', icon: 'settings-outline' },
   { label: 'Manage check-in', href: '/admin/manage-checkin', icon: 'location' },
-  { label: 'Checklists', href: '/admin/checklists', icon: 'checkbox' },
   { label: 'Reports', href: '/admin/reports', icon: 'bar-chart' },
   { label: 'Payments', href: '/admin/payments', icon: 'card-outline' },
   { label: 'Clients', href: '/admin/clients', icon: 'business-outline' },

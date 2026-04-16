@@ -2,12 +2,12 @@
 
 namespace App\Notifications;
 
+use App\Channels\FcmChannel;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class InternalBroadcastNotification extends Notification implements ShouldQueue
+class InternalBroadcastNotification extends Notification
 {
     use Queueable;
 
@@ -25,6 +25,9 @@ class InternalBroadcastNotification extends Notification implements ShouldQueue
         $channels = [];
         if ($this->sendAsMessage) {
             $channels[] = 'database';
+            if (! empty($notifiable->fcm_token)) {
+                $channels[] = FcmChannel::class;
+            }
         }
         if ($this->sendAsEmail) {
             $channels[] = 'mail';
@@ -50,6 +53,22 @@ class InternalBroadcastNotification extends Notification implements ShouldQueue
             'sender_name' => $this->senderName,
             'type' => 'internal_broadcast',
             'communication_id' => $this->communicationId,
+        ];
+    }
+
+    /**
+     * @return array{title: string, body: string, data: array<string, string>}
+     */
+    public function toFcm(object $notifiable): array
+    {
+        return [
+            'title' => $this->subject,
+            'body' => $this->body,
+            'data' => [
+                'type' => 'internal_broadcast',
+                'sender_name' => $this->senderName,
+                'communication_id' => (string) ($this->communicationId ?? ''),
+            ],
         ];
     }
 }

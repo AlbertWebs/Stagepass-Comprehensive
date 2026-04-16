@@ -34,7 +34,6 @@ class DangerZoneController extends Controller
         'tasks',
         'time_off_request_attachments',
         'time_off_requests',
-        'event_checklist_items',
         'event_equipment',
         'event_expenses',
         'event_meals',

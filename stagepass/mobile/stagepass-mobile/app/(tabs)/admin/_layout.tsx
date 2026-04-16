@@ -14,12 +14,12 @@ import { useAppRole } from '~/hooks/useAppRole';
 import type { User } from '~/services/api';
 
 /** Crew may open these under admin/events/[id]/… (tail match tolerates one-frame pathname lag). */
-const CREW_EVENT_TAIL = /\/(operations|crew|checklist|manage-checkin|edit|message|create-task)(\/|$|\?)/i;
+const CREW_EVENT_TAIL = /\/(operations|crew|manage-checkin|edit|message|create-task|report)(\/|$|\?)/i;
 
 function isCrewEventWorkflowPath(path: string, segmentsJoined: string): boolean {
   if (CREW_EVENT_TAIL.test(path) && path.includes('admin/events')) return true;
   const strict =
-    /admin\/events\/[^/]+\/(?:operations|crew|checklist|manage-checkin|edit|message|create-task)(?:\/|$|\?)/i;
+    /admin\/events\/[^/]+\/(?:operations|crew|manage-checkin|edit|message|create-task|report)(?:\/|$|\?)/i;
   return strict.test(segmentsJoined);
 }
 

@@ -622,7 +622,7 @@ export default function EventDetailScreen() {
                 <View style={styles.leadOpsTextWrap}>
                   <ThemedText style={[styles.leadOpsTitle, { color: colors.text }]}>Event operations</ThemedText>
                   <ThemedText style={[styles.leadOpsSub, { color: colors.textSecondary }]}>
-                    Onboard crew, checklist, check-in, and end event
+                    Onboard crew, check-in, and end event
                   </ThemedText>
                 </View>
                 <Ionicons name="chevron-forward" size={22} color={colors.textSecondary} />

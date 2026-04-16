@@ -14,7 +14,6 @@ use App\Http\Controllers\Api\EventCrewController;
 use App\Http\Controllers\Api\EarnedAllowanceController;
 use App\Http\Controllers\Api\HolidayController;
 use App\Http\Controllers\Api\EventEquipmentController;
-use App\Http\Controllers\Api\EventChecklistController;
 use App\Http\Controllers\Api\EventNoteController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ReportsController;
@@ -62,12 +61,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('events/{event}/notes', [EventNoteController::class, 'store']);
     Route::post('events/{event}/end', [EventController::class, 'end']);
     Route::post('events/{event}/done-for-day', [EventController::class, 'doneForDay']);
-    Route::get('my-checklists', [EventChecklistController::class, 'myChecklists']);
-    Route::get('events/{event}/checklist', [EventChecklistController::class, 'index']);
-    Route::get('events/{event}/checklist-progress', [EventChecklistController::class, 'progress']);
-    Route::post('events/{event}/checklist', [EventChecklistController::class, 'store']);
-    Route::patch('events/{event}/checklist/{checklistItem}', [EventChecklistController::class, 'update']);
-
     Route::get('attendance/stats', [AttendanceController::class, 'stats']);
     Route::post('attendance/checkin', [AttendanceController::class, 'checkin']);
     Route::post('attendance/office-checkin', [AttendanceController::class, 'officeCheckin']);

@@ -98,7 +98,11 @@ export default function AdminEventsListScreen() {
   }, [events]);
 
   const openEventOps = (id: number) => {
-    handleNav(() => router.push({ pathname: '/admin/events/[id]/operations', params: { id: String(id) } }));
+    handleNav(() => router.push({ pathname: '/(tabs)/admin/events/[id]/operations', params: { id: String(id) } }));
+  };
+
+  const openEventEdit = (id: number) => {
+    handleNav(() => router.push({ pathname: '/(tabs)/admin/events/[id]/edit', params: { id: String(id) } }));
   };
 
   const renderSection = (title: string, list: Event[], accentColor: string) => {
@@ -124,7 +128,8 @@ export default function AdminEventsListScreen() {
             }}
             onPress={() => openEventOps(item.id)}
             extraActions={[
-              { label: 'Crew', onPress: () => handleNav(() => router.push({ pathname: '/admin/events/[id]/crew', params: { id: String(item.id) } })), icon: 'people-outline' },
+              { label: 'Edit', onPress: () => openEventEdit(item.id), icon: 'pencil-outline' },
+              { label: 'Crew', onPress: () => handleNav(() => router.push({ pathname: '/(tabs)/admin/events/[id]/crew', params: { id: String(item.id) } })), icon: 'people-outline' },
               { label: 'Operations', onPress: () => openEventOps(item.id), icon: 'settings-outline' },
             ]}
           />
@@ -146,7 +151,7 @@ export default function AdminEventsListScreen() {
             styles.createBtn,
             { backgroundColor: themeYellow, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
           ]}
-          onPress={() => handleNav(() => router.push('/admin/events/create'))}
+          onPress={() => handleNav(() => router.push('/(tabs)/admin/events/create'))}
         >
           <Ionicons name="add-circle" size={24} color={themeBlue} />
           <ThemedText style={styles.createBtnText}>Create event</ThemedText>
@@ -163,7 +168,7 @@ export default function AdminEventsListScreen() {
             </ThemedText>
             <Pressable
               style={({ pressed }) => [styles.emptyBtn, { opacity: pressed ? NAV_PRESSED_OPACITY : 1 }]}
-              onPress={() => handleNav(() => router.push('/admin/events/create'))}
+              onPress={() => handleNav(() => router.push('/(tabs)/admin/events/create'))}
             >
               <ThemedText style={styles.emptyBtnText}>Create event</ThemedText>
             </Pressable>

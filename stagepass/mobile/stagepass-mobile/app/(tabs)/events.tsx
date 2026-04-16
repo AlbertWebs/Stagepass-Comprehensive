@@ -124,7 +124,7 @@ function extractEventsFromListResponse(body: unknown): Event[] {
 export default function EventsTab() {
   const router = useRouter();
   const handleNav = useNavigationPress();
-  const { colors } = useStagePassTheme();
+  const { colors, isDark } = useStagePassTheme();
   const role = useAppRole();
   const userId = useSelector((s: { auth: { user: { id: number } | null } }) => s.auth.user?.id);
   const [events, setEvents] = useState<Event[]>([]);
@@ -255,6 +255,7 @@ export default function EventsTab() {
     return 'Events';
   })();
   const isTodaySelected = sectionTitle === "Today's Events";
+  const selectedChipTextColor = isDark ? '#111827' : themeBlue;
 
   return (
     <ThemedView style={styles.container}>
@@ -319,10 +320,10 @@ export default function EventsTab() {
                         { borderColor: colors.border, backgroundColor: isSelected ? themeYellow : colors.background },
                       ]}
                     >
-                      <ThemedText style={[styles.weekDayLabel, { color: isSelected ? themeBlue : colors.textSecondary }]}>
+                      <ThemedText style={[styles.weekDayLabel, { color: isSelected ? selectedChipTextColor : colors.textSecondary }]}>
                         {DAY_LABELS[d.getDay()]}
                       </ThemedText>
-                      <ThemedText style={[styles.weekDayNum, { color: isSelected ? themeBlue : colors.text }]}>
+                      <ThemedText style={[styles.weekDayNum, { color: isSelected ? selectedChipTextColor : colors.text }]}>
                         {d.getDate()}
                       </ThemedText>
                     </Pressable>
@@ -374,7 +375,7 @@ export default function EventsTab() {
                         },
                       ]}
                     >
-                      <ThemedText style={[styles.monthCellText, { color: isSelected ? themeBlue : colors.text }]}>
+                      <ThemedText style={[styles.monthCellText, { color: isSelected ? selectedChipTextColor : colors.text }]}>
                         {d.getDate()}
                       </ThemedText>
                     </Pressable>
@@ -456,7 +457,7 @@ export default function EventsTab() {
             >
               {refreshing ? (
                 <View style={styles.emptyButtonContent}>
-                  <ActivityIndicator size="small" color={themeBlue} />
+                  <ActivityIndicator size="small" color={selectedChipTextColor} />
                   <ThemedText style={styles.emptyButtonText}>Refreshing…</ThemedText>
                 </View>
               ) : (
@@ -758,6 +759,6 @@ const styles = StyleSheet.create({
   emptyButtonText: {
     fontSize: Typography.bodySmall,
     fontWeight: Typography.buttonTextWeight,
-    color: themeBlue,
+    color: '#111827',
   },
 });

@@ -48,8 +48,8 @@ const ADMIN_SEGMENT_TITLES: Record<string, string> = {
   users: 'Users & Crew', events: 'Events', equipment: 'Equipment', clients: 'Clients',
   reports: 'Reports', payments: 'Payments', timeoff: 'Time Off', communications: 'Communication',
   settings: 'System settings', audit: 'Audit logs', create: 'Create event', edit: 'Edit event',
-  crew: 'Crew', operations: 'Operations', more: 'More', checklists: 'Checklists',
-  'manage-checkin': 'Manage check-in', message: 'Message crew', 'create-task': 'Create task', checklist: 'Checklist',
+  crew: 'Crew', operations: 'Operations', more: 'More',
+  'manage-checkin': 'Manage check-in', message: 'Message crew', 'create-task': 'Create task',
 };
 
 function getTitleFromPath(pathname: string): string {
@@ -77,7 +77,6 @@ function getTitleFromPath(pathname: string): string {
     if (first === 'events' && second && /^\d+$/.test(second) && third === 'manage-checkin') return 'Manage check-in';
     if (first === 'events' && second && /^\d+$/.test(second) && third === 'message') return 'Message crew';
     if (first === 'events' && second && /^\d+$/.test(second) && third === 'create-task') return 'Create task';
-    if (first === 'events' && second && /^\d+$/.test(second) && third === 'checklist') return 'Checklist';
     if (second === 'create') return ADMIN_SEGMENT_TITLES.create ?? 'Create event';
     if (second === 'edit') return ADMIN_SEGMENT_TITLES.edit ?? 'Edit event';
     if (second === 'crew') return ADMIN_SEGMENT_TITLES.crew ?? 'Crew';

@@ -5,10 +5,9 @@ namespace App\Notifications;
 use App\Channels\FcmChannel;
 use App\Models\Event;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
 
-class AssignedEventOnLoginPush extends Notification implements ShouldQueue
+class AssignedEventOnLoginPush extends Notification
 {
     use Queueable;
 

@@ -157,15 +157,6 @@ export function CrewHomeScreen({ event, onRefresh }: Props) {
             View assigned tasks
           </ThemedText>
         </Pressable>
-        <Pressable
-          style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={() => router.push('/(tabs)/events')}
-        >
-          <ThemedText style={[styles.cardTitle, { color: colors.text }]}>My Checklists</ThemedText>
-          <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>
-            Complete checklist items
-          </ThemedText>
-        </Pressable>
       </View>
     </ThemedView>
   );

@@ -145,7 +145,7 @@ type Props = {
   pastEvents?: EventType[];
   /** Crew: today's allowance (e.g. from settings). Optional. */
   allowanceToday?: string | number | null;
-  /** Crew: assigned equipment/checklist count. Optional. */
+  /** Crew: assigned equipment count. Optional. */
   equipmentCount?: number;
   /** Approved payments/allowances (from http://localhost:3000/approvals). Shown under Allowances for crew/team_leader. */
   approvedAllowances?: Payment[];
@@ -773,7 +773,7 @@ export function HomeDashboardScreen({
   const visibleQuickActions = QUICK_ACTIONS.filter((a) => {
     if (a.id === 'everything') return false;
     if (!sectionVisible.my_events && a.id === 'events') return false;
-    if (!sectionVisible.assigned_tasks && (a.id === 'tasks' || a.id === 'checklist')) return false;
+    if (!sectionVisible.assigned_tasks && a.id === 'tasks') return false;
     if (!a.roles) return true;
     if (a.id === 'checkin' && eventToday && !hasEventCheckedIn) return a.roles.includes(role);
     return a.roles.includes(role);

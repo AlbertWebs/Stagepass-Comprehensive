@@ -20,7 +20,6 @@ export const QUICK_ACTIONS: QuickAction[] = [
   { id: 'allowances', label: 'Allowances', icon: 'wallet-outline', href: '/(tabs)/allowances', roles: ['crew', 'team_leader'] },
   { id: 'requestoff', label: 'Request off', icon: 'time-outline', href: '/admin/timeoff' },
   { id: 'managecheckin', label: 'Manage check-in', icon: 'location', href: '/admin/manage-checkin', roles: ['admin', 'team_leader'] },
-  { id: 'checklist', label: 'Checklist', icon: 'checkbox', href: '/admin/checklists', roles: ['admin', 'team_leader'] },
   { id: 'equipment', label: 'Equipment', icon: 'cube', href: '/admin/equipment', roles: ['admin', 'logistics'] },
   { id: 'reports', label: 'Reports', icon: 'bar-chart', href: '/admin/reports', roles: ['admin'] },
   { id: 'settings', label: 'Settings', icon: 'settings-outline', href: '/admin/settings', roles: ['admin', 'team_leader'] },

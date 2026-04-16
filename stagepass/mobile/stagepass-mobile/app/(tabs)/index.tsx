@@ -90,14 +90,7 @@ export default function HomeScreen() {
   }, []);
 
   const fetchEquipmentCount = useCallback(async () => {
-    try {
-      const res = await api.myChecklists();
-      const data = Array.isArray(res?.data) ? res.data : [];
-      const total = data.reduce((acc, c) => acc + (c.items?.length ?? 0), 0);
-      setEquipmentCount(total);
-    } catch {
-      setEquipmentCount(0);
-    }
+    setEquipmentCount(0);
   }, []);
 
   const fetchApprovedAllowances = useCallback(async () => {

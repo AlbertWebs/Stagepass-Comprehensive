@@ -551,7 +551,7 @@ export default function EventOperations() {
       <SectionCard sectionLabel="Events – full management">
         <div className="p-6">
           <p className="mb-4 text-sm text-slate-600">
-            Open an event to manage crew, equipment, checklist, notes, payments, and end the event.
+            Open an event to manage crew, equipment, notes, payments, and end the event.
           </p>
           <div className="overflow-x-auto">
             <table className="w-full table-header-brand">

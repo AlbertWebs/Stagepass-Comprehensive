@@ -5,7 +5,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
-import { BorderRadius, Spacing, StatusColors, themeBlue, themeYellow, VibrantColors } from '@/constants/theme';
+import { BorderRadius, Spacing, StatusColors, themeYellow, VibrantColors } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { NAV_PRESSED_OPACITY } from '@/src/utils/navigationPress';
 
@@ -88,12 +88,16 @@ function statusDisplay(status: string): string {
 }
 
 export function EventCard({ event, onPress, onEdit, extraActions, displayStatus, borderOnly = false }: EventCardProps) {
-  const { colors } = useStagePassTheme();
+  const { colors, isDark } = useStagePassTheme();
   const timeRange = formatTimeRange(event.start_time, event.expected_end_time);
   const useDisplayStatus = displayStatus != null;
   const statusLabel = useDisplayStatus ? DISPLAY_STATUS_LABEL[displayStatus] : statusDisplay(event.status);
-  const statusBg = useDisplayStatus ? DISPLAY_STATUS_BG[displayStatus] : themeYellow;
-  const accentColor = useDisplayStatus ? DISPLAY_STATUS_BG[displayStatus] : VibrantColors.emerald;
+  const statusBg = useDisplayStatus
+    ? (displayStatus === 'checked_out' && isDark ? '#475569' : DISPLAY_STATUS_BG[displayStatus])
+    : themeYellow;
+  const accentColor = useDisplayStatus
+    ? (displayStatus === 'checked_out' && isDark ? '#64748b' : DISPLAY_STATUS_BG[displayStatus])
+    : VibrantColors.emerald;
 
   return (
     <View
@@ -278,7 +282,7 @@ const styles = StyleSheet.create({
   primaryBtnText: {
     fontSize: 14,
     fontWeight: '700',
-    color: themeBlue,
+    color: '#111827',
   },
   secondaryBtn: {
     paddingVertical: U.xs,
