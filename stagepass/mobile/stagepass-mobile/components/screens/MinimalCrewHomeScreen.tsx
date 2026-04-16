@@ -1,4 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { Image } from 'expo-image';
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
@@ -40,6 +41,12 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
   const officeCheckedInToday = user?.office_checked_in_today ?? false;
   const officeCheckedOutToday = user?.office_checked_out_today ?? false;
   const canCheckout = officeCheckedInToday && !officeCheckedOutToday;
+  const officeMapUrl = useMemo(() => {
+    if (!officeConfig) return null;
+    const lat = officeConfig.latitude.toFixed(6);
+    const lon = officeConfig.longitude.toFixed(6);
+    return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=15&size=900x640&markers=${lat},${lon},red-pushpin`;
+  }, [officeConfig]);
 
   const buttonLabel = useMemo(() => {
     if (loading) return canCheckout ? 'Checking out...' : 'Checking in...';
@@ -180,6 +187,15 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
       <HomeHeader title="Home" notificationCount={0} />
       <View style={styles.content}>
         <View style={[styles.mapCard, { backgroundColor: isDark ? '#121723' : '#0F172A' }]}>
+          {officeMapUrl ? (
+            <Image
+              source={{ uri: officeMapUrl }}
+              style={styles.mapImage}
+              contentFit="cover"
+              transition={150}
+            />
+          ) : null}
+          <View style={[styles.mapOverlayTint, { backgroundColor: isDark ? 'rgba(2,6,23,0.38)' : 'rgba(15,23,42,0.28)' }]} />
           <View style={styles.gridOverlay} />
           <View style={styles.centerActionWrap}>
             <Animated.View
@@ -263,6 +279,12 @@ const styles = StyleSheet.create({
     position: 'relative',
     justifyContent: 'space-between',
     padding: Spacing.lg,
+  },
+  mapImage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  mapOverlayTint: {
+    ...StyleSheet.absoluteFillObject,
   },
   gridOverlay: {
     ...StyleSheet.absoluteFillObject,
