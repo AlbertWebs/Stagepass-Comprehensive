@@ -3,6 +3,7 @@
  * Logo, Welcome Back, username + 4-digit PIN, Sign In button (Loading… + spinner when submitting).
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
@@ -227,6 +228,7 @@ export default function LoginScreen() {
         return;
       }
       dispatch(setCredentials({ user, token }));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       suppressUnauthorizedForMs(60000);
       const fcmToken = await getDevicePushTokenAsync();
       if (fcmToken) api.auth.updateProfileLocal401({ fcm_token: fcmToken }).catch(() => {});
@@ -271,6 +273,7 @@ export default function LoginScreen() {
       dispatch(setCredentials({ user, token: res.token }));
       setFailedAttempts(0);
       await refreshBiometricCredentialIfEnabled(res.token);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setIsExiting(true);
       return;
     } catch (e: unknown) {
