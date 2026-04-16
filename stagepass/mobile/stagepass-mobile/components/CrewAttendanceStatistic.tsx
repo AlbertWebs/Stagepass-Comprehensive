@@ -1,7 +1,6 @@
 /**
- * Crew Attendance Statistic – two circular progress rings: Office check-in and Events check-in.
- * Both start at 100%; office drops for each missed weekday (~22/month), events drops for each allocated event not checked in.
- * Fetches stats from API when stats prop is not provided.
+ * Crew Attendance Statistic – events check-in streak only.
+ * Streak starts at 100% and drops for each allocated event not checked in.
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
@@ -147,15 +146,11 @@ export function CrewAttendanceStatistic({ stats: statsProp, onStatsLoaded, refre
     };
   }, [statsProp, onStatsLoaded, refreshTrigger]);
 
-  const officeCheckins = stats?.office_checkins_last_30 ?? 0;
-  const expectedOfficeDays = stats?.expected_office_weekdays ?? 0;
   const totalAssigned = stats?.total_assigned ?? 0;
   const checkedIn = stats?.checked_in ?? 0;
 
-  const officePct = stats?.office_streak_percentage ?? (expectedOfficeDays === 0 ? 100 : Math.round((officeCheckins / expectedOfficeDays) * 1000) / 10);
   const eventsPct = stats?.events_streak_percentage ?? (totalAssigned === 0 ? 100 : Math.round((checkedIn / totalAssigned) * 1000) / 10);
 
-  const officeSublabel = expectedOfficeDays > 0 ? `${officeCheckins}/${expectedOfficeDays} days` : '—';
   const eventsSublabel = totalAssigned > 0 ? `${checkedIn}/${totalAssigned} checked in` : '—';
 
   return (
@@ -166,13 +161,6 @@ export function CrewAttendanceStatistic({ stats: statsProp, onStatsLoaded, refre
         <>
           <View style={styles.ringsRow}>
             <SingleRing
-              percentage={officePct}
-              label="Office check-in"
-              sublabel={officeSublabel}
-              colors={colors}
-              isDark={isDark}
-            />
-            <SingleRing
               percentage={eventsPct}
               label="Events check-in"
               sublabel={eventsSublabel}
@@ -181,12 +169,6 @@ export function CrewAttendanceStatistic({ stats: statsProp, onStatsLoaded, refre
             />
           </View>
           <View style={styles.badges}>
-            <View style={[styles.badge, { backgroundColor: StatusColors.checkedIn + '18', borderColor: StatusColors.checkedIn + '40' }]}>
-              <Ionicons name="business" size={14} color={StatusColors.checkedIn} />
-              <ThemedText style={[styles.badgeText, { color: colors.text }]}>
-                Office: {officeSublabel}
-              </ThemedText>
-            </View>
             <View style={[styles.badge, { backgroundColor: StatusColors.checkedIn + '18', borderColor: StatusColors.checkedIn + '40' }]}>
               <Ionicons name="checkmark-circle" size={14} color={StatusColors.checkedIn} />
               <ThemedText style={[styles.badgeText, { color: colors.text }]}>

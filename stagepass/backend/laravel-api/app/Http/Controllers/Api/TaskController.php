@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Event;
 use App\Models\Task;
 use App\Models\TaskComment;
 use Illuminate\Http\JsonResponse;
@@ -41,6 +42,27 @@ class TaskController extends Controller
             'team_leader',
             'teamleader',
         ]);
+    }
+
+    /**
+     * Allow event-level team leaders (and event creators) to create tasks for that event
+     * even if their global role set does not include "team_leader".
+     */
+    private function canCreateTasksForEvent(Request $request, ?int $eventId): bool
+    {
+        if (! $eventId) {
+            return false;
+        }
+        $user = $request->user();
+        if (! $user) {
+            return false;
+        }
+        $event = Event::query()->find($eventId);
+        if (! $event) {
+            return false;
+        }
+        return (int) $event->team_leader_id === (int) $user->id
+            || (int) $event->created_by_id === (int) $user->id;
     }
 
     /**
@@ -89,7 +111,8 @@ class TaskController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        if (! $this->canCreateTasks($request)) {
+        $eventId = $request->filled('event_id') ? (int) $request->input('event_id') : null;
+        if (! $this->canCreateTasks($request) && ! $this->canCreateTasksForEvent($request, $eventId)) {
             return response()->json(['message' => 'Only admins or team leaders can create tasks.'], 403);
         }
 

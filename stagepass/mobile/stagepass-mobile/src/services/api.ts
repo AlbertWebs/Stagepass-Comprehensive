@@ -978,9 +978,9 @@ export interface User {
 /** Resolve app role from backend role names. */
 export function getRole(user: User | null): RoleName {
   if (!user?.roles?.length) return 'crew';
-  const names = user.roles.map((r) => r.name);
+  const names = user.roles.map((r) => String(r.name || '').trim().toLowerCase());
   if (names.includes('super_admin') || names.includes('director')) return 'admin';
-  if (names.includes('team_leader')) return 'team_leader';
+  if (names.includes('team_leader') || names.includes('teamleader')) return 'team_leader';
   if (names.includes('accountant')) return 'accountant';
   if (names.includes('logistics')) return 'logistics';
   if (names.includes('operations')) return 'operations';
