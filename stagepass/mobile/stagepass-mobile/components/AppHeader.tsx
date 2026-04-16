@@ -1,6 +1,6 @@
 /**
  * Re-exports the uniform app header. Use HomeHeader or AppHeader interchangeably –
- * same component: title left, optional back, chat + logout right (compact).
+ * same component: title left, optional back, theme toggle + logout right (compact).
  */
 import { HomeHeader, type HomeHeaderProps } from '@/components/HomeHeader';
 

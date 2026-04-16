@@ -79,6 +79,7 @@ async function request<T>(
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     Accept: 'application/json',
+    'X-App-Source': 'web',
     ...(init.headers as Record<string, string>),
   };
   const token = getToken();
@@ -542,6 +543,8 @@ export const api = {
       status?: number;
       page?: number;
       per_page?: number;
+      /** When 1, only POST, PUT, PATCH, DELETE (mutations / “operations”). */
+      mutating_only?: 0 | 1;
     }) =>
       request<Paginated<AuditLogItem>>('/audit-logs', {
         params: params as Record<string, string | number>,

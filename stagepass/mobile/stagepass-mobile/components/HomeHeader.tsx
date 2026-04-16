@@ -1,16 +1,17 @@
 /**
- * Uniform app header: title on the left, optional back, chat + logout on the right (compact).
+ * Uniform app header: title on the left, optional back, theme toggle + logout on the right (compact).
  * Use everywhere for a consistent look across tabs and admin/stack screens.
  */
 import { usePathname, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useDispatch } from 'react-redux';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ThemedText } from '@/components/themed-text';
 import { Icons, Typography } from '@/constants/ui';
 import { Spacing, themeYellow } from '@/constants/theme';
+import { useThemePreference } from '@/context/ThemePreferenceContext';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { NAV_PRESSED_OPACITY } from '@/src/utils/navigationPress';
 import { useNavigationPress } from '@/src/utils/navigationPress';
@@ -19,7 +20,6 @@ import { api } from '~/services/api';
 import { logout } from '~/store/authSlice';
 import { clearStoredToken } from '~/store/persistAuth';
 
-const SUPPORT_WHATSAPP = process.env.EXPO_PUBLIC_SUPPORT_WHATSAPP ?? '';
 const ICON_BTN_SIZE = 30;
 
 const ADMIN_MORE_LINKS: { label: string; href: string; icon: keyof typeof Ionicons.glyphMap }[] = [
@@ -106,6 +106,7 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
   const dispatch = useDispatch();
   const role = useAppRole();
   const { colors, isDark } = useStagePassTheme();
+  const { setPreference } = useThemePreference();
   const paddingTop = Math.max(insets.top, Spacing.sm);
   const displayTitle = title ?? (getTitleFromPath(pathname) || 'Home');
   const isAdmin = role === 'admin' || role === 'team_leader';
@@ -148,26 +149,9 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
     }
   }, [onBack, router]);
 
-  const handleSupportPress = async () => {
-    const raw = SUPPORT_WHATSAPP.trim();
-    if (!raw) {
-      Alert.alert('Support unavailable', 'Support WhatsApp number is not configured yet.');
-      return;
-    }
-    const phone = raw.replace(/[^+\d]/g, '');
-    const waUrl = `whatsapp://send?phone=${phone}`;
-    const webUrl = `https://wa.me/${encodeURIComponent(phone)}`;
-    try {
-      const canOpen = await Linking.canOpenURL(waUrl);
-      if (canOpen) {
-        await Linking.openURL(waUrl);
-        return;
-      }
-      await Linking.openURL(webUrl);
-    } catch {
-      Alert.alert('Cannot open WhatsApp', 'Please check WhatsApp is installed or try again later.');
-    }
-  };
+  const handleThemeToggle = useCallback(() => {
+    setPreference(isDark ? 'light' : 'dark');
+  }, [isDark, setPreference]);
 
   const headerBg = isDark ? '#171B24' : '#F8FAFF';
   const headerHairline = isDark ? 'rgba(148, 163, 184, 0.22)' : 'rgba(37, 99, 235, 0.18)';
@@ -259,11 +243,16 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
                   </Pressable>
                 ) : null}
                 <Pressable
-                  onPress={handleSupportPress}
+                  onPress={handleThemeToggle}
                   style={({ pressed }) => [styles.iconBtn, { backgroundColor: iconTint, borderColor: iconBorder }, pressed && styles.iconBtnPressed]}
-                  accessibilityLabel="Chat support"
+                  accessibilityLabel={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+                  accessibilityRole="button"
                 >
-                  <Ionicons name="chatbubbles-outline" size={Icons.header} color={iconColor} />
+                  <Ionicons
+                    name={isDark ? 'sunny-outline' : 'moon-outline'}
+                    size={Icons.header}
+                    color={iconColor}
+                  />
                 </Pressable>
                 <Pressable
                   onPress={handleLogout}
@@ -300,11 +289,16 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
                 </Pressable>
               ) : null}
               <Pressable
-                onPress={handleSupportPress}
+                onPress={handleThemeToggle}
                 style={({ pressed }) => [styles.iconBtn, { backgroundColor: iconTint, borderColor: iconBorder }, pressed && styles.iconBtnPressed]}
-                accessibilityLabel="Chat support"
+                accessibilityLabel={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+                accessibilityRole="button"
               >
-                <Ionicons name="chatbubbles-outline" size={Icons.header} color={iconColor} />
+                <Ionicons
+                  name={isDark ? 'sunny-outline' : 'moon-outline'}
+                  size={Icons.header}
+                  color={iconColor}
+                />
               </Pressable>
               <Pressable
                 onPress={handleLogout}

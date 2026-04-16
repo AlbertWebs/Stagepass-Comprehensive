@@ -58,7 +58,7 @@ export async function fetchPlaceSuggestions(query: string): Promise<PlaceSuggest
 
   if (!res.ok) {
     const err = await res.text();
-    console.warn('[Google Places] Autocomplete error', res.status, err);
+    if (__DEV__) console.warn('[Google Places] Autocomplete error', res.status, err);
     return [];
   }
 
@@ -72,7 +72,7 @@ export async function fetchPlaceSuggestions(query: string): Promise<PlaceSuggest
   };
 
   if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-    console.warn('[Google Places] Autocomplete status', data.status);
+    if (__DEV__) console.warn('[Google Places] Autocomplete status', data.status);
     return [];
   }
 
@@ -111,7 +111,7 @@ export async function fetchPlaceDetails(placeId: string): Promise<PlaceDetails |
 
   if (!res.ok) {
     const err = await res.text();
-    console.warn('[Google Places] Details error', res.status, err);
+    if (__DEV__) console.warn('[Google Places] Details error', res.status, err);
     return null;
   }
 

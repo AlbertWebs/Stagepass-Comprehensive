@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Animated, Easing, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { HomeHeader } from '@/components/HomeHeader';
 import { ThemedText } from '@/components/themed-text';
@@ -26,6 +26,14 @@ function parseOfficeCoord(value: unknown): number | null {
     return Number.isFinite(n) ? n : null;
   }
   return null;
+}
+
+/** Device local hour: morning before noon, afternoon until 5pm, evening after. */
+function getTimeGreeting(): 'Good morning' | 'Good afternoon' | 'Good evening' {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
 }
 
 export function MinimalCrewHomeScreen({ onRefresh }: Props) {
@@ -59,6 +67,34 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
     ];
   }, [mapCenter]);
   const mapUrl = mapUrls[mapSourceIndex] ?? null;
+
+  const welcomeFirstName = useMemo(() => {
+    const n = user?.name?.trim();
+    if (!n) return '';
+    return n.split(/\s+/)[0] ?? '';
+  }, [user?.name]);
+
+  const timeGreeting = getTimeGreeting();
+  const welcomeLine = welcomeFirstName ? `${timeGreeting}, ${welcomeFirstName}` : timeGreeting;
+
+  /** Light mode: softer surfaces and depth without changing layout structure. */
+  const lightElevated = !isDark
+    ? Platform.select({
+        ios: {
+          shadowColor: '#0f172a',
+          shadowOffset: { width: 0, height: 10 },
+          shadowOpacity: 0.09,
+          shadowRadius: 20,
+        },
+        android: { elevation: 5 },
+        default: {},
+      })
+    : {};
+
+  const mapCardBg = isDark ? '#121723' : '#F4F6FA';
+  const mapOverlayTintBg = isDark ? 'rgba(2,6,23,0.5)' : 'rgba(255,255,255,0.14)';
+  const mapGridBorder = isDark ? '#475569' : 'rgba(100, 116, 139, 0.35)';
+  const mapGridOpacity = isDark ? 0.24 : 0.12;
 
   useEffect(() => {
     setMapSourceIndex(0);
@@ -202,7 +238,29 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
     <ThemedView style={styles.container}>
       <HomeHeader title="Home" notificationCount={0} />
       <View style={styles.content}>
-        <View style={[styles.mapCard, { backgroundColor: isDark ? '#121723' : '#0F172A' }]}>
+        <View style={[styles.welcomeBlock, !isDark && styles.welcomeBlockLight]}>
+          {!isDark ? <View style={styles.welcomeAccent} /> : null}
+          <View style={styles.welcomeTextCol}>
+            <ThemedText
+              style={[
+                styles.welcomeEyebrow,
+                { color: isDark ? colors.textSecondary : themeBlue + '99' },
+              ]}
+            >
+              Welcome back
+            </ThemedText>
+            <ThemedText style={[styles.welcomeTitle, { color: colors.text }]}>{welcomeLine}</ThemedText>
+          </View>
+        </View>
+
+        <View
+          style={[
+            styles.mapCard,
+            { backgroundColor: mapCardBg },
+            !isDark && styles.mapCardLight,
+            !isDark && lightElevated,
+          ]}
+        >
           {mapUrl ? (
             <Image
               source={{ uri: mapUrl }}
@@ -214,8 +272,8 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
               }}
             />
           ) : null}
-          <View style={[styles.mapOverlayTint, { backgroundColor: isDark ? 'rgba(2,6,23,0.5)' : 'rgba(15,23,42,0.38)' }]} />
-          <View style={styles.gridOverlay} />
+          <View style={[styles.mapOverlayTint, { backgroundColor: mapOverlayTintBg }]} />
+          <View style={[styles.gridOverlay, { opacity: mapGridOpacity, borderColor: mapGridBorder }]} />
           <View style={styles.centerActionWrap}>
             <Animated.View
               pointerEvents="none"
@@ -244,8 +302,15 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
               disabled={loading || officeCheckedOutToday}
               style={({ pressed }) => [
                 styles.centerCta,
+                !isDark && styles.centerCtaLight,
                 {
-                  backgroundColor: officeCheckedOutToday ? '#334155' : canCheckout ? themeBlue : themeYellow,
+                  backgroundColor: officeCheckedOutToday
+                    ? isDark
+                      ? '#334155'
+                      : '#64748B'
+                    : canCheckout
+                      ? themeBlue
+                      : themeYellow,
                   opacity: pressed ? 0.86 : 1,
                 },
               ]}
@@ -255,7 +320,14 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
           </View>
         </View>
 
-        <View style={[styles.panel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View
+          style={[
+            styles.panel,
+            { backgroundColor: colors.surface, borderColor: isDark ? colors.border : themeBlue + '14' },
+            !isDark && lightElevated,
+            !isDark && styles.panelLight,
+          ]}
+        >
           <View style={styles.panelTopRow}>
             <View>
               <ThemedText style={[styles.panelEyebrow, { color: colors.textSecondary }]}>OFFICE SHIFT</ThemedText>
@@ -302,24 +374,48 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
               styles.primaryActionCard,
               {
                 backgroundColor: officeCheckedOutToday
-                  ? '#334155'
+                  ? isDark
+                    ? '#334155'
+                    : '#F1F5F9'
                   : canCheckout
-                    ? themeBlue + '14'
-                    : themeYellow + '16',
+                    ? isDark
+                      ? themeBlue + '14'
+                      : themeBlue + '10'
+                    : isDark
+                      ? themeYellow + '16'
+                      : themeYellow + '22',
                 borderColor: officeCheckedOutToday
-                  ? '#475569'
+                  ? isDark
+                    ? '#475569'
+                    : '#CBD5E1'
                   : canCheckout
-                    ? themeBlue + '55'
-                    : themeYellow + '66',
+                    ? themeBlue + (isDark ? '55' : '40')
+                    : themeYellow + (isDark ? '66' : '55'),
               },
             ]}
           >
             <Ionicons
               name={officeCheckedOutToday ? 'checkmark-done-circle' : canCheckout ? 'exit-outline' : 'location'}
               size={18}
-              color={officeCheckedOutToday ? '#e2e8f0' : canCheckout ? themeBlue : themeYellow}
+              color={
+                officeCheckedOutToday && isDark
+                  ? '#e2e8f0'
+                  : officeCheckedOutToday
+                    ? colors.textSecondary
+                    : canCheckout
+                      ? themeBlue
+                      : themeYellow
+              }
             />
-            <ThemedText style={[styles.primaryActionText, { color: officeCheckedOutToday ? '#e2e8f0' : colors.text }]}>
+            <ThemedText
+              style={[
+                styles.primaryActionText,
+                {
+                  color:
+                    officeCheckedOutToday && isDark ? '#e2e8f0' : officeCheckedOutToday ? colors.textSecondary : colors.text,
+                },
+              ]}
+            >
               {buttonLabel}
             </ThemedText>
           </View>
@@ -350,6 +446,34 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.xl,
     gap: Spacing.lg,
   },
+  welcomeBlock: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: Spacing.md,
+  },
+  welcomeBlockLight: {
+    paddingBottom: 2,
+  },
+  welcomeAccent: {
+    width: 4,
+    borderRadius: 2,
+    backgroundColor: themeYellow,
+  },
+  welcomeTextCol: {
+    flex: 1,
+  },
+  welcomeEyebrow: {
+    fontSize: 11,
+    letterSpacing: 0.85,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  welcomeTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: -0.35,
+  },
   mapCard: {
     borderRadius: 22,
     height: 320,
@@ -357,6 +481,10 @@ const styles = StyleSheet.create({
     position: 'relative',
     justifyContent: 'space-between',
     padding: Spacing.lg,
+  },
+  mapCardLight: {
+    borderWidth: 1,
+    borderColor: 'rgba(15, 24, 56, 0.07)',
   },
   mapImage: {
     ...StyleSheet.absoluteFillObject,
@@ -367,9 +495,7 @@ const styles = StyleSheet.create({
   gridOverlay: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 22,
-    opacity: 0.24,
     borderWidth: 1,
-    borderColor: '#475569',
   },
   pinWrap: {
     flex: 1,
@@ -400,11 +526,23 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 5 },
     elevation: 5,
   },
+  centerCtaLight: {
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.92)',
+    shadowColor: themeBlue,
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
   panel: {
     borderRadius: 18,
     borderWidth: 1,
     padding: Spacing.lg,
     gap: Spacing.sm,
+  },
+  panelLight: {
+    paddingVertical: Spacing.lg + 2,
   },
   panelTopRow: {
     flexDirection: 'row',
@@ -422,7 +560,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   stateChip: {
-    borderRadius: 999,
+    borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderWidth: 1,

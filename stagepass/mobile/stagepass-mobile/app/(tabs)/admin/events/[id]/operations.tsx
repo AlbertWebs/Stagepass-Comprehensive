@@ -1,6 +1,6 @@
 /**
  * Admin: manage event operations – edit, crew, end event, view details.
- * Vibrant layout with quick nav strip and theme accents.
+ * Vibrant layout with theme accents.
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -14,8 +14,11 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { api, type Event as EventType } from '~/services/api';
+import { useSelector } from 'react-redux';
+import { api, type Event as EventType, type User } from '~/services/api';
+import { canManageEventCrew } from '~/utils/eventCrewPermissions';
 import { AppHeader } from '@/components/AppHeader';
+import { TransferCrewModal } from '@/components/TransferCrewModal';
 import { StagePassButton } from '@/components/StagePassButton';
 import { StagePassInput } from '@/components/StagePassInput';
 import { ThemedText } from '@/components/themed-text';
@@ -76,10 +79,14 @@ export default function AdminEventOperationsScreen() {
   const [endModalVisible, setEndModalVisible] = useState(false);
   const [endComment, setEndComment] = useState('');
   const [ending, setEnding] = useState(false);
+  const [transferModalVisible, setTransferModalVisible] = useState(false);
+
+  const currentUser = useSelector((s: { auth: { user: User | null } }) => s.auth.user);
 
   const eventId = id ? Number(id) : 0;
   const isEnded = event?.status === 'completed' || event?.status === 'closed' || event?.status === 'done_for_the_day';
   const crewCount = event?.crew?.length ?? 0;
+  const canManageCrew = canManageEventCrew(currentUser, event);
   const reportReady = report_ready === '1';
   const reportConfirmedBy = (report_confirmed_by ?? '').trim();
   const reportSignature = (report_signature ?? '').trim();
@@ -182,7 +189,6 @@ export default function AdminEventOperationsScreen() {
         contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.xl }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Back to events + quick nav */}
         <Pressable
           style={({ pressed }) => [styles.backStrip, { backgroundColor: themeBlue }, pressed && { opacity: NAV_PRESSED_OPACITY }]}
           onPress={() => handleNav(() => router.replace('/(tabs)/admin/events'))}
@@ -190,24 +196,6 @@ export default function AdminEventOperationsScreen() {
           <Ionicons name="arrow-back" size={20} color={themeYellow} />
           <ThemedText style={styles.backStripText}>Back to events</ThemedText>
         </Pressable>
-
-        <View style={[styles.quickNavWrap, { backgroundColor: colors.surface, borderColor: opsBorder }]}>
-          <ThemedText style={[styles.quickNavTitle, { color: colors.text }]}>Jump to</ThemedText>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickNavScroll}>
-            <Pressable style={({ pressed }) => [styles.quickNavPill, { backgroundColor: themeBlue }, pressed && styles.quickNavPillPressed]} onPress={navTo('/(tabs)/admin/events/[id]/crew')}>
-              <Ionicons name="people" size={18} color={themeYellow} />
-              <ThemedText style={styles.quickNavPillText}>Crew</ThemedText>
-            </Pressable>
-            <Pressable style={({ pressed }) => [styles.quickNavPill, { backgroundColor: themeBlue }, pressed && styles.quickNavPillPressed]} onPress={navTo('/(tabs)/admin/events/[id]/message')}>
-              <Ionicons name="chatbubble-ellipses" size={18} color={themeYellow} />
-              <ThemedText style={styles.quickNavPillText}>Message</ThemedText>
-            </Pressable>
-            <Pressable style={({ pressed }) => [styles.quickNavPill, { backgroundColor: themeBlue }, pressed && styles.quickNavPillPressed]} onPress={navTo('/(tabs)/admin/events/[id]/manage-checkin')}>
-              <Ionicons name="location" size={18} color={themeYellow} />
-              <ThemedText style={styles.quickNavPillText}>Check-in</ThemedText>
-            </Pressable>
-          </ScrollView>
-        </View>
 
         <View style={[styles.card, styles.cardWithAccent, { backgroundColor: colors.surface, borderColor: opsBorder }]}>
           <View style={[styles.cardAccent, { backgroundColor: themeYellow }]} />
@@ -255,6 +243,24 @@ export default function AdminEventOperationsScreen() {
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
           </Pressable>
+
+          {canManageCrew && !isEnded ? (
+            <Pressable
+              style={({ pressed }) => [styles.opsRow, { borderBottomColor: opsBorder }, pressed && styles.opsRowPressed]}
+              onPress={() => setTransferModalVisible(true)}
+            >
+              <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
+                <Ionicons name="swap-horizontal" size={20} color={themeBlue} />
+              </View>
+              <View style={styles.opsLabelWrap}>
+                <ThemedText style={[styles.opsLabel, { color: colors.text }]}>Transfer crew</ThemedText>
+                <ThemedText style={[styles.opsSub, { color: colors.textSecondary }]}>
+                  Move someone to another open event
+                </ThemedText>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+            </Pressable>
+          ) : null}
 
           <Pressable
             style={({ pressed }) => [styles.opsRow, { borderBottomColor: opsBorder }, pressed && styles.opsRowPressed]}
@@ -391,6 +397,15 @@ export default function AdminEventOperationsScreen() {
         )}
       </ScrollView>
 
+      <TransferCrewModal
+        visible={transferModalVisible}
+        onClose={() => setTransferModalVisible(false)}
+        sourceEventId={eventId}
+        crew={(event.crew ?? []).map((c) => ({ id: c.id, name: c.name }))}
+        member={null}
+        onTransferred={loadEvent}
+      />
+
       <Modal visible={endModalVisible} transparent animationType="fade">
         <Pressable style={styles.modalBackdrop} onPress={() => !ending && setEndModalVisible(false)}>
           <Pressable style={[styles.modalContent, { backgroundColor: colors.background, borderColor: themeYellow }]} onPress={(e) => e.stopPropagation()}>
@@ -447,24 +462,6 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   backStripText: { fontSize: 15, fontWeight: '700', color: themeYellow },
-  quickNavWrap: {
-    padding: Spacing.lg,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    marginBottom: Spacing.lg,
-  },
-  quickNavTitle: { fontSize: 13, fontWeight: '700', marginBottom: Spacing.sm, letterSpacing: 0.3 },
-  quickNavScroll: { flexDirection: 'row', gap: Spacing.sm },
-  quickNavPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.full,
-  },
-  quickNavPillPressed: { opacity: NAV_PRESSED_OPACITY },
-  quickNavPillText: { fontSize: 13, fontWeight: '600', color: themeYellow },
   card: {
     borderRadius: BorderRadius.lg,
     borderWidth: 1,

@@ -42,6 +42,42 @@ function truncate(str: string | null | undefined, max: number): string {
   return str.slice(0, max) + '…';
 }
 
+/** Human-readable label for API path + method (mobile + web audit trail). */
+function summarizeOperation(path: string, method: string): string {
+  const rules: [RegExp, string][] = [
+    [/transfer-user/i, 'Crew transfer'],
+    [/assign-user/i, 'Assign to event crew'],
+    [/manual-checkin/i, 'Manual crew check-in'],
+    [/crew\/\d+\/pause/i, 'Pause crew'],
+    [/crew\/\d+\/resume/i, 'Resume crew'],
+    [/crew\/\d+\/transport/i, 'Transport record'],
+    [/done-for-day/i, 'Event done for the day'],
+    [/office-checkin/i, 'Office check-in'],
+    [/office-checkout/i, 'Office check-out'],
+    [/checkin-on-behalf/i, 'Check-in on behalf'],
+    [/attendance\/checkin/i, 'Event check-in'],
+    [/attendance\/checkout/i, 'Event check-out'],
+    [/timeoff/i, 'Time off'],
+    [/payments\/earned-allowances/i, 'Earned allowances'],
+    [/payments\/initiate/i, 'Payment request'],
+    [/payments\/approve/i, 'Approve payment'],
+    [/payments\/reject/i, 'Reject payment'],
+    [/tasks/i, 'Tasks'],
+    [/communications/i, 'Communications'],
+    [/events.*\/notes/i, 'Event notes'],
+    [/\/me\/photo/i, 'Profile photo'],
+    [/\/me$/i, 'Profile / session'],
+    [/events.*\/end/i, 'End event'],
+  ];
+  for (const [re, label] of rules) {
+    if (re.test(path)) return label;
+  }
+  if (method === 'GET') return 'Read / list';
+  if (method === 'DELETE') return 'Delete';
+  const tail = path.split('/').filter(Boolean).slice(-3).join('/');
+  return tail || path;
+}
+
 function statusColor(status: number | null): string {
   if (status == null) return 'bg-slate-100 text-slate-700';
   if (status >= 200 && status < 300) return 'bg-green-100 text-green-800';
@@ -61,6 +97,7 @@ export default function AuditLogs() {
   const [method, setMethod] = useState('');
   const [userId, setUserId] = useState('');
   const [pathSearch, setPathSearch] = useState('');
+  const [mutatingOnly, setMutatingOnly] = useState(false);
 
   const fetchLogs = useCallback(() => {
     setPageLoading(true);
@@ -74,11 +111,12 @@ export default function AuditLogs() {
         method: method || undefined,
         user_id: userId ? Number(userId) : undefined,
         path: pathSearch || undefined,
+        mutating_only: mutatingOnly ? 1 : undefined,
       })
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setPageLoading(false));
-  }, [page, dateFrom, dateTo, source, method, userId, pathSearch]);
+  }, [page, dateFrom, dateTo, source, method, userId, pathSearch, mutatingOnly]);
 
   useEffect(() => {
     fetchLogs();
@@ -101,7 +139,7 @@ export default function AuditLogs() {
     <div className="space-y-6">
       <PageHeader
         title="Audit Logs"
-        subtitle="All API requests: who made them, from web or mobile, and when. System activity and change history."
+        subtitle="Every authenticated API call is logged with the user who made it. The mobile app sends X-App-Source so requests appear as Mobile; the web admin appears as Web. Filter by Mobile to see field operations (check-in, crew, tasks, time off, payments)."
       />
 
       <SectionCard sectionLabel="Filters">
@@ -201,6 +239,24 @@ export default function AuditLogs() {
               className="form-input w-48"
             />
           </div>
+          <div className="form-field flex flex-col gap-1">
+            <label className="form-label" htmlFor="al-mutating">
+              Write operations only
+            </label>
+            <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+              <input
+                id="al-mutating"
+                type="checkbox"
+                checked={mutatingOnly}
+                onChange={(e) => {
+                  setMutatingOnly(e.target.checked);
+                  setPage(1);
+                }}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              <span>POST, PUT, PATCH, DELETE (hide reads)</span>
+            </label>
+          </div>
           <button type="button" onClick={() => fetchLogs()} className="btn-brand">
             Apply
           </button>
@@ -221,6 +277,7 @@ export default function AuditLogs() {
                     <th className="whitespace-nowrap">Time</th>
                     <th className="whitespace-nowrap">User</th>
                     <th className="whitespace-nowrap w-20">Method</th>
+                    <th className="min-w-[140px]">Summary</th>
                     <th className="min-w-[200px]">Path / Request</th>
                     <th className="whitespace-nowrap w-24">Source</th>
                     <th className="whitespace-nowrap w-16">Status</th>
@@ -248,6 +305,9 @@ export default function AuditLogs() {
                         <span className="inline-flex rounded px-2 py-0.5 text-xs font-semibold bg-slate-200 text-slate-800">
                           {log.method}
                         </span>
+                      </td>
+                      <td className="max-w-[160px] px-4 py-3 text-sm text-slate-800" title={summarizeOperation(log.path, log.method)}>
+                        {summarizeOperation(log.path, log.method)}
                       </td>
                       <td className="max-w-xs truncate px-4 py-3 font-mono text-sm text-slate-700" title={log.full_url || log.path}>
                         {log.path}

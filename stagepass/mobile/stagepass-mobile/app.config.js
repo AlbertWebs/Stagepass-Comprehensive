@@ -26,15 +26,55 @@ function loadEnv() {
 }
 
 const env = loadEnv();
+
+if (process.env.EAS_BUILD_PROFILE === 'production') {
+  const hasApiUrl = !!(env.EXPO_PUBLIC_API_URL || process.env.EXPO_PUBLIC_API_URL);
+  if (!hasApiUrl) {
+    console.warn(
+      '\n[Stagepass] Production EAS build: EXPO_PUBLIC_API_URL is not set. Add it in expo.dev → Project → Environment variables (production), e.g. https://api.yourdomain.com\n'
+    );
+  }
+}
+
 const googlePlacesApiKey =
   env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ||
   env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
   env.VITE_GOOGLE_MAPS_API_KEY;
 
 const appJson = require('./app.json');
+
+/** EAS sets this for `eas build --profile production` (undefined for local `expo start`). */
+const isProductionBuild = process.env.EAS_BUILD_PROFILE === 'production';
+
+/**
+ * Production: disable HTTP cleartext (HTTPS-only) for security and Play policy.
+ * Preview/dev: allow cleartext so EXPO_PUBLIC_API_URL can be http:// for emulators/LAN.
+ */
+function mapPlugins(plugins) {
+  if (!Array.isArray(plugins)) return plugins;
+  return plugins.map((entry) => {
+    if (Array.isArray(entry) && entry[0] === 'expo-build-properties') {
+      const prev = typeof entry[1] === 'object' && entry[1] !== null ? entry[1] : {};
+      const prevAndroid = prev.android && typeof prev.android === 'object' ? prev.android : {};
+      return [
+        'expo-build-properties',
+        {
+          ...prev,
+          android: {
+            ...prevAndroid,
+            usesCleartextTraffic: isProductionBuild ? false : prevAndroid.usesCleartextTraffic !== false,
+          },
+        },
+      ];
+    }
+    return entry;
+  });
+}
+
 module.exports = {
   expo: {
     ...appJson.expo,
+    plugins: mapPlugins(appJson.expo.plugins),
     extra: {
       ...(appJson.expo?.extra || {}),
       eas: {
@@ -42,6 +82,8 @@ module.exports = {
         projectId: '9c5ebab6-be53-4719-b5ef-704d71b23691',
       },
       googlePlacesApiKey: googlePlacesApiKey || undefined,
+      /** Read at runtime for diagnostics (optional). */
+      easBuildProfile: process.env.EAS_BUILD_PROFILE || null,
     },
   },
 };

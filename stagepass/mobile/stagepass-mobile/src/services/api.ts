@@ -10,6 +10,7 @@
  * - Physical device:  http://<your-pc-ip>:8000
  */
 
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 export const HOMEPAGE_SECTION_KEYS = [
@@ -40,15 +41,34 @@ export const DEFAULT_HOMEPAGE_PREFERENCES: HomepagePreferences = {
   layout: 'comfortable',
 };
 
+function getEASBuildProfile(): string {
+  const extra = Constants.expoConfig?.extra as { easBuildProfile?: string } | undefined;
+  return (extra?.easBuildProfile ?? '').trim();
+}
+
 function getDefaultApiBase(): string {
   const fromEnv =
     typeof process !== 'undefined' && process.env.EXPO_PUBLIC_API_URL
       ? process.env.EXPO_PUBLIC_API_URL.trim()
       : '';
   if (fromEnv && !fromEnv.includes('winenot')) {
-    return fromEnv.replace(/\/+$/, '');
+    const base = fromEnv.replace(/\/+$/, '');
+    if (!__DEV__) {
+      const profile = getEASBuildProfile();
+      if (profile === 'production' && /^http:\/\//i.test(base)) {
+        throw new Error(
+          'EXPO_PUBLIC_API_URL must use https:// for production store builds (Android usesCleartextTraffic is false). Set EXPO_PUBLIC_API_URL in EAS Environment variables (production), e.g. https://api.yourdomain.com'
+        );
+      }
+    }
+    return base;
   }
-  // Default: Laravel local. Android emulator use EXPO_PUBLIC_API_URL=http://10.0.2.2:8000
+  if (!__DEV__) {
+    throw new Error(
+      'EXPO_PUBLIC_API_URL is required for release builds. Set it in EAS Environment variables for this profile (e.g. https://api.yourdomain.com), or in .env for local release builds.'
+    );
+  }
+  // Dev defaults (cleartext OK). Android emulator: set EXPO_PUBLIC_API_URL=http://10.0.2.2:8000 in .env if needed.
   if (Platform.OS === 'android') {
     return 'http://10.0.2.2:8000';
   }
@@ -210,6 +230,8 @@ async function request<T>(
     (headers as Record<string, string>)['Authorization'] = `Bearer ${authToken}`;
   }
   const h = headers as Record<string, string>;
+  /** Ensures server audit logs classify requests as mobile (StagePass app). */
+  if (!h['X-App-Source']) h['X-App-Source'] = 'mobile';
   if (!h['X-Local-Date']) h['X-Local-Date'] = getLocalDateString();
   if (!h['X-Local-DateTime']) h['X-Local-DateTime'] = getLocalDateTimeWithOffset();
   if (!h['X-Local-Timezone']) {
@@ -321,6 +343,7 @@ async function requestMultipart<T>(
     (headers as Record<string, string>)['Authorization'] = `Bearer ${authToken}`;
   }
   const h = headers as Record<string, string>;
+  if (!h['X-App-Source']) h['X-App-Source'] = 'mobile';
   if (!h['X-Local-Date']) h['X-Local-Date'] = getLocalDateString();
   if (!h['X-Local-DateTime']) h['X-Local-DateTime'] = getLocalDateTimeWithOffset();
   if (!h['X-Local-Timezone']) {

@@ -12,11 +12,15 @@ class AuditLogController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user->hasRole('super_admin') && ! $user->hasRole('director')) {
+        if (! $user->hasRole('super_admin') && ! $user->hasRole('director') && ! $user->hasRole('admin')) {
             return response()->json(['message' => 'Only management can view audit logs.'], 403);
         }
 
         $query = AuditLog::query()->with('user:id,name,email');
+
+        if ($request->boolean('mutating_only')) {
+            $query->whereIn('method', ['POST', 'PUT', 'PATCH', 'DELETE']);
+        }
 
         if ($request->filled('user_id')) {
             $query->where('user_id', $request->user_id);
