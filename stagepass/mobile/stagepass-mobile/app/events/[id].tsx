@@ -371,6 +371,8 @@ export default function EventDetailScreen() {
   const accent = isDark ? '#f8fafc' : '#0f172a';
   const cardSurface = colors.surface;
   const cardBorder = colors.border;
+  /** Team leader “Event operations” entry: yellow frame in dark mode (brand blue reads as outline elsewhere). */
+  const leadOpsCardBorder = isDark ? themeYellow + '55' : cardBorder;
   const iconWrapBg = isDark ? themeYellow + '2a' : themeYellow + '18';
   const iconWrapBorder = isDark ? themeYellow + '56' : themeYellow + '38';
   const sectionIconBg = isDark ? '#f8fafc1f' : themeYellow + '1f';
@@ -586,7 +588,7 @@ export default function EventDetailScreen() {
                 }
                 style={({ pressed }) => [
                   styles.leadOpsCard,
-                  { backgroundColor: cardSurface, borderColor: cardBorder },
+                  { backgroundColor: cardSurface, borderColor: leadOpsCardBorder },
                   pressed && { opacity: 0.92 },
                 ]}
               >

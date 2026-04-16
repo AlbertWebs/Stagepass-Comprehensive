@@ -67,7 +67,9 @@ export default function AdminEventOperationsScreen() {
   }>();
   const router = useRouter();
   const handleNav = useNavigationPress();
-  const { colors } = useStagePassTheme();
+  const { colors, isDark } = useStagePassTheme();
+  const opsBorder = isDark ? themeYellow + '55' : colors.border;
+  const opsOutlineBorder = isDark ? themeYellow : themeBlue;
   const insets = useSafeAreaInsets();
   const [event, setEvent] = useState<EventType | null>(null);
   const [loading, setLoading] = useState(true);
@@ -189,7 +191,7 @@ export default function AdminEventOperationsScreen() {
           <ThemedText style={styles.backStripText}>Back to events</ThemedText>
         </Pressable>
 
-        <View style={[styles.quickNavWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={[styles.quickNavWrap, { backgroundColor: colors.surface, borderColor: opsBorder }]}>
           <ThemedText style={[styles.quickNavTitle, { color: colors.text }]}>Jump to</ThemedText>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickNavScroll}>
             <Pressable style={({ pressed }) => [styles.quickNavPill, { backgroundColor: themeBlue }, pressed && styles.quickNavPillPressed]} onPress={navTo('/(tabs)/admin/events/[id]/crew')}>
@@ -207,7 +209,7 @@ export default function AdminEventOperationsScreen() {
           </ScrollView>
         </View>
 
-        <View style={[styles.card, styles.cardWithAccent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={[styles.card, styles.cardWithAccent, { backgroundColor: colors.surface, borderColor: opsBorder }]}>
           <View style={[styles.cardAccent, { backgroundColor: themeYellow }]} />
           <View style={styles.cardInner}>
             <ThemedText style={[styles.meta, { color: colors.textSecondary }]}>
@@ -223,14 +225,14 @@ export default function AdminEventOperationsScreen() {
           </View>
         </View>
 
-        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: opsBorder }]}>
           <View style={styles.sectionHeader}>
             <View style={[styles.sectionAccent, { backgroundColor: themeYellow }]} />
             <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Manage</ThemedText>
           </View>
 
           <Pressable
-            style={({ pressed }) => [styles.opsRow, { borderBottomColor: colors.border }, pressed && styles.opsRowPressed]}
+            style={({ pressed }) => [styles.opsRow, { borderBottomColor: opsBorder }, pressed && styles.opsRowPressed]}
             onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/admin/events/[id]/edit', params: { id: String(eventId) } }))}
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
@@ -241,7 +243,7 @@ export default function AdminEventOperationsScreen() {
           </Pressable>
 
           <Pressable
-            style={({ pressed }) => [styles.opsRow, { borderBottomColor: colors.border }, pressed && styles.opsRowPressed]}
+            style={({ pressed }) => [styles.opsRow, { borderBottomColor: opsBorder }, pressed && styles.opsRowPressed]}
             onPress={navTo('/(tabs)/admin/events/[id]/crew')}
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
@@ -255,7 +257,7 @@ export default function AdminEventOperationsScreen() {
           </Pressable>
 
           <Pressable
-            style={({ pressed }) => [styles.opsRow, { borderBottomColor: colors.border }, pressed && styles.opsRowPressed]}
+            style={({ pressed }) => [styles.opsRow, { borderBottomColor: opsBorder }, pressed && styles.opsRowPressed]}
             onPress={navTo('/(tabs)/admin/events/[id]/manage-checkin')}
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
@@ -269,7 +271,7 @@ export default function AdminEventOperationsScreen() {
           </Pressable>
 
           <Pressable
-            style={({ pressed }) => [styles.opsRow, { borderBottomColor: colors.border }, pressed && styles.opsRowPressed]}
+            style={({ pressed }) => [styles.opsRow, { borderBottomColor: opsBorder }, pressed && styles.opsRowPressed]}
             onPress={navTo('/(tabs)/admin/events/[id]/message')}
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
@@ -283,7 +285,7 @@ export default function AdminEventOperationsScreen() {
           </Pressable>
 
           <Pressable
-            style={({ pressed }) => [styles.opsRow, { borderBottomColor: colors.border }, pressed && styles.opsRowPressed]}
+            style={({ pressed }) => [styles.opsRow, { borderBottomColor: opsBorder }, pressed && styles.opsRowPressed]}
             onPress={navTo('/(tabs)/admin/events/[id]/create-task')}
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
@@ -299,7 +301,7 @@ export default function AdminEventOperationsScreen() {
         </View>
 
         {!isEnded && (
-          <View style={[styles.card, styles.cardWithAccent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.card, styles.cardWithAccent, { backgroundColor: colors.surface, borderColor: opsBorder }]}>
             <View style={[styles.cardAccent, { backgroundColor: themeYellow }]} />
             <View style={styles.cardInner}>
               <View style={styles.sectionHeader}>
@@ -325,7 +327,7 @@ export default function AdminEventOperationsScreen() {
                     })
                   )
                 }
-                style={[styles.endDeleteBtn, { borderColor: themeBlue }]}
+                style={[styles.endDeleteBtn, { borderColor: opsOutlineBorder }]}
               />
             </View>
           </View>
@@ -358,7 +360,7 @@ export default function AdminEventOperationsScreen() {
                     }
                     setEndModalVisible(true);
                   }}
-                  style={[styles.endDeleteBtn, { borderColor: themeBlue }]}
+                  style={[styles.endDeleteBtn, { borderColor: opsOutlineBorder }]}
                 />
                 <StagePassButton
                   title="Delete event"
@@ -373,7 +375,7 @@ export default function AdminEventOperationsScreen() {
 
         {isEnded && (
           <>
-            <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.card, { backgroundColor: colors.surface, borderColor: opsBorder }]}>
               <View style={[styles.endedBadge, { backgroundColor: themeBlue }]}>
                 <Ionicons name="checkmark-done" size={20} color={themeYellow} />
                 <ThemedText style={styles.endedLabel}>This event has been ended.</ThemedText>

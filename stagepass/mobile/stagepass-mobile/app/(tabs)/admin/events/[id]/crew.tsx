@@ -25,18 +25,36 @@ import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 
 type CrewMember = { id: number; name: string; pivot?: { checkin_time?: string; checkout_time?: string } };
 
+function formatEventDate(dateStr?: string): string {
+  if (!dateStr) return 'No date';
+  try {
+    return new Date(dateStr).toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
 export default function AdminEventCrewScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { colors } = useStagePassTheme();
   const insets = useSafeAreaInsets();
   const [event, setEvent] = useState<EventType | null>(null);
+  const [eventOptions, setEventOptions] = useState<EventType[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [addModalVisible, setAddModalVisible] = useState(false);
+  const [transferModalVisible, setTransferModalVisible] = useState(false);
+  const [transferMember, setTransferMember] = useState<CrewMember | null>(null);
+  const [selectedTargetEventId, setSelectedTargetEventId] = useState<string>('');
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [roleInEvent, setRoleInEvent] = useState('');
   const [assigning, setAssigning] = useState(false);
+  const [transferring, setTransferring] = useState(false);
   const [removingId, setRemovingId] = useState<number | null>(null);
   const [checkingInId, setCheckingInId] = useState<number | null>(null);
 
@@ -62,11 +80,27 @@ export default function AdminEventCrewScreen() {
     }
   }, []);
 
+  const loadEventOptions = useCallback(async () => {
+    if (!eventId) return;
+    try {
+      const res = await api.events.list();
+      const allEvents = Array.isArray(res?.data) ? res.data : [];
+      setEventOptions(
+        allEvents.filter((e) => {
+          if (e.id === eventId) return false;
+          return e.status !== 'completed' && e.status !== 'closed' && e.status !== 'done_for_the_day';
+        })
+      );
+    } catch {
+      setEventOptions([]);
+    }
+  }, [eventId]);
+
   useEffect(() => {
     if (!eventId) return;
     setLoading(true);
-    Promise.all([loadEvent(), loadUsers()]).finally(() => setLoading(false));
-  }, [eventId, loadEvent, loadUsers]);
+    Promise.all([loadEvent(), loadUsers(), loadEventOptions()]).finally(() => setLoading(false));
+  }, [eventId, loadEvent, loadUsers, loadEventOptions]);
 
   const handleAddCrew = async () => {
     const uid = selectedUserId ? Number(selectedUserId) : 0;
@@ -128,9 +162,37 @@ export default function AdminEventCrewScreen() {
     );
   };
 
+  const openTransferModal = (member: CrewMember) => {
+    setTransferMember(member);
+    setSelectedTargetEventId('');
+    setTransferModalVisible(true);
+  };
+
+  const handleTransfer = async () => {
+    if (!eventId || !transferMember) return;
+    const targetEventId = selectedTargetEventId ? Number(selectedTargetEventId) : 0;
+    if (!targetEventId) {
+      Alert.alert('Select event', 'Choose a destination event for this crew member.');
+      return;
+    }
+    setTransferring(true);
+    try {
+      await api.events.transferUser(eventId, transferMember.id, targetEventId);
+      await Promise.all([loadEvent(), loadEventOptions()]);
+      setTransferModalVisible(false);
+      setTransferMember(null);
+      setSelectedTargetEventId('');
+      Alert.alert('Transferred', `${transferMember.name} has been transferred.`);
+    } catch (e) {
+      Alert.alert('Transfer failed', e instanceof Error ? e.message : 'Could not transfer crew member.');
+    } finally {
+      setTransferring(false);
+    }
+  };
+
   const alreadyAssignedIds = crew.map((c) => c.id);
   const availableUsers = users.filter((u) => !alreadyAssignedIds.includes(u.id));
-  const isEnded = event?.status === 'completed' || event?.status === 'closed';
+  const isEnded = event?.status === 'completed' || event?.status === 'closed' || event?.status === 'done_for_the_day';
 
   if (loading || !event) {
     return (
@@ -211,6 +273,13 @@ export default function AdminEventCrewScreen() {
                         <Ionicons name="person-remove" size={20} color={colors.error} />
                       )}
                     </Pressable>
+                    <Pressable
+                      onPress={() => openTransferModal(member)}
+                      disabled={transferring}
+                      style={({ pressed }) => [styles.transferBtn, pressed && { opacity: 0.7 }]}
+                    >
+                      <Ionicons name="swap-horizontal" size={20} color={themeBlue} />
+                    </Pressable>
                   </View>
                 )}
               </View>
@@ -279,6 +348,57 @@ export default function AdminEventCrewScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <Modal visible={transferModalVisible} transparent animationType="fade">
+        <Pressable style={styles.modalBackdrop} onPress={() => !transferring && setTransferModalVisible(false)}>
+          <Pressable style={[styles.modalContent, { backgroundColor: colors.background }]} onPress={(e) => e.stopPropagation()}>
+            <ThemedText style={[styles.modalTitle, { color: colors.text }]}>Transfer crew member</ThemedText>
+            <ThemedText style={[styles.label, { color: colors.textSecondary }]}>
+              {transferMember ? `Move ${transferMember.name} to another event` : 'Choose destination event'}
+            </ThemedText>
+            <View style={styles.pickerWrap}>
+              <ScrollView style={styles.pickerScroll} nestedScrollEnabled>
+                {eventOptions.length === 0 ? (
+                  <ThemedText style={[styles.empty, { color: colors.textSecondary }]}>
+                    No available destination events.
+                  </ThemedText>
+                ) : (
+                  eventOptions.map((e) => (
+                    <Pressable
+                      key={e.id}
+                      style={[
+                        styles.pickerItem,
+                        { backgroundColor: selectedTargetEventId === String(e.id) ? themeYellow + '33' : 'transparent' },
+                      ]}
+                      onPress={() => setSelectedTargetEventId(String(e.id))}
+                    >
+                      <ThemedText style={[styles.pickerItemText, { color: colors.text }]}>{e.name}</ThemedText>
+                      <ThemedText style={[styles.pickerItemSub, { color: colors.textSecondary }]}>
+                        {formatEventDate(e.date)}{e.location_name ? ` · ${e.location_name}` : ''}
+                      </ThemedText>
+                    </Pressable>
+                  ))
+                )}
+              </ScrollView>
+            </View>
+            <View style={styles.modalActions}>
+              <StagePassButton
+                title="Cancel"
+                variant="outline"
+                onPress={() => setTransferModalVisible(false)}
+                disabled={transferring}
+                style={styles.modalBtn}
+              />
+              <StagePassButton
+                title={transferring ? 'Transferring…' : 'Transfer'}
+                onPress={handleTransfer}
+                disabled={transferring || !selectedTargetEventId}
+                style={[styles.modalBtn, { backgroundColor: themeYellow }]}
+              />
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ThemedView>
   );
 }
@@ -317,6 +437,7 @@ const styles = StyleSheet.create({
     borderColor: themeYellow,
   },
   checkInBtnText: { fontSize: 13, fontWeight: '600' },
+  transferBtn: { padding: Spacing.sm },
   removeBtn: { padding: Spacing.sm },
   backBtn: { marginTop: Spacing.sm },
   modalBackdrop: {

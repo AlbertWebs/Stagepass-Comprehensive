@@ -472,6 +472,12 @@ export const api = {
     /** Admin/team leader: remove user from event crew */
     removeUser: (eventId: number, userId: number) =>
       request<unknown>(`/events/${eventId}/crew/${userId}`, { method: 'DELETE' }),
+    /** Admin/team leader: transfer user from one event crew to another */
+    transferUser: (eventId: number, userId: number, targetEventId: number) =>
+      request<{ message: string; target_event_id: number }>(`/events/${eventId}/transfer-user`, {
+        method: 'POST',
+        body: JSON.stringify({ user_id: userId, target_event_id: targetEventId }),
+      }),
     /** Admin/team leader: end event with comment */
     end: (eventId: number, body: { end_comment: string }) =>
       request<Event>(`/events/${eventId}/end`, { method: 'POST', body: JSON.stringify(body) }),
