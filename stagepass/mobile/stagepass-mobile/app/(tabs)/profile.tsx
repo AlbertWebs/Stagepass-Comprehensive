@@ -41,7 +41,7 @@ import {
   saveBiometricCredential,
 } from '~/store/biometricLogin';
 import { clearStoredToken, loadStoredToken } from '~/store/persistAuth';
-import { PREF_SHOW_WELCOME_STATS_CARDS } from '~/constants/preferences';
+import { PREF_CREW_HOME_STYLE, PREF_SHOW_WELCOME_STATS_CARDS } from '~/constants/preferences';
 
 /** Profile scale: all spacing and sizes proportional to card title (titleCard = 17) */
 const T = Typography.titleCard;
@@ -164,6 +164,7 @@ export default function ProfileScreen() {
   const [biometricOn, setBiometricOn] = useState(false);
   const [biometricLabel, setBiometricLabel] = useState('Biometric');
   const [serverAllowsBiometric, setServerAllowsBiometric] = useState(true);
+  const [crewHomeStyle, setCrewHomeStyle] = useState<'minimal' | 'classic'>('minimal');
 
   useEffect(() => {
     let mounted = true;
@@ -175,6 +176,21 @@ export default function ProfileScreen() {
       })
       .catch(() => {
         if (mounted) setShowWelcomeStatsCards(true);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    AsyncStorage.getItem(PREF_CREW_HOME_STYLE)
+      .then((v) => {
+        if (!mounted) return;
+        setCrewHomeStyle(v === 'classic' ? 'classic' : 'minimal');
+      })
+      .catch(() => {
+        if (mounted) setCrewHomeStyle('minimal');
       });
     return () => {
       mounted = false;
@@ -441,6 +457,17 @@ export default function ProfileScreen() {
     }
   }, [showWelcomeStatsCards]);
 
+  const toggleCrewHomeStyle = useCallback(async () => {
+    if (role !== 'crew') return;
+    const next: 'minimal' | 'classic' = crewHomeStyle === 'classic' ? 'minimal' : 'classic';
+    setCrewHomeStyle(next);
+    try {
+      await AsyncStorage.setItem(PREF_CREW_HOME_STYLE, next);
+    } catch {
+      // Keep UI responsive even if persistence fails.
+    }
+  }, [crewHomeStyle, role]);
+
   const cardBg = colors.surface;
   const cardBorder = isDark ? themeYellow + '44' : themeBlue + '22';
   const dayPeriod = getDayPeriod(new Date());
@@ -629,6 +656,25 @@ export default function ProfileScreen() {
                 color={showWelcomeStatsCards ? themeYellow : colors.textSecondary}
               />
             </Pressable>
+            {role === 'crew' ? (
+              <Pressable
+                onPress={toggleCrewHomeStyle}
+                style={({ pressed }) => [
+                  styles.settingRow,
+                  { borderTopColor: cardBorder, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
+                ]}
+              >
+                <View style={styles.settingRowTextWrap}>
+                  <ThemedText style={[styles.settingRowTitle, { color: colors.text }]}>Home dashboard style</ThemedText>
+                  <ThemedText style={[styles.settingRowSub, { color: colors.textSecondary }]}>
+                    Minimalistic is default for crew. Switch to current dashboard anytime.
+                  </ThemedText>
+                </View>
+                <ThemedText style={[styles.infoValue, { color: crewHomeStyle === 'classic' ? themeYellow : colors.textSecondary }]}>
+                  {crewHomeStyle === 'classic' ? 'Current' : 'Minimal'}
+                </ThemedText>
+              </Pressable>
+            ) : null}
             {biometricHw && serverAllowsBiometric ? (
               <Pressable
                 onPress={toggleBiometricLogin}

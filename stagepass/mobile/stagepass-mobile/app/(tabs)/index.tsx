@@ -1,4 +1,5 @@
 import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { useSelector } from 'react-redux';
@@ -9,6 +10,7 @@ import { useAppRole } from '~/hooks/useAppRole';
 import { api, type Event as EventType, type Payment } from '~/services/api';
 import { setUser } from '~/store/authSlice';
 import { getDevicePushTokenAsync } from '~/utils/pushToken';
+import { PREF_CREW_HOME_STYLE } from '~/constants/preferences';
 
 const todayDateString = () => {
   const d = new Date();
@@ -40,6 +42,7 @@ export default function HomeScreen() {
     Array.isArray(s.auth.user?.roles) && s.auth.user!.roles!.length > 0
   );
   const [animateKey, setAnimateKey] = useState(0);
+  const [crewHomeStyle, setCrewHomeStyle] = useState<'minimal' | 'classic'>('minimal');
   const [eventToday, setEventToday] = useState<EventType | null | undefined>(undefined);
   const [pastEvents, setPastEvents] = useState<EventType[]>([]);
   const [eventsTodayList, setEventsTodayList] = useState<EventType[]>([]);
@@ -146,6 +149,21 @@ export default function HomeScreen() {
     loadAll();
   }, [loadAll]);
 
+  useEffect(() => {
+    let mounted = true;
+    AsyncStorage.getItem(PREF_CREW_HOME_STYLE)
+      .then((v) => {
+        if (!mounted) return;
+        setCrewHomeStyle(v === 'classic' ? 'classic' : 'minimal');
+      })
+      .catch(() => {
+        if (mounted) setCrewHomeStyle('minimal');
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       setAnimateKey((k) => k + 1);
@@ -156,6 +174,9 @@ export default function HomeScreen() {
         fetchEquipmentCount();
         fetchApprovedAllowances();
       }
+      AsyncStorage.getItem(PREF_CREW_HOME_STYLE)
+        .then((v) => setCrewHomeStyle(v === 'classic' ? 'classic' : 'minimal'))
+        .catch(() => setCrewHomeStyle('minimal'));
       // Refresh /me so has_approved_time_off_today and office check-in state are up to date (e.g. after admin adds time off on web).
       api.auth.me().then((me) => dispatch(setUser(me))).catch(() => {});
       getDevicePushTokenAsync().then((token) => {
@@ -188,7 +209,7 @@ export default function HomeScreen() {
 
   return (
     <Animated.View key={animateKey} entering={SlideInRight.duration(320)} style={{ flex: 1 }}>
-      {role === 'crew' && hasResolvedRoles ? (
+      {role === 'crew' && crewHomeStyle !== 'classic' ? (
         <MinimalCrewHomeScreen onRefresh={onRefresh} />
       ) : (
         <HomeDashboardScreen

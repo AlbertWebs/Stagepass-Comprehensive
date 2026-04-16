@@ -363,11 +363,11 @@ export default function EventDetailScreen() {
   };
 
   const accent = isDark ? '#f8fafc' : '#0f172a';
-  const cardSurface = isDark ? '#0f172a' : '#ffffff';
-  const cardBorder = isDark ? '#334155' : '#dbeafe';
+  const cardSurface = colors.surface;
+  const cardBorder = colors.border;
   const iconWrapBg = isDark ? themeYellow + '2a' : themeYellow + '18';
   const iconWrapBorder = isDark ? themeYellow + '56' : themeYellow + '38';
-  const sectionIconBg = isDark ? themeBlue + '3d' : themeBlue + '22';
+  const sectionIconBg = isDark ? '#f8fafc1f' : themeYellow + '1f';
 
   return (
     <ThemedView style={styles.container}>
@@ -379,7 +379,7 @@ export default function EventDetailScreen() {
       >
         <Animated.View entering={SlideInRight.duration(320)}>
           {/* Hero: event name */}
-          <View style={[styles.heroCard, { backgroundColor: isDark ? '#111827' : '#f8fbff', borderColor: isDark ? '#475569' : '#93c5fd' }]}>
+          <View style={[styles.heroCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
             <View style={[styles.heroIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
               <Ionicons name="calendar" size={Icons.xl} color={themeYellow} />
             </View>
@@ -401,7 +401,7 @@ export default function EventDetailScreen() {
                 onPress={handleGetDirections}
                 style={({ pressed }) => [
                   styles.heroActionButton,
-                  { backgroundColor: isDark ? '#102a4a' : '#e0edff', borderColor: isDark ? '#60a5fa' : '#3b82f6' },
+                  { backgroundColor: isDark ? '#1f2937' : '#f8fafc', borderColor: cardBorder },
                   pressed && { opacity: NAV_PRESSED_OPACITY },
                 ]}
               >
@@ -489,7 +489,7 @@ export default function EventDetailScreen() {
             )}
             </View>
             {checkinTime && !checkoutTime ? (
-              <View style={[styles.liveHoursCard, { backgroundColor: isDark ? '#0b1220' : '#f1f5ff', borderColor: cardBorder }]}>
+              <View style={[styles.liveHoursCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
               <ThemedText style={[styles.liveHoursTitle, { color: colors.text }]}>Active session</ThemedText>
               <ThemedText style={[styles.liveHoursValue, { color: colors.textSecondary }]}>Time worked: {formatHoursLabel(sessionStats.totalHours)}</ThemedText>
               <ThemedText style={[styles.liveHoursValue, { color: sessionStats.extraHours > 0 ? '#f97316' : colors.textSecondary }]}>
