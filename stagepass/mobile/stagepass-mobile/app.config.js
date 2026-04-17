@@ -74,6 +74,13 @@ function mapPlugins(plugins) {
 module.exports = {
   expo: {
     ...appJson.expo,
+    /** EAS Update — required for builds when using EAS Update. https://expo.fyi/eas-update-config */
+    updates: {
+      url: 'https://u.expo.dev/9c5ebab6-be53-4719-b5ef-704d71b23691',
+    },
+    runtimeVersion: {
+      policy: 'appVersion',
+    },
     plugins: mapPlugins(appJson.expo.plugins),
     extra: {
       ...(appJson.expo?.extra || {}),
