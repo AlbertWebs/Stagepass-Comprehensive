@@ -160,8 +160,9 @@ class EventCrewController extends Controller
             return response()->json(['message' => 'You cannot view crew status for this event.'], 403);
         }
 
+        $assignments = EventUser::where('event_id', $event->id)->get()->keyBy('user_id');
         $crew = $event->crew()->get();
-        $data = $crew->map(function (User $user) {
+        $data = $crew->map(function (User $user) use ($assignments) {
             $pivot = $user->pivot;
             $checkinTime = $pivot->checkin_time ?? null;
             $checkoutTime = $pivot->checkout_time ?? null;
@@ -182,13 +183,22 @@ class EventCrewController extends Controller
             if ($pivot->is_paused && $pivot->pause_start_time) {
                 $pausedForMinutes += Carbon::parse($pivot->pause_start_time)->diffInMinutes(now());
             }
+            $eu = $assignments->get($user->id);
+            $snap = $eu ? $this->overtime->snapshotForEventAssignment($eu) : null;
+            $totalHours = $snap ? (float) $snap['total_hours'] : (float) ($pivot->total_hours ?? 0);
+            $standardHours = $snap ? (float) $snap['standard_hours'] : (float) ($pivot->standard_hours ?? 0);
+            $extraHours = $snap ? (float) $snap['extra_hours'] : (float) ($pivot->extra_hours ?? 0);
+            $hoursStatus = $snap ? $snap['hours_status'] : 'not_checked_in';
+
             return [
                 'user_id' => $user->id,
                 'name' => $user->name,
                 'status' => $status,
+                'hours_status' => $hoursStatus,
                 'checkin_time' => $checkinFormatted,
-                'total_hours' => (float) ($pivot->total_hours ?? 0),
-                'extra_hours' => (float) ($pivot->extra_hours ?? 0),
+                'total_hours' => $totalHours,
+                'standard_hours' => $standardHours,
+                'extra_hours' => $extraHours,
                 'is_sunday' => (bool) ($pivot->is_sunday ?? false),
                 'is_holiday' => (bool) ($pivot->is_holiday ?? false),
                 'holiday_name' => $pivot->holiday_name ?? null,
@@ -233,6 +243,7 @@ class EventCrewController extends Controller
         $assignment->update([
             'checkin_time' => $now,
             'total_hours' => $calc['total_hours'],
+            'standard_hours' => $calc['standard_hours'],
             'extra_hours' => $calc['extra_hours'],
             'is_sunday' => $calc['is_sunday'],
             'is_holiday' => $calc['is_holiday'],
@@ -245,6 +256,7 @@ class EventCrewController extends Controller
             'message' => 'Marked as arrived',
             'checkin_time' => $assignment->checkin_time->toIso8601String(),
             'total_hours' => $calc['total_hours'],
+            'standard_hours' => $calc['standard_hours'],
             'extra_hours' => $calc['extra_hours'],
             'is_sunday' => $calc['is_sunday'],
             'is_holiday' => $calc['is_holiday'],

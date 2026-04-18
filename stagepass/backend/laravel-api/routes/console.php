@@ -83,10 +83,7 @@ Artisan::command('user:create-test-credentials {--password=Test@12345} {--rewrit
 
 /*
 |--------------------------------------------------------------------------
-| Reminder cron (uncomment when setting up cron)
+| Scheduler — run `php artisan schedule:work` (dev) or cron: * * * * * cd /path && php artisan schedule:run
 |--------------------------------------------------------------------------
-| Run: php artisan schedule:work (dev) or add to crontab: * * * * * cd /path && php artisan schedule:run
-|
-| Schedule::command('reminders:event-near')->dailyAt('08:00');  // Event-near reminders at 8am
-| Schedule::command('reminders:checkin-due')->everyThirtyMinutes(); // Check-in due every 30 min
 */
+Schedule::command('attendance:send-overtime-threshold-notifications')->everyMinute();

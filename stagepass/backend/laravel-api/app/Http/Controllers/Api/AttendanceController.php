@@ -101,6 +101,7 @@ class AttendanceController extends Controller
                 'date' => $today,
                 'checkin_time' => $now,
                 'total_hours' => $calc['total_hours'],
+                'standard_hours' => $calc['standard_hours'],
                 'extra_hours' => $calc['extra_hours'],
                 'is_sunday' => $calc['is_sunday'],
                 'is_holiday' => $calc['is_holiday'],
@@ -132,6 +133,7 @@ class AttendanceController extends Controller
             'message' => 'Checked in successfully',
             'checkin_time' => $checkin->checkin_time->toIso8601String(),
             'total_hours' => (float) $checkin->total_hours,
+            'standard_hours' => (float) $checkin->standard_hours,
             'extra_hours' => (float) $checkin->extra_hours,
             'is_sunday' => (bool) $checkin->is_sunday,
             'is_holiday' => (bool) $checkin->is_holiday,
@@ -174,6 +176,7 @@ class AttendanceController extends Controller
         $calc = $this->overtime->calculate($record->checkin_time, $checkout, $tz);
         $record->checkout_time = $checkout;
         $record->total_hours = $calc['total_hours'];
+        $record->standard_hours = $calc['standard_hours'];
         $record->extra_hours = $calc['extra_hours'];
         $record->save();
 
@@ -181,6 +184,7 @@ class AttendanceController extends Controller
             'message' => 'Checked out successfully',
             'checkout_time' => $record->checkout_time->toIso8601String(),
             'total_hours' => (float) $record->total_hours,
+            'standard_hours' => (float) $record->standard_hours,
             'extra_hours' => (float) $record->extra_hours,
             'is_sunday' => (bool) $record->is_sunday,
             'is_holiday' => (bool) $record->is_holiday,
@@ -241,6 +245,7 @@ class AttendanceController extends Controller
         $assignment->update([
             'checkin_time' => $now,
             'total_hours' => $calc['total_hours'],
+            'standard_hours' => $calc['standard_hours'],
             'extra_hours' => $calc['extra_hours'],
             'is_sunday' => $calc['is_sunday'],
             'is_holiday' => $calc['is_holiday'],
@@ -255,6 +260,7 @@ class AttendanceController extends Controller
             'message' => 'Checked in successfully',
             'checkin_time' => $now->toIso8601String(),
             'total_hours' => $calc['total_hours'],
+            'standard_hours' => $calc['standard_hours'],
             'extra_hours' => $calc['extra_hours'],
             'is_sunday' => $calc['is_sunday'],
             'is_holiday' => $calc['is_holiday'],
@@ -383,6 +389,7 @@ class AttendanceController extends Controller
         $assignment->update([
             'checkout_time' => $checkout,
             'total_hours' => $calc['total_hours'],
+            'standard_hours' => $calc['standard_hours'],
             'extra_hours' => $calc['extra_hours'],
             'is_paused' => false,
             'pause_start_time' => null,
@@ -399,6 +406,7 @@ class AttendanceController extends Controller
             'message' => 'Checked out successfully',
             'checkout_time' => $checkout->toIso8601String(),
             'total_hours' => $assignment->total_hours,
+            'standard_hours' => $assignment->standard_hours,
             'extra_hours' => $assignment->extra_hours,
             'is_sunday' => (bool) $assignment->is_sunday,
             'is_holiday' => (bool) $assignment->is_holiday,

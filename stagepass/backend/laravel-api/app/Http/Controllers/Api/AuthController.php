@@ -176,10 +176,12 @@ class AuthController extends Controller
         $officeCheckedOutToday = $officeCheckin?->checkout_time !== null;
         $officeCheckoutTime = $officeCheckin?->checkout_time?->toIso8601String();
         $officeLiveTotals = null;
+        $officeTz = 'Africa/Nairobi';
         if ($officeCheckin?->checkin_time) {
             $officeLiveTotals = $this->overtime->calculate(
                 $officeCheckin->checkin_time,
-                $officeCheckin->checkout_time ?: now(config('app.timezone', 'Africa/Nairobi'))
+                $officeCheckin->checkout_time ?: now($officeTz),
+                $officeTz
             );
         }
 
@@ -195,11 +197,23 @@ class AuthController extends Controller
         $payload['office_checked_out_today'] = $officeCheckedOutToday;
         $payload['office_checkout_time'] = $officeCheckoutTime;
         $payload['office_total_hours'] = $officeLiveTotals['total_hours'] ?? null;
+        $payload['office_standard_hours'] = $officeLiveTotals['standard_hours'] ?? null;
         $payload['office_extra_hours'] = $officeLiveTotals['extra_hours'] ?? null;
         $payload['office_is_sunday'] = $officeLiveTotals['is_sunday'] ?? false;
         $payload['office_is_holiday'] = $officeLiveTotals['is_holiday'] ?? false;
         $payload['office_holiday_name'] = $officeLiveTotals['holiday_name'] ?? null;
         $payload['office_day_type'] = $officeLiveTotals['day_type'] ?? null;
+        if (! $officeCheckedInToday) {
+            $payload['office_hours_status'] = null;
+        } elseif ($officeCheckedOutToday) {
+            $payload['office_hours_status'] = 'checked_out';
+        } elseif ($officeLiveTotals) {
+            $payload['office_hours_status'] = ($officeLiveTotals['total_minutes'] ?? 0) < AttendanceOvertimeService::STANDARD_MINUTES
+                ? 'within_standard'
+                : 'in_extra_hours';
+        } else {
+            $payload['office_hours_status'] = null;
+        }
         $payload['has_approved_time_off_today'] = $hasApprovedTimeOffToday;
         $payload['homepage_preferences'] = $this->normalizeHomepagePreferences($user->homepage_preferences);
         $payload['allow_biometric_mobile_login'] = $this->allowBiometricMobileLogin();

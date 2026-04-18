@@ -34,11 +34,12 @@ class AttendanceOvertimeTest extends TestCase
 
         $checkout->assertOk()
             ->assertJsonPath('total_hours', 10)
+            ->assertJsonPath('standard_hours', 8)
             ->assertJsonPath('extra_hours', 2)
             ->assertJsonPath('day_type', 'normal');
     }
 
-    public function test_sunday_marks_all_hours_as_extra(): void
+    public function test_sunday_uses_standard_eight_hour_split(): void
     {
         $user = User::factory()->create();
         Carbon::setTestNow(Carbon::parse('2026-04-12 09:00:00', 'Africa/Nairobi')); // Sunday
@@ -53,12 +54,13 @@ class AttendanceOvertimeTest extends TestCase
 
         $checkout->assertOk()
             ->assertJsonPath('total_hours', 6)
-            ->assertJsonPath('extra_hours', 6)
+            ->assertJsonPath('standard_hours', 6)
+            ->assertJsonPath('extra_hours', 0)
             ->assertJsonPath('is_sunday', true)
             ->assertJsonPath('day_type', 'sunday');
     }
 
-    public function test_holiday_marks_all_hours_as_extra(): void
+    public function test_holiday_uses_standard_eight_hour_split(): void
     {
         $user = User::factory()->create();
         Holiday::create([
@@ -77,7 +79,9 @@ class AttendanceOvertimeTest extends TestCase
             ->postJson('/api/attendance/office-checkout');
 
         $checkout->assertOk()
-            ->assertJsonPath('extra_hours', 3.5)
+            ->assertJsonPath('total_hours', 3.5)
+            ->assertJsonPath('standard_hours', 3.5)
+            ->assertJsonPath('extra_hours', 0)
             ->assertJsonPath('is_holiday', true)
             ->assertJsonPath('holiday_name', 'Labour Day')
             ->assertJsonPath('day_type', 'holiday');
@@ -96,6 +100,8 @@ class AttendanceOvertimeTest extends TestCase
 
         $me->assertOk()
             ->assertJsonPath('office_total_hours', 9.25)
-            ->assertJsonPath('office_extra_hours', 1.25);
+            ->assertJsonPath('office_standard_hours', 8)
+            ->assertJsonPath('office_extra_hours', 1.25)
+            ->assertJsonPath('office_hours_status', 'in_extra_hours');
     }
 }

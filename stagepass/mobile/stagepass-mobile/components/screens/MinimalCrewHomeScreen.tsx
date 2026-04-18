@@ -255,12 +255,19 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
 
         <View
           style={[
-            styles.mapCard,
+            styles.mapCardOuter,
             { backgroundColor: mapCardBg },
-            !isDark && styles.mapCardLight,
-            !isDark && lightElevated,
+            !isDark && styles.mapCardOuterLight,
+            isDark && styles.mapCardOuterDark,
           ]}
         >
+          <View
+            style={[
+              styles.mapCard,
+              { backgroundColor: mapCardBg },
+              !isDark && styles.mapCardLight,
+            ]}
+          >
           {mapUrl ? (
             <Image
               source={{ uri: mapUrl }}
@@ -317,6 +324,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
             >
               <Ionicons name={canCheckout ? 'exit-outline' : 'location'} size={22} color={officeCheckedOutToday || canCheckout ? '#fff' : themeBlue} />
             </Pressable>
+          </View>
           </View>
         </View>
 
@@ -474,6 +482,29 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.35,
   },
+  mapCardOuter: {
+    borderRadius: 22,
+  },
+  mapCardOuterLight: Platform.select({
+    ios: {
+      shadowColor: '#0f172a',
+      shadowOffset: { width: 0, height: 12 },
+      shadowOpacity: 0.13,
+      shadowRadius: 24,
+    },
+    android: { elevation: 9 },
+    default: {},
+  }),
+  mapCardOuterDark: Platform.select({
+    ios: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.55,
+      shadowRadius: 20,
+    },
+    android: { elevation: 11 },
+    default: {},
+  }),
   mapCard: {
     borderRadius: 22,
     height: 320,

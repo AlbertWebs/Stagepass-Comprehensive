@@ -4,11 +4,17 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Event;
+use App\Models\EventUser;
+use App\Services\AttendanceOvertimeService;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class EventController extends Controller
 {
+    public function __construct(
+        private AttendanceOvertimeService $overtime
+    ) {}
     /**
      * Get the current user's event assigned for today (for crew/leader home).
      * Includes events where the user is in crew OR is the team leader.
@@ -108,7 +114,24 @@ class EventController extends Controller
     public function show(Event $event): JsonResponse
     {
         $event->load(['teamLeader', 'crew', 'client', 'notes.user', 'eventEquipment.equipment', 'endedBy', 'closedBy']);
-        return response()->json($event);
+        $assignments = EventUser::where('event_id', $event->id)->get()->keyBy('user_id');
+        $data = $event->toArray();
+        if (isset($data['crew']) && is_array($data['crew'])) {
+            foreach ($data['crew'] as &$member) {
+                $uid = isset($member['id']) ? (int) $member['id'] : null;
+                if ($uid !== null && isset($assignments[$uid])) {
+                    $snap = $this->overtime->snapshotForEventAssignment($assignments[$uid]);
+                    if (! isset($member['pivot']) || ! is_array($member['pivot'])) {
+                        $member['pivot'] = [];
+                    }
+                    $member['pivot']['standard_hours'] = $snap['standard_hours'];
+                    $member['pivot']['hours_status'] = $snap['hours_status'];
+                }
+            }
+            unset($member);
+        }
+
+        return response()->json($data);
     }
 
     public function end(Request $request, Event $event): JsonResponse
@@ -161,7 +184,19 @@ class EventController extends Controller
         // Auto check out closer if still checked in.
         $assignment = $event->eventCrew()->where('user_id', $user->id)->first();
         if ($assignment && $assignment->checkin_time && ! $assignment->checkout_time) {
-            $assignment->checkout_time = now();
+            $checkout = now();
+            $pausedMinutes = (int) ($assignment->pause_duration ?? 0);
+            if ($assignment->is_paused && $assignment->pause_start_time) {
+                $pausedMinutes += Carbon::parse($assignment->pause_start_time)->diffInMinutes($checkout);
+            }
+            $calc = $this->overtime->calculate(Carbon::parse($assignment->checkin_time), $checkout, null, $pausedMinutes);
+            $assignment->checkout_time = $checkout;
+            $assignment->total_hours = $calc['total_hours'];
+            $assignment->standard_hours = $calc['standard_hours'];
+            $assignment->extra_hours = $calc['extra_hours'];
+            $assignment->is_paused = false;
+            $assignment->pause_start_time = null;
+            $assignment->pause_duration = $pausedMinutes;
             $assignment->save();
         }
 

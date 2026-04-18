@@ -11,7 +11,7 @@ class EventUser extends Model
 
     protected $fillable = [
         'event_id', 'user_id', 'role_in_event',
-        'checkin_time', 'checkout_time', 'total_hours', 'extra_hours',
+        'checkin_time', 'checkout_time', 'total_hours', 'standard_hours', 'extra_hours', 'overtime_threshold_notified_at',
         'is_sunday', 'is_holiday', 'holiday_name',
         'is_paused', 'pause_start_time', 'pause_end_time', 'pause_duration', 'paused_by', 'pause_reason',
         'transport_type', 'transport_amount', 'transport_recorded_by', 'transport_recorded_at',
@@ -24,7 +24,9 @@ class EventUser extends Model
             'checkin_time' => 'datetime',
             'checkout_time' => 'datetime',
             'total_hours' => 'decimal:2',
+            'standard_hours' => 'decimal:2',
             'extra_hours' => 'decimal:2',
+            'overtime_threshold_notified_at' => 'datetime',
             'is_sunday' => 'boolean',
             'is_holiday' => 'boolean',
             'is_paused' => 'boolean',

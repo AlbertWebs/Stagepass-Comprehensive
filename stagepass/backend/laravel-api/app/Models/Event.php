@@ -147,7 +147,7 @@ class Event extends Model
         ];
 
         // Newer schema field; guard for mixed migration states.
-        $optionalColumns = ['extra_hours'];
+        $optionalColumns = ['extra_hours', 'standard_hours', 'overtime_threshold_notified_at'];
         $resolved = $baseColumns;
 
         foreach ($optionalColumns as $column) {

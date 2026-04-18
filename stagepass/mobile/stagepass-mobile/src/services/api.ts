@@ -592,7 +592,7 @@ export const api = {
         pull_up_percentage: number;
       }>('/attendance/stats'),
     checkin: (eventId: number, latitude: number, longitude: number) =>
-      request<{ checkin_time: string; total_hours?: number; extra_hours?: number; day_type?: 'normal' | 'sunday' | 'holiday'; is_sunday?: boolean; is_holiday?: boolean; holiday_name?: string | null }>('/attendance/checkin', {
+      request<{ checkin_time: string; total_hours?: number; standard_hours?: number; extra_hours?: number; day_type?: 'normal' | 'sunday' | 'holiday'; is_sunday?: boolean; is_holiday?: boolean; holiday_name?: string | null }>('/attendance/checkin', {
         method: 'POST',
         body: JSON.stringify({
           event_id: eventId,
@@ -603,23 +603,23 @@ export const api = {
       }),
     /** Admin/team leader: check in a crew member on their behalf (manual check-in) */
     checkinOnBehalf: (eventId: number, userId: number, _latitude?: number, _longitude?: number) =>
-      request<{ checkin_time: string; total_hours?: number; extra_hours?: number; day_type?: 'normal' | 'sunday' | 'holiday' }>(`/events/${eventId}/attendance/manual-checkin/${userId}`, {
+      request<{ checkin_time: string; total_hours?: number; standard_hours?: number; extra_hours?: number; day_type?: 'normal' | 'sunday' | 'holiday' }>(`/events/${eventId}/attendance/manual-checkin/${userId}`, {
         method: 'POST',
       }),
     checkout: (eventId: number) =>
-      request<{ checkout_time: string; total_hours: number; extra_hours?: number; day_type?: 'normal' | 'sunday' | 'holiday'; is_sunday?: boolean; is_holiday?: boolean; holiday_name?: string | null }>('/attendance/checkout', {
+      request<{ checkout_time: string; total_hours: number; standard_hours?: number; extra_hours?: number; day_type?: 'normal' | 'sunday' | 'holiday'; is_sunday?: boolean; is_holiday?: boolean; holiday_name?: string | null }>('/attendance/checkout', {
         method: 'POST',
         body: JSON.stringify({ event_id: eventId }),
       }),
     /** Daily office check-in at configured location (e.g. 100 m radius). Backend must implement POST /attendance/office-checkin. */
     officeCheckin: (latitude: number, longitude: number) =>
-      request<{ checkin_time: string; total_hours?: number; extra_hours?: number; day_type?: 'normal' | 'sunday' | 'holiday'; is_sunday?: boolean; is_holiday?: boolean; holiday_name?: string | null }>('/attendance/office-checkin', {
+      request<{ checkin_time: string; total_hours?: number; standard_hours?: number; extra_hours?: number; day_type?: 'normal' | 'sunday' | 'holiday'; is_sunday?: boolean; is_holiday?: boolean; holiday_name?: string | null }>('/attendance/office-checkin', {
         method: 'POST',
         body: JSON.stringify({ latitude, longitude, timestamp: getLocalDateTimeWithOffset() }),
       }),
     /** Daily office check-out. Sends timestamp and optional location for audit. */
     officeCheckout: (latitude?: number, longitude?: number) =>
-      request<{ checkout_time: string; total_hours?: number; extra_hours?: number; day_type?: 'normal' | 'sunday' | 'holiday'; is_sunday?: boolean; is_holiday?: boolean; holiday_name?: string | null }>('/attendance/office-checkout', {
+      request<{ checkout_time: string; total_hours?: number; standard_hours?: number; extra_hours?: number; day_type?: 'normal' | 'sunday' | 'holiday'; is_sunday?: boolean; is_holiday?: boolean; holiday_name?: string | null }>('/attendance/office-checkout', {
         method: 'POST',
         body: JSON.stringify({
           latitude,
@@ -992,7 +992,11 @@ export interface User {
   office_checked_out_today?: boolean;
   office_checkout_time?: string;
   office_total_hours?: number | null;
+  /** Capped at 8h for a normal shift (same rules as backend). */
+  office_standard_hours?: number | null;
   office_extra_hours?: number | null;
+  /** Live office session: within_standard | in_extra_hours; after checkout: checked_out */
+  office_hours_status?: 'within_standard' | 'in_extra_hours' | 'checked_out' | null;
   office_day_type?: 'normal' | 'sunday' | 'holiday' | null;
   office_is_sunday?: boolean;
   office_is_holiday?: boolean;
@@ -1038,7 +1042,7 @@ export interface Event {
   team_leader?: { id: number; name: string };
   teamLeader?: { id: number; name: string };
   closedBy?: { id: number; name: string } | null;
-  crew?: { id: number; name: string; pivot?: { checkin_time?: string; checkout_time?: string; role_in_event?: string | null; total_hours?: number | null; extra_hours?: number | null; is_sunday?: boolean; is_holiday?: boolean; holiday_name?: string | null; is_paused?: boolean; pause_duration?: number; pause_reason?: string | null; transport_type?: 'organization' | 'cab' | 'none' | null; transport_amount?: number | null } }[];
+  crew?: { id: number; name: string; pivot?: { checkin_time?: string; checkout_time?: string; role_in_event?: string | null; total_hours?: number | null; standard_hours?: number | null; extra_hours?: number | null; hours_status?: 'not_checked_in' | 'within_standard' | 'in_extra_hours' | 'checked_out'; is_sunday?: boolean; is_holiday?: boolean; holiday_name?: string | null; is_paused?: boolean; pause_duration?: number; pause_reason?: string | null; transport_type?: 'organization' | 'cab' | 'none' | null; transport_amount?: number | null } }[];
 }
 
 export interface TimeOffRequestAttachment {

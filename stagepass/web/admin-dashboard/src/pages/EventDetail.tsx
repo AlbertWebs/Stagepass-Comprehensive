@@ -11,8 +11,31 @@ type CrewMember = User & {
     role_in_event?: string;
     checkin_time?: string | null;
     checkout_time?: string | null;
+    total_hours?: number | null;
+    standard_hours?: number | null;
+    extra_hours?: number | null;
+    hours_status?: 'not_checked_in' | 'within_standard' | 'in_extra_hours' | 'checked_out';
   };
 };
+
+function formatHours(h: number | null | undefined): string {
+  if (h == null || Number.isNaN(Number(h))) return '–';
+  const n = Number(h);
+  const mins = Math.round(n * 60);
+  const hh = Math.floor(mins / 60);
+  const mm = mins % 60;
+  return `${hh}h ${mm}m`;
+}
+
+function crewHoursStatusLabel(member: CrewMember): string {
+  const p = member.pivot;
+  if (!p?.checkin_time) return 'Pending';
+  if (p.checkout_time) return 'Checked Out';
+  if (p.hours_status === 'within_standard') return 'Within Standard Hours';
+  if (p.hours_status === 'in_extra_hours') return 'In Extra Hours';
+  if (p.hours_status === 'checked_out') return 'Checked Out';
+  return 'Active';
+}
 
 function formatDate(d: string | null | undefined): string {
   if (!d) return '–';
@@ -94,6 +117,18 @@ export default function EventDetail() {
     if (id) fetchEventPayments();
   }, [id, fetchEventPayments]);
 
+  useEffect(() => {
+    if (!id || !event?.crew?.length) return;
+    const hasOpenSession = event.crew.some((u) => {
+      const p = (u as CrewMember).pivot;
+      return Boolean(p?.checkin_time) && !p?.checkout_time;
+    });
+    if (!hasOpenSession) return;
+    const t = window.setInterval(() => {
+      api.events.get(Number(id)).then(setEvent).catch(() => {});
+    }, 30_000);
+    return () => window.clearInterval(t);
+  }, [id, event?.crew]);
 
   const isEventEnded = event?.status === 'completed' || event?.status === 'closed';
 
@@ -608,7 +643,12 @@ export default function EventDetail() {
                   <tr>
                     <th>Name</th>
                     <th>Role</th>
-                    <th>Status</th>
+                    <th>Check-in</th>
+                    <th>Check-out</th>
+                    <th>Total</th>
+                    <th>Standard</th>
+                    <th>Extra</th>
+                    <th>Work status</th>
                     <th className="w-36 text-right">Action</th>
                   </tr>
                 </thead>
@@ -620,11 +660,7 @@ export default function EventDetail() {
                     const arrived = !!checkinTime;
                     const checkedOut = !!checkoutTime;
                     const isMarking = markingArrivalId === u.id;
-                    const statusLabel = checkedOut
-                      ? 'Checked Out'
-                      : arrived
-                        ? 'Checked In'
-                        : 'Pending';
+                    const workLabel = crewHoursStatusLabel(member);
                     return (
                       <tr key={u.id} className="border-b border-slate-100 transition hover:bg-slate-50/60">
                         <td className="px-6 py-4">
@@ -640,23 +676,42 @@ export default function EventDetail() {
                             <span className="text-slate-400">–</span>
                           )}
                         </td>
-                        <td className="px-6 py-4">
-                          {checkedOut ? (
-                            <span className="inline-flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-600">
-                              <span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden />
-                              Checked Out {formatTime(checkoutTime)}
-                            </span>
-                          ) : arrived ? (
-                            <span className="inline-flex flex-wrap items-center gap-1.5 text-sm font-medium text-green-700">
-                              <span className="h-2 w-2 rounded-full bg-green-500" aria-hidden />
-                              {statusLabel} {formatTime(checkinTime)}
+                        <td className="px-6 py-4 text-sm text-slate-700">
+                          {checkinTime ? (
+                            <span className="inline-flex flex-wrap items-center gap-1.5">
+                              {formatTime(checkinTime)}
                               {isLateArrival(checkinTime) && (
                                 <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">Late</span>
                               )}
                             </span>
                           ) : (
-                            <span className="text-slate-500">Pending</span>
+                            '–'
                           )}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-700">{checkoutTime ? formatTime(checkoutTime) : '–'}</td>
+                        <td className="px-6 py-4 text-sm text-slate-700">{formatHours(member.pivot?.total_hours)}</td>
+                        <td className="px-6 py-4 text-sm text-slate-700">{formatHours(member.pivot?.standard_hours)}</td>
+                        <td className="px-6 py-4 text-sm font-medium text-amber-800">{formatHours(member.pivot?.extra_hours)}</td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={`inline-flex items-center gap-1.5 text-sm font-medium ${
+                              checkedOut
+                                ? 'text-slate-600'
+                                : workLabel.includes('Extra')
+                                  ? 'text-amber-800'
+                                  : arrived
+                                    ? 'text-green-700'
+                                    : 'text-slate-500'
+                            }`}
+                          >
+                            <span
+                              className={`h-2 w-2 rounded-full ${
+                                checkedOut ? 'bg-slate-400' : workLabel.includes('Extra') ? 'bg-amber-500' : arrived ? 'bg-green-500' : 'bg-slate-300'
+                              }`}
+                              aria-hidden
+                            />
+                            {workLabel}
+                          </span>
                         </td>
                         <td className="px-6 py-4 text-right">
                           {!arrived && (

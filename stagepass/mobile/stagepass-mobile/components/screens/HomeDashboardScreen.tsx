@@ -51,6 +51,7 @@ import {
   type HomepageSectionKey,
 } from '~/services/api';
 import { isWithinGeofence } from '~/utils/geofence';
+import { computeWallClockShiftHours } from '~/utils/shiftHours';
 import { PREF_HOMEPAGE_PREFERENCES_LOCAL, PREF_SHOW_WELCOME_STATS_CARDS } from '~/constants/preferences';
 
 const TAB_BAR_HEIGHT = 58;
@@ -225,6 +226,8 @@ export function HomeDashboardScreen({
   }, [dispatch]);
   const displayName = userName ? userName.split(/\s+/)[0] : '';
   const currentTime = useCurrentTime(30_000);
+  /** 1s tick for live office shift hours display */
+  const shiftClock = useCurrentTime(1_000);
   const dayPeriod = getDayPeriod(currentTime);
   const timeLabel = currentTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   const welcomePatternTheme = useMemo(() => {
@@ -452,12 +455,54 @@ export function HomeDashboardScreen({
     : '';
   const officeExtraHours = Number(user?.office_extra_hours ?? 0);
   const officeTotalHours = Number(user?.office_total_hours ?? 0);
+  const officeStandardHoursStored = Number(user?.office_standard_hours ?? 0);
   const officeDayTypeLabel = user?.office_day_type === 'holiday'
     ? (user?.office_holiday_name || 'Holiday')
     : user?.office_day_type === 'sunday'
       ? 'Sunday'
       : 'Normal day';
   const officeExtraAlertShownRef = useRef(false);
+
+  const officeShiftLive = useMemo(() => {
+    const checkinIso = user?.office_checkin_time;
+    if (!checkinIso || !officeCheckedInToday) return null;
+    if (officeCheckedOutToday) {
+      return {
+        totalHours: officeTotalHours,
+        standardHours: officeStandardHoursStored,
+        extraHours: officeExtraHours,
+        statusLine: 'Session ended',
+        inExtra: officeExtraHours > 0,
+      };
+    }
+    const live = computeWallClockShiftHours(checkinIso, shiftClock.getTime());
+    return {
+      totalHours: live.totalHours,
+      standardHours: live.standardHours,
+      extraHours: live.extraHours,
+      statusLine: live.status === 'within_standard' ? 'Within Standard Hours' : 'Extra Hours Running',
+      inExtra: live.extraHours > 0,
+    };
+  }, [
+    user?.office_checkin_time,
+    officeCheckedInToday,
+    officeCheckedOutToday,
+    officeTotalHours,
+    officeStandardHoursStored,
+    officeExtraHours,
+    shiftClock,
+  ]);
+
+  useEffect(() => {
+    if (!showCheckoutCta || officeCheckedOutToday) return;
+    const id = setInterval(() => {
+      api.auth
+        .me()
+        .then((me) => dispatch(setUser(me)))
+        .catch(() => {});
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [showCheckoutCta, officeCheckedOutToday, dispatch]);
 
   const isWithinOfficeCheckinWindow = ((): boolean => {
     const [startH, startM] = officeCheckinWindow.start.split(':').map(Number);
@@ -739,11 +784,15 @@ export function HomeDashboardScreen({
       officeExtraAlertShownRef.current = false;
       return;
     }
-    if (!officeExtraAlertShownRef.current && officeExtraHours > 0) {
+    const extra = officeShiftLive?.extraHours ?? 0;
+    if (!officeExtraAlertShownRef.current && extra > 1 / 60) {
       officeExtraAlertShownRef.current = true;
-      Alert.alert('Extra hours', 'Your extra hours have started.');
+      Alert.alert(
+        'Extra hours',
+        'Extra hours are starting now. Your standard 8 working hours have been completed.'
+      );
     }
-  }, [officeCheckedInToday, officeCheckedOutToday, officeExtraHours]);
+  }, [officeCheckedInToday, officeCheckedOutToday, officeShiftLive]);
 
   useEffect(() => {
     if (!hasEventCheckedOut) setDismissedCheckedOutCard(false);
@@ -1115,6 +1164,53 @@ export function HomeDashboardScreen({
                 </View>
               )}
 
+              {(role === 'crew' || role === 'team_leader' || role === 'admin') &&
+                !hasApprovedTimeOffToday &&
+                isOfficeOpenToday &&
+                showCheckoutCta &&
+                officeShiftLive &&
+                !officeCheckedOutToday && (
+                  <View
+                    style={[
+                      styles.dailyCheckInSecondary,
+                      { backgroundColor: cardBg, borderColor: homeBorderColor, marginBottom: Spacing.sm },
+                    ]}
+                  >
+                    <View style={{ paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm }}>
+                      <ThemedText style={{ fontWeight: '600', fontSize: Typography.body, marginBottom: 6 }}>
+                        Extra hours tracking
+                      </ThemedText>
+                      <ThemedText style={{ color: colors.textSecondary, fontSize: 13 }}>
+                        Check-in {officeCheckinTimeStr || '—'}
+                      </ThemedText>
+                      <ThemedText style={{ color: colors.text, marginTop: 8 }}>
+                        Working duration: {formatHoursLabel(officeShiftLive.totalHours)}
+                      </ThemedText>
+                      <ThemedText style={{ color: colors.text, marginTop: 4 }}>
+                        Standard (0–8h): {formatHoursLabel(officeShiftLive.standardHours)}
+                      </ThemedText>
+                      <ThemedText
+                        style={{
+                          color: officeShiftLive.inExtra ? '#f97316' : colors.textSecondary,
+                          marginTop: 4,
+                        }}
+                      >
+                        Extra: {formatHoursLabel(officeShiftLive.extraHours)}
+                      </ThemedText>
+                      <ThemedText
+                        style={{
+                          marginTop: 10,
+                          fontSize: 13,
+                          fontWeight: '600',
+                          color: officeShiftLive.inExtra ? '#f97316' : StatusColors.checkedIn,
+                        }}
+                      >
+                        {officeShiftLive.statusLine}
+                      </ThemedText>
+                    </View>
+                  </View>
+                )}
+
               {/* Daily check-in (office): done or checkout row when event today */}
               {(role === 'crew' || role === 'team_leader' || role === 'admin') && !hasApprovedTimeOffToday && isOfficeOpenToday && (officeCheckedOutToday || showCheckoutCta) && (
                 <View style={[styles.dailyCheckInSecondary, { backgroundColor: cardBg, borderColor: homeBorderColor }]}>
@@ -1125,7 +1221,8 @@ export function HomeDashboardScreen({
                         <ThemedText style={[styles.dailyCheckInSecondaryLabel, { color: colors.textSecondary }]}>Daily check-in done</ThemedText>
                         <ThemedText style={[styles.dailyCheckInSecondaryTime, { color: colors.textSecondary }]}>{officeCheckinTimeStr && officeCheckoutTimeStr ? `${officeCheckinTimeStr} – ${officeCheckoutTimeStr}` : 'Done'}</ThemedText>
                         <ThemedText style={[styles.dailyCheckInSecondaryTime, { color: officeExtraHours > 0 ? '#f97316' : colors.textSecondary }]}>
-                          Worked {formatHoursLabel(officeTotalHours)} · Extra {formatHoursLabel(officeExtraHours)} · {officeDayTypeLabel}
+                          Worked {formatHoursLabel(officeTotalHours)} · Standard {formatHoursLabel(officeStandardHoursStored)} · Extra{' '}
+                          {formatHoursLabel(officeExtraHours)} · {officeDayTypeLabel}
                         </ThemedText>
                       </View>
                     </View>

@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { HomeHeader } from '@/components/HomeHeader';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   SlideInRight,
@@ -157,13 +157,14 @@ export default function EventDetailScreen() {
   const sessionStats = useMemo(() => {
     void clockTick;
     if (!checkinTime) {
-      return { totalHours: 0, extraHours: 0, dayType: 'normal' as const };
+      return { totalHours: 0, standardHours: 0, extraHours: 0, dayType: 'normal' as const };
     }
 
     const dayType = pivotData.is_holiday ? 'holiday' : (pivotData.is_sunday ? 'sunday' : 'normal');
     if (checkoutTime) {
       return {
         totalHours: Number(pivotData.total_hours ?? 0),
+        standardHours: Number((pivotData as { standard_hours?: number }).standard_hours ?? Math.min(8, Number(pivotData.total_hours ?? 0))),
         extraHours: Number(pivotData.extra_hours ?? 0),
         dayType,
       };
@@ -173,15 +174,27 @@ export default function EventDetailScreen() {
     const now = Date.now();
     const minutes = Math.max(0, Math.floor((now - start) / 60000));
     const totalHours = minutes / 60;
-    const extraHours = dayType === 'normal' ? Math.max(0, (minutes - 480) / 60) : totalHours;
-    return { totalHours, extraHours, dayType };
-  }, [checkinTime, checkoutTime, clockTick, pivotData.total_hours, pivotData.extra_hours, pivotData.is_holiday, pivotData.is_sunday]);
+    const standardHours = Math.min(8, totalHours);
+    const extraHours = Math.max(0, totalHours - 8);
+    return { totalHours, standardHours, extraHours, dayType };
+  }, [
+    checkinTime,
+    checkoutTime,
+    clockTick,
+    pivotData.total_hours,
+    pivotData.extra_hours,
+    pivotData.is_holiday,
+    pivotData.is_sunday,
+  ]);
 
   useEffect(() => {
     if (extraNotified || checkoutTime || !checkinTime) return;
     if (sessionStats.extraHours > 0) {
       setExtraNotified(true);
-      Alert.alert('Extra hours', 'Your extra hours have started.');
+      Alert.alert(
+        'Extra hours',
+        'Extra hours are starting now. Your standard 8 working hours have been completed.'
+      );
     }
   }, [checkinTime, checkoutTime, sessionStats.extraHours, extraNotified]);
 
@@ -395,6 +408,13 @@ export default function EventDetailScreen() {
             <ThemedText style={[styles.sectionTitle, { color: accent }]}>Selected Venue</ThemedText>
           </View>
           <View style={[styles.attendanceCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+            <View
+              style={[
+                styles.attendanceMapOuter,
+                { backgroundColor: cardSurface },
+                isDark ? styles.attendanceMapOuterDark : styles.attendanceMapOuterLight,
+              ]}
+            >
             <View style={styles.attendanceMapCard}>
               {attendanceMapUrl ? (
                 <Image
@@ -464,12 +484,32 @@ export default function EventDetailScreen() {
                 </View>
               </View>
             </View>
+            </View>
             {checkinTime && !checkoutTime ? (
               <View style={[styles.liveHoursCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
               <ThemedText style={[styles.liveHoursTitle, { color: colors.text }]}>Active session</ThemedText>
-              <ThemedText style={[styles.liveHoursValue, { color: colors.textSecondary }]}>Time worked: {formatHoursLabel(sessionStats.totalHours)}</ThemedText>
+              <ThemedText style={[styles.liveHoursValue, { color: colors.textSecondary }]}>
+                Check-in:{' '}
+                {checkinTime
+                  ? new Date(checkinTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+                  : '—'}
+              </ThemedText>
+              <ThemedText style={[styles.liveHoursValue, { color: colors.textSecondary }]}>
+                Duration: {formatHoursLabel(sessionStats.totalHours)}
+              </ThemedText>
+              <ThemedText style={[styles.liveHoursValue, { color: colors.textSecondary }]}>
+                Standard (0–8h): {formatHoursLabel(sessionStats.standardHours)}
+              </ThemedText>
               <ThemedText style={[styles.liveHoursValue, { color: sessionStats.extraHours > 0 ? '#f97316' : colors.textSecondary }]}>
                 Extra hours: {formatHoursLabel(sessionStats.extraHours)}
+              </ThemedText>
+              <ThemedText
+                style={[
+                  styles.liveHoursValue,
+                  { fontWeight: '600', color: sessionStats.extraHours > 0 ? '#f97316' : StatusColors.checkedIn },
+                ]}
+              >
+                {sessionStats.extraHours > 0 ? 'Extra Hours Running' : 'Within Standard Hours'}
               </ThemedText>
             </View>
             ) : null}
@@ -770,8 +810,32 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 0,
     marginBottom: Spacing.lg,
-    overflow: 'hidden',
+    overflow: 'visible',
   },
+  attendanceMapOuter: {
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+  },
+  attendanceMapOuterLight: Platform.select({
+    ios: {
+      shadowColor: '#0f172a',
+      shadowOffset: { width: 0, height: 12 },
+      shadowOpacity: 0.13,
+      shadowRadius: 24,
+    },
+    android: { elevation: 9 },
+    default: {},
+  }),
+  attendanceMapOuterDark: Platform.select({
+    ios: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.5,
+      shadowRadius: 20,
+    },
+    android: { elevation: 11 },
+    default: {},
+  }),
   attendanceMapCard: {
     height: 320,
     borderRadius: 22,
