@@ -300,6 +300,7 @@ export function HomeDashboardScreen({
   // Default to true when unknown so crew see office check-in unless backend explicitly marks them temporary
   const isPermanentEmployee = user?.is_permanent_employee !== false;
   const dayOfWeek = currentTime.getDay();
+  /** Saturdays closed; Sundays use a friendly “Chill day” card (office check-in not required). */
   const isOfficeOpenToday = dayOfWeek !== 0 && dayOfWeek !== 6;
 
   const applyOfficeCheckinConfig = useCallback((s: Awaited<ReturnType<typeof api.settings.getOfficeCheckinConfig>>) => {
@@ -530,6 +531,10 @@ export function HomeDashboardScreen({
   /** Office check-in only: confirm user has entered the office (geofence from admin settings). */
   const handleOfficeCheckIn = useCallback(async () => {
     if (checkInLoading) return;
+    if (new Date().getDay() === 0) {
+      Alert.alert('Chill day', 'Office check-in isn’t required on Sundays — enjoy your day off.');
+      return;
+    }
     const nowHour = new Date().getHours();
     if (nowHour < OFFICE_CHECKIN_EARLIEST_HOUR) {
       Alert.alert('Too early', 'Office check-in starts at 6:00 AM.');
@@ -1251,8 +1256,17 @@ export function HomeDashboardScreen({
                 <Ionicons name="calendar-outline" size={Icons.xl} color={colors.textSecondary} />
                 <ThemedText style={[styles.dailyCheckInStatusText, { color: colors.textSecondary }]}>You're on time off today</ThemedText>
               </View>
+            ) : dayOfWeek === 0 ? (
+              /* Sunday: office check-in not required */
+              <View style={[styles.dailyCheckInStatus, { backgroundColor: cardBg, borderColor: homeBorderColor }]}>
+                <Ionicons name="sunny-outline" size={Icons.xl} color={themeYellow} />
+                <ThemedText style={[styles.dailyCheckInStatusText, { color: colors.text }]}>Chill day</ThemedText>
+                <ThemedText style={[styles.dailyCheckInTime, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm }]}>
+                  Your day to relax — office check-in isn’t required on Sundays.
+                </ThemedText>
+              </View>
             ) : !isOfficeOpenToday ? (
-              /* Weekend: office closed, no check-in button – compact to match other inline items */
+              /* Saturday: office closed */
               <View style={[styles.dailyCheckInStatus, styles.dailyCheckInStatusCompact, { backgroundColor: cardBg, borderColor: homeBorderColor }]}>
                 <Ionicons name="business-outline" size={Icons.standard} color={colors.textSecondary} />
                 <ThemedText style={[styles.dailyCheckInStatusTextCompact, { color: colors.textSecondary }]}>Office closed (weekend)</ThemedText>

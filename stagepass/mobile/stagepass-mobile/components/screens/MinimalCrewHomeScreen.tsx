@@ -1,8 +1,18 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
+import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Easing, Platform, Pressable, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Easing,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { HomeHeader } from '@/components/HomeHeader';
 import { ThemedText } from '@/components/themed-text';
@@ -12,6 +22,7 @@ import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { api, type User as ApiUser } from '~/services/api';
 import { setUser } from '~/store/authSlice';
 import { isWithinGeofence } from '~/utils/geofence';
+import { NAV_PRESSED_OPACITY } from '@/src/utils/navigationPress';
 
 type Props = {
   onRefresh?: () => Promise<void>;
@@ -50,6 +61,11 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
   const officeCheckedInToday = user?.office_checked_in_today ?? false;
   const officeCheckedOutToday = user?.office_checked_out_today ?? false;
   const canCheckout = officeCheckedInToday && !officeCheckedOutToday;
+  const dayOfWeek = new Date().getDay();
+  /** Sunday: office check-in not required — show “Chill day” instead of check-in CTA. */
+  const isChillSunday = dayOfWeek === 0 && !officeCheckedInToday && !officeCheckedOutToday;
+  const mainCtaDisabled = loading || officeCheckedOutToday;
+  const showRipples = !isChillSunday && !mainCtaDisabled;
   const mapCenter = useMemo(
     () =>
       officeConfig
@@ -75,7 +91,6 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
   }, [user?.name]);
 
   const timeGreeting = getTimeGreeting();
-  const welcomeLine = welcomeFirstName ? `${timeGreeting}, ${welcomeFirstName}` : timeGreeting;
 
   /** Light mode: softer surfaces and depth without changing layout structure. */
   const lightElevated = !isDark
@@ -101,17 +116,19 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
   }, [mapCenter?.latitude, mapCenter?.longitude]);
 
   const buttonLabel = useMemo(() => {
+    if (isChillSunday) return 'Chill day';
     if (loading) return canCheckout ? 'Checking out...' : 'Checking in...';
     if (officeCheckedOutToday) return 'Done for today';
     if (canCheckout) return 'Office checkout';
     return 'Check in office';
-  }, [loading, canCheckout, officeCheckedOutToday]);
+  }, [loading, canCheckout, officeCheckedOutToday, isChillSunday]);
 
   const subLabel = useMemo(() => {
+    if (isChillSunday) return 'Your day to relax — office check-in isn’t required on Sundays.';
     if (officeCheckedOutToday) return 'See you tomorrow';
     if (canCheckout) return 'Tap to end office shift';
     return 'Tap to start shift';
-  }, [officeCheckedOutToday, canCheckout]);
+  }, [officeCheckedOutToday, canCheckout, isChillSunday]);
 
   const loadConfig = useCallback(async () => {
     try {
@@ -141,6 +158,11 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
   }, [loadConfig]);
 
   useEffect(() => {
+    if (!showRipples) {
+      rippleA.setValue(0);
+      rippleB.setValue(0);
+      return;
+    }
     const runRipple = (value: Animated.Value, delay = 0) =>
       Animated.loop(
         Animated.sequence([
@@ -163,7 +185,12 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
       a.stop();
       b.stop();
     };
-  }, [rippleA, rippleB]);
+  }, [rippleA, rippleB, showRipples]);
+
+  const triggerActionHaptic = useCallback(() => {
+    if (Platform.OS === 'web') return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  }, []);
 
   const refreshUser = useCallback(async () => {
     try {
@@ -177,6 +204,10 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
 
   const handleOfficeCheckIn = useCallback(async () => {
     if (loading || officeCheckedOutToday) return;
+    if (new Date().getDay() === 0) {
+      Alert.alert('Chill day', 'Office check-in isn’t required on Sundays — enjoy your day off.');
+      return;
+    }
     setLoading(true);
     try {
       let location = userLocation;
@@ -234,6 +265,12 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
     ]);
   }, [loading, canCheckout, userLocation, refreshUser]);
 
+  const onMainCtaPress = useCallback(() => {
+    if (mainCtaDisabled) return;
+    if (canCheckout) handleOfficeCheckOut();
+    else handleOfficeCheckIn();
+  }, [mainCtaDisabled, canCheckout, handleOfficeCheckOut, handleOfficeCheckIn]);
+
   return (
     <ThemedView style={styles.container}>
       <HomeHeader title="Home" notificationCount={0} />
@@ -249,7 +286,12 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
             >
               Welcome back
             </ThemedText>
-            <ThemedText style={[styles.welcomeTitle, { color: colors.text }]}>{welcomeLine}</ThemedText>
+            <View style={styles.welcomeTitleWrap}>
+              <ThemedText style={[styles.welcomeGreeting, { color: colors.text }]}>{timeGreeting}</ThemedText>
+              {welcomeFirstName ? (
+                <ThemedText style={[styles.welcomeName, { color: colors.text }]}>, {welcomeFirstName}</ThemedText>
+              ) : null}
+            </View>
           </View>
         </View>
 
@@ -282,48 +324,85 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
           <View style={[styles.mapOverlayTint, { backgroundColor: mapOverlayTintBg }]} />
           <View style={[styles.gridOverlay, { opacity: mapGridOpacity, borderColor: mapGridBorder }]} />
           <View style={styles.centerActionWrap}>
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                styles.rippleRing,
-                {
-                  borderColor: themeYellow + '99',
-                  opacity: rippleA.interpolate({ inputRange: [0, 1], outputRange: [0.65, 0] }),
-                  transform: [{ scale: rippleA.interpolate({ inputRange: [0, 1], outputRange: [1, 1.9] }) }],
-                },
-              ]}
-            />
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                styles.rippleRing,
-                {
-                  borderColor: themeYellow + '66',
-                  opacity: rippleB.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
-                  transform: [{ scale: rippleB.interpolate({ inputRange: [0, 1], outputRange: [1, 1.9] }) }],
-                },
-              ]}
-            />
-            <Pressable
-              onPress={canCheckout ? handleOfficeCheckOut : handleOfficeCheckIn}
-              disabled={loading || officeCheckedOutToday}
-              style={({ pressed }) => [
-                styles.centerCta,
-                !isDark && styles.centerCtaLight,
-                {
-                  backgroundColor: officeCheckedOutToday
-                    ? isDark
-                      ? '#334155'
-                      : '#64748B'
-                    : canCheckout
-                      ? themeBlue
-                      : themeYellow,
-                  opacity: pressed ? 0.86 : 1,
-                },
-              ]}
-            >
-              <Ionicons name={canCheckout ? 'exit-outline' : 'location'} size={22} color={officeCheckedOutToday || canCheckout ? '#fff' : themeBlue} />
-            </Pressable>
+            {!isChillSunday ? (
+              <>
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.rippleRing,
+                    {
+                      borderColor: themeYellow + '99',
+                      opacity: rippleA.interpolate({ inputRange: [0, 1], outputRange: [0.65, 0] }),
+                      transform: [{ scale: rippleA.interpolate({ inputRange: [0, 1], outputRange: [1, 1.9] }) }],
+                    },
+                  ]}
+                />
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.rippleRing,
+                    {
+                      borderColor: themeYellow + '66',
+                      opacity: rippleB.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
+                      transform: [{ scale: rippleB.interpolate({ inputRange: [0, 1], outputRange: [1, 1.9] }) }],
+                    },
+                  ]}
+                />
+                <Pressable
+                  onPress={onMainCtaPress}
+                  onPressIn={() => {
+                    if (!mainCtaDisabled) triggerActionHaptic();
+                  }}
+                  disabled={mainCtaDisabled}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    officeCheckedOutToday
+                      ? 'Office check-in finished for today'
+                      : canCheckout
+                        ? 'Check out of office'
+                        : 'Check in at office'
+                  }
+                  accessibilityState={{ disabled: mainCtaDisabled, busy: loading }}
+                  style={({ pressed }) => [
+                    styles.centerCta,
+                    !isDark && styles.centerCtaLight,
+                    {
+                      backgroundColor: officeCheckedOutToday
+                        ? isDark
+                          ? '#334155'
+                          : '#64748B'
+                        : canCheckout
+                          ? themeBlue
+                          : themeYellow,
+                      opacity: mainCtaDisabled ? (loading ? 0.92 : 1) : pressed ? NAV_PRESSED_OPACITY : 1,
+                    },
+                  ]}
+                >
+                  {loading ? (
+                    <ActivityIndicator
+                      size="small"
+                      color={canCheckout || officeCheckedOutToday ? '#fff' : themeBlue}
+                    />
+                  ) : (
+                    <Ionicons
+                      name={canCheckout ? 'exit-outline' : 'location'}
+                      size={22}
+                      color={officeCheckedOutToday || canCheckout ? '#fff' : themeBlue}
+                    />
+                  )}
+                </Pressable>
+              </>
+            ) : (
+              <View
+                style={[
+                  styles.centerCta,
+                  !isDark && styles.centerCtaLight,
+                  { backgroundColor: isDark ? themeYellow + '22' : themeYellow + '35', borderWidth: 1, borderColor: themeYellow + '55' },
+                ]}
+              >
+                <Ionicons name="sunny-outline" size={26} color={themeYellow} />
+              </View>
+            )}
           </View>
           </View>
         </View>
@@ -338,23 +417,31 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
         >
           <View style={styles.panelTopRow}>
             <View>
-              <ThemedText style={[styles.panelEyebrow, { color: colors.textSecondary }]}>OFFICE SHIFT</ThemedText>
-              <ThemedText style={[styles.panelTitle, { color: colors.text }]}>Check-in status</ThemedText>
+              <ThemedText style={[styles.panelEyebrow, { color: colors.textSecondary }]}>
+                {isChillSunday ? 'SUNDAY' : 'OFFICE SHIFT'}
+              </ThemedText>
+              <ThemedText style={[styles.panelTitle, { color: colors.text }]}>
+                {isChillSunday ? 'Chill day' : 'Check-in status'}
+              </ThemedText>
             </View>
             <View
               style={[
                 styles.stateChip,
                 {
-                  backgroundColor: officeCheckedOutToday
-                    ? StatusColors.checkedIn + '20'
-                    : canCheckout
-                      ? themeBlue + '20'
-                      : themeYellow + '22',
-                  borderColor: officeCheckedOutToday
-                    ? StatusColors.checkedIn + '55'
-                    : canCheckout
-                      ? themeBlue + '55'
-                      : themeYellow + '66',
+                  backgroundColor: isChillSunday
+                    ? StatusColors.checkedIn + '18'
+                    : officeCheckedOutToday
+                      ? StatusColors.checkedIn + '20'
+                      : canCheckout
+                        ? themeBlue + '20'
+                        : themeYellow + '22',
+                  borderColor: isChillSunday
+                    ? StatusColors.checkedIn + '44'
+                    : officeCheckedOutToday
+                      ? StatusColors.checkedIn + '55'
+                      : canCheckout
+                        ? themeBlue + '55'
+                        : themeYellow + '66',
                 },
               ]}
             >
@@ -362,71 +449,116 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                 style={[
                   styles.stateChipText,
                   {
-                    color: officeCheckedOutToday
+                    color: isChillSunday
                       ? StatusColors.checkedIn
-                      : canCheckout
-                        ? themeBlue
-                        : themeYellow,
+                      : officeCheckedOutToday
+                        ? StatusColors.checkedIn
+                        : canCheckout
+                          ? themeBlue
+                          : themeYellow,
                   },
                 ]}
               >
-                {officeCheckedOutToday ? 'Done' : canCheckout ? 'Checked in' : 'Pending'}
+                {isChillSunday ? 'Relax' : officeCheckedOutToday ? 'Done' : canCheckout ? 'Checked in' : 'Pending'}
               </ThemedText>
             </View>
           </View>
 
           <ThemedText style={[styles.panelSub, { color: colors.textSecondary }]}>{subLabel}</ThemedText>
 
-          <View
-            style={[
+          <Pressable
+            onPress={onMainCtaPress}
+            onPressIn={() => {
+              if (!isChillSunday && !mainCtaDisabled) triggerActionHaptic();
+            }}
+            disabled={isChillSunday || mainCtaDisabled}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isChillSunday
+                ? 'Sunday — office check-in not required'
+                : officeCheckedOutToday
+                  ? 'Finished for today'
+                  : canCheckout
+                    ? 'Check out of office'
+                    : 'Check in at office'
+            }
+            accessibilityState={{ disabled: isChillSunday || mainCtaDisabled, busy: loading }}
+            style={({ pressed }) => [
               styles.primaryActionCard,
               {
-                backgroundColor: officeCheckedOutToday
+                backgroundColor: isChillSunday
                   ? isDark
-                    ? '#334155'
-                    : '#F1F5F9'
-                  : canCheckout
+                    ? StatusColors.checkedIn + '12'
+                    : StatusColors.checkedIn + '14'
+                  : officeCheckedOutToday
                     ? isDark
-                      ? themeBlue + '14'
-                      : themeBlue + '10'
-                    : isDark
-                      ? themeYellow + '16'
-                      : themeYellow + '22',
-                borderColor: officeCheckedOutToday
-                  ? isDark
-                    ? '#475569'
-                    : '#CBD5E1'
-                  : canCheckout
-                    ? themeBlue + (isDark ? '55' : '40')
-                    : themeYellow + (isDark ? '66' : '55'),
+                      ? '#334155'
+                      : '#F1F5F9'
+                    : canCheckout
+                      ? isDark
+                        ? themeBlue + '14'
+                        : themeBlue + '10'
+                      : isDark
+                        ? themeYellow + '16'
+                        : themeYellow + '22',
+                borderColor: isChillSunday
+                  ? StatusColors.checkedIn + '44'
+                  : officeCheckedOutToday
+                    ? isDark
+                      ? '#475569'
+                      : '#CBD5E1'
+                    : canCheckout
+                      ? themeBlue + (isDark ? '55' : '40')
+                      : themeYellow + (isDark ? '66' : '55'),
+                opacity:
+                  pressed && !isChillSunday && !mainCtaDisabled ? NAV_PRESSED_OPACITY : 1,
               },
             ]}
           >
-            <Ionicons
-              name={officeCheckedOutToday ? 'checkmark-done-circle' : canCheckout ? 'exit-outline' : 'location'}
-              size={18}
-              color={
-                officeCheckedOutToday && isDark
-                  ? '#e2e8f0'
-                  : officeCheckedOutToday
-                    ? colors.textSecondary
-                    : canCheckout
-                      ? themeBlue
-                      : themeYellow
-              }
-            />
+            {loading && !isChillSunday ? (
+              <ActivityIndicator
+                size="small"
+                color={canCheckout ? '#fff' : officeCheckedOutToday ? colors.textSecondary : themeBlue}
+              />
+            ) : (
+              <Ionicons
+                name={isChillSunday ? 'cafe-outline' : officeCheckedOutToday ? 'checkmark-done-circle' : canCheckout ? 'exit-outline' : 'location'}
+                size={18}
+                color={
+                  isChillSunday
+                    ? StatusColors.checkedIn
+                    : officeCheckedOutToday && isDark
+                      ? '#e2e8f0'
+                      : officeCheckedOutToday
+                        ? colors.textSecondary
+                        : canCheckout
+                          ? themeBlue
+                          : themeYellow
+                }
+              />
+            )}
             <ThemedText
               style={[
                 styles.primaryActionText,
                 {
+                  flex: 1,
                   color:
-                    officeCheckedOutToday && isDark ? '#e2e8f0' : officeCheckedOutToday ? colors.textSecondary : colors.text,
+                    isChillSunday
+                      ? colors.text
+                      : officeCheckedOutToday && isDark
+                        ? '#e2e8f0'
+                        : officeCheckedOutToday
+                          ? colors.textSecondary
+                          : colors.text,
                 },
               ]}
             >
               {buttonLabel}
             </ThemedText>
-          </View>
+            {!isChillSunday && !mainCtaDisabled ? (
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+            ) : null}
+          </Pressable>
 
           {(officeCheckedInToday || officeCheckedOutToday) ? (
             <View style={styles.statusRow}>
@@ -451,8 +583,8 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl,
-    gap: Spacing.lg,
+    paddingTop: Spacing.lg,
+    gap: Spacing.lg + 2,
   },
   welcomeBlock: {
     flexDirection: 'row',
@@ -471,16 +603,29 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   welcomeEyebrow: {
-    fontSize: 11,
-    letterSpacing: 0.85,
+    fontSize: 10,
+    letterSpacing: 0.75,
     fontWeight: '700',
     textTransform: 'uppercase',
-    marginBottom: 4,
+    marginBottom: 3,
   },
-  welcomeTitle: {
-    fontSize: 24,
+  /** Slightly smaller than previous single 24px line; greeting a touch lighter than name. */
+  welcomeTitleWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+  },
+  welcomeGreeting: {
+    fontSize: 18,
+    fontWeight: '600',
+    letterSpacing: -0.22,
+    lineHeight: 24,
+  },
+  welcomeName: {
+    fontSize: 19,
     fontWeight: '700',
-    letterSpacing: -0.35,
+    letterSpacing: -0.28,
+    lineHeight: 24,
   },
   mapCardOuter: {
     borderRadius: 22,
@@ -570,7 +715,8 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     padding: Spacing.lg,
-    gap: Spacing.sm,
+    paddingTop: Spacing.lg + 2,
+    gap: Spacing.md,
   },
   panelLight: {
     paddingVertical: Spacing.lg + 2,
@@ -603,21 +749,24 @@ const styles = StyleSheet.create({
   },
   panelSub: {
     fontSize: 14,
-    marginTop: 2,
+    lineHeight: 22,
+    marginTop: 0,
   },
   primaryActionCard: {
-    marginTop: 4,
-    borderRadius: 12,
+    marginTop: 2,
+    borderRadius: 14,
     borderWidth: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
   primaryActionText: {
     fontSize: 14,
     fontWeight: '700',
+    letterSpacing: -0.15,
   },
   statusRow: {
     flexDirection: 'row',

@@ -2,11 +2,13 @@
  * Admin: manage event operations – edit, crew, end event, view details.
  * Vibrant layout with theme accents.
  */
+import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
+  BackHandler,
   Modal,
   Pressable,
   ScrollView,
@@ -25,6 +27,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { useAppRole } from '~/hooks/useAppRole';
 import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 
 function formatEventDate(dateStr: string | undefined): string {
@@ -70,6 +73,7 @@ export default function AdminEventOperationsScreen() {
   }>();
   const router = useRouter();
   const handleNav = useNavigationPress();
+  const role = useAppRole();
   const { colors, isDark } = useStagePassTheme();
   const opsBorder = isDark ? themeYellow + '55' : colors.border;
   const opsOutlineBorder = isDark ? themeYellow : themeBlue;
@@ -90,6 +94,32 @@ export default function AdminEventOperationsScreen() {
   const reportReady = report_ready === '1';
   const reportConfirmedBy = (report_confirmed_by ?? '').trim();
   const reportSignature = (report_signature ?? '').trim();
+
+  /** Prefer stack pop; otherwise My Events for crew/TL, admin Projects for other roles (never bare `/(tabs)` → home). */
+  const navigateBackFromOperations = useCallback(() => {
+    handleNav(() => {
+      if (router.canGoBack()) {
+        router.back();
+        return;
+      }
+      const myEventsUsers = role === 'crew' || role === 'team_leader';
+      if (myEventsUsers) {
+        router.replace('/(tabs)/events');
+      } else {
+        router.replace('/(tabs)/admin/events');
+      }
+    });
+  }, [handleNav, router, role]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        navigateBackFromOperations();
+        return true;
+      });
+      return () => sub.remove();
+    }, [navigateBackFromOperations])
+  );
 
   const loadEvent = useCallback(async () => {
     if (!eventId) return;
@@ -172,7 +202,7 @@ export default function AdminEventOperationsScreen() {
   if (loading || !event) {
     return (
       <ThemedView style={styles.container}>
-        <AppHeader title="Operations" />
+        <AppHeader title="Operations" showBack onBack={navigateBackFromOperations} />
         <View style={styles.centered}>
           <ThemedText style={{ color: colors.textSecondary }}>Loading…</ThemedText>
         </View>
@@ -184,17 +214,19 @@ export default function AdminEventOperationsScreen() {
 
   return (
     <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
-      <AppHeader title={event.name} />
+      <AppHeader title={event.name} showBack onBack={navigateBackFromOperations} />
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + Spacing.xl }]}
         showsVerticalScrollIndicator={false}
       >
         <Pressable
           style={({ pressed }) => [styles.backStrip, { backgroundColor: themeBlue }, pressed && { opacity: NAV_PRESSED_OPACITY }]}
-          onPress={() => handleNav(() => router.replace('/(tabs)/admin/events'))}
+          onPress={navigateBackFromOperations}
         >
           <Ionicons name="arrow-back" size={20} color={themeYellow} />
-          <ThemedText style={styles.backStripText}>Back to events</ThemedText>
+          <ThemedText style={styles.backStripText}>
+            {role === 'crew' || role === 'team_leader' ? 'Back to My Events' : 'Back to projects'}
+          </ThemedText>
         </Pressable>
 
         <View style={[styles.card, styles.cardWithAccent, { backgroundColor: colors.surface, borderColor: opsBorder }]}>

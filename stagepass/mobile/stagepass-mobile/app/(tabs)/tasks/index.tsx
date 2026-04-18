@@ -62,6 +62,11 @@ export default function TasksListScreen() {
     in_progress: themeYellow,
     completed: colors.success,
   };
+  const accentStrip: Record<TaskStatus, string> = {
+    pending: isDark ? '#64748B' : '#94A3B8',
+    in_progress: themeYellow,
+    completed: colors.success,
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -121,8 +126,16 @@ export default function TasksListScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <View style={[styles.hero, { backgroundColor: isDark ? '#1E212A' : '#F5F7FC', borderColor: colors.border }]}>
-          <View style={[styles.heroIconWrap, { backgroundColor: themeBlue + '18' }]}>
+        <View
+          style={[
+            styles.hero,
+            {
+              backgroundColor: isDark ? '#1E212A' : themeBlue + '12',
+              borderColor: isDark ? colors.border : themeBlue + '28',
+            },
+          ]}
+        >
+          <View style={[styles.heroIconWrap, { backgroundColor: themeBlue + (isDark ? '24' : '18') }]}>
             <Ionicons name="checkbox" size={Icons.header} color={isDark ? themeYellow : themeBlue} />
           </View>
           <View style={styles.heroTextWrap}>
@@ -135,19 +148,19 @@ export default function TasksListScreen() {
 
         {tasks.length > 0 && (
           <View style={styles.statsRow}>
-            <View style={[styles.statChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.statChip, styles.statChipElevated, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <ThemedText style={[styles.statValue, { color: colors.text }]}>{summary.total}</ThemedText>
               <ThemedText style={[styles.statLabel, { color: colors.textSecondary }]}>Total</ThemedText>
             </View>
-            <View style={[styles.statChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.statChip, styles.statChipElevated, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <ThemedText style={[styles.statValue, { color: colors.text }]}>{summary.pending}</ThemedText>
               <ThemedText style={[styles.statLabel, { color: colors.textSecondary }]}>Pending</ThemedText>
             </View>
-            <View style={[styles.statChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.statChip, styles.statChipElevated, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <ThemedText style={[styles.statValue, { color: colors.text }]}>{summary.inProgress}</ThemedText>
               <ThemedText style={[styles.statLabel, { color: colors.textSecondary }]}>In progress</ThemedText>
             </View>
-            <View style={[styles.statChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.statChip, styles.statChipElevated, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <ThemedText style={[styles.statValue, { color: colors.text }]}>{summary.completed}</ThemedText>
               <ThemedText style={[styles.statLabel, { color: colors.textSecondary }]}>Done</ThemedText>
             </View>
@@ -156,7 +169,9 @@ export default function TasksListScreen() {
 
         {tasks.length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Ionicons name="checkbox-outline" size={40} color={colors.textSecondary} />
+            <View style={[styles.emptyIconWrap, { backgroundColor: themeBlue + (isDark ? '22' : '14') }]}>
+              <Ionicons name="checkbox-outline" size={36} color={isDark ? themeYellow : themeBlue} />
+            </View>
             <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>No tasks yet</ThemedText>
             <ThemedText style={[styles.emptySub, { color: colors.textSecondary }]}>
               {role === 'admin' ? 'Create tasks from the web admin and assign crew.' : 'Tasks assigned to you will appear here.'}
@@ -172,8 +187,10 @@ export default function TasksListScreen() {
                 { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
               ]}
             >
+              <View style={[styles.cardAccent, { backgroundColor: accentStrip[task.status] }]} />
+              <View style={styles.cardInner}>
               <View style={styles.cardRow}>
-                <ThemedText style={[styles.title, { color: colors.text }]} numberOfLines={1}>
+                <ThemedText style={[styles.title, { color: colors.text }]} numberOfLines={2}>
                   {task.title}
                 </ThemedText>
                 <View style={[styles.statusBadge, { backgroundColor: statusColor[task.status] + '1F', borderColor: statusColor[task.status] + '55' }]}>
@@ -181,6 +198,7 @@ export default function TasksListScreen() {
                     {STATUS_LABEL[task.status]}
                   </ThemedText>
                 </View>
+                <Ionicons name="chevron-forward" size={Icons.small} color={colors.textSecondary} style={styles.cardChevron} />
               </View>
               {task.event?.name ? (
                 <View style={styles.metaRow}>
@@ -203,6 +221,7 @@ export default function TasksListScreen() {
                     · {task.assignees.map((a) => a.name).join(', ')}
                   </ThemedText>
                 ) : null}
+              </View>
               </View>
             </Pressable>
           ))
@@ -250,6 +269,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  statChipElevated: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
   statValue: { fontSize: Typography.bodySemiBold, fontWeight: Typography.bodySemiBoldWeight },
   statLabel: { fontSize: Typography.titleSection, textTransform: 'uppercase' },
   emptyCard: {
@@ -258,22 +284,38 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     marginTop: Spacing.xl,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  emptyIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyTitle: { fontSize: 18, fontWeight: '700', marginTop: Spacing.md },
   emptySub: { fontSize: 14, marginTop: Spacing.xs, textAlign: 'center' },
   card: {
-    padding: Spacing.lg,
+    flexDirection: 'row',
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
     marginBottom: Spacing.md,
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
   },
-  cardRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
-  title: { fontSize: 16, fontWeight: '700', flex: 1 },
+  cardAccent: { width: 4, alignSelf: 'stretch' },
+  cardInner: { flex: 1, padding: Spacing.lg, paddingLeft: Spacing.md },
+  cardRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: Spacing.sm },
+  cardChevron: { marginTop: 2 },
+  title: { fontSize: 16, fontWeight: '700', flex: 1, flexShrink: 1 },
   statusBadge: { paddingHorizontal: Spacing.sm, paddingVertical: 4, borderRadius: BorderRadius.sm, borderWidth: 1 },
   statusText: { fontSize: 11, fontWeight: '700' },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },

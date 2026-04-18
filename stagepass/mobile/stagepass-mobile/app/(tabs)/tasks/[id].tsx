@@ -21,7 +21,9 @@ import { AppHeader } from '@/components/AppHeader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme';
+import { Icons } from '@/constants/ui';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { NAV_PRESSED_OPACITY } from '@/src/utils/navigationPress';
 import { useAppRole } from '~/hooks/useAppRole';
 
 const STATUS_OPTIONS: TaskStatus[] = ['pending', 'in_progress', 'completed'];
@@ -31,6 +33,11 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
   completed: 'Completed',
 };
 const PRIORITY_LABEL: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High' };
+const PRIORITY_CHIP: Record<string, string> = {
+  low: '#16A34A',
+  medium: themeYellow,
+  high: '#DC2626',
+};
 
 function formatDueDate(d?: string | null): string {
   if (!d) return '—';
@@ -59,7 +66,7 @@ function formatCommentTime(s?: string): string {
 export default function TaskDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { colors } = useStagePassTheme();
+  const { colors, isDark } = useStagePassTheme();
   const insets = useSafeAreaInsets();
   const role = useAppRole();
   const taskId = id ? Number(id) : 0;
@@ -121,7 +128,7 @@ export default function TaskDetailScreen() {
   if (loading || !task) {
     return (
       <ThemedView style={styles.container}>
-        <AppHeader title="Task Details" />
+        <AppHeader title="Task" showBack onBack={() => router.back()} />
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={themeYellow} />
           <ThemedText style={[styles.loadingText, { color: colors.textSecondary }]}>
@@ -134,7 +141,7 @@ export default function TaskDetailScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <AppHeader title="Task Details" />
+      <AppHeader title={task.title} showBack onBack={() => router.back()} />
       <KeyboardAvoidingView
         style={styles.keyboard}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -146,27 +153,51 @@ export default function TaskDetailScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+              <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Details</ThemedText>
+            </View>
             <ThemedText style={[styles.body, { color: colors.text }]}>
               {task.description || 'No description.'}
             </ThemedText>
             {task.notes ? (
               <ThemedText style={[styles.notes, { color: colors.textSecondary }]}>{task.notes}</ThemedText>
             ) : null}
-            <View style={styles.metaRow}>
-              <ThemedText style={[styles.meta, { color: colors.textSecondary }]}>
-                Priority: {PRIORITY_LABEL[task.priority] ?? task.priority}
-              </ThemedText>
-              <ThemedText style={[styles.meta, { color: colors.textSecondary }]}>
-                Due: {formatDueDate(task.due_date)}
-              </ThemedText>
+            <View style={styles.metaChips}>
+              <View
+                style={[
+                  styles.metaChip,
+                  {
+                    backgroundColor: (PRIORITY_CHIP[task.priority] || themeYellow) + (isDark ? '22' : '18'),
+                    borderColor: (PRIORITY_CHIP[task.priority] || themeYellow) + '55',
+                  },
+                ]}
+              >
+                <Ionicons name="flag-outline" size={Icons.small} color={PRIORITY_CHIP[task.priority] || themeYellow} />
+                <ThemedText style={[styles.metaChipText, { color: colors.text }]}>
+                  {PRIORITY_LABEL[task.priority] ?? task.priority}
+                </ThemedText>
+              </View>
+              <View style={[styles.metaChip, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                <Ionicons name="calendar-outline" size={Icons.small} color={colors.textSecondary} />
+                <ThemedText style={[styles.metaChipText, { color: colors.text }]}>{formatDueDate(task.due_date)}</ThemedText>
+              </View>
+              {task.event?.name ? (
+                <View style={[styles.metaChip, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                  <Ionicons name="musical-notes-outline" size={Icons.small} color={colors.textSecondary} />
+                  <ThemedText style={[styles.metaChipText, { color: colors.text }]} numberOfLines={1}>
+                    {task.event.name}
+                  </ThemedText>
+                </View>
+              ) : null}
             </View>
-            {task.event?.name ? (
-              <ThemedText style={[styles.meta, { color: colors.textSecondary }]}>Event: {task.event.name}</ThemedText>
-            ) : null}
             {task.assignees?.length ? (
-              <ThemedText style={[styles.meta, { color: colors.textSecondary }]}>
-                Assigned: {task.assignees.map((a) => a.name).join(', ')}
-              </ThemedText>
+              <View style={styles.assigneeRow}>
+                <Ionicons name="people-outline" size={Icons.small} color={colors.textSecondary} />
+                <ThemedText style={[styles.assigneeText, { color: colors.textSecondary }]} numberOfLines={2}>
+                  {task.assignees.map((a) => a.name).join(', ')}
+                </ThemedText>
+              </View>
             ) : null}
           </View>
 
@@ -202,11 +233,12 @@ export default function TaskDetailScreen() {
                   key={status}
                   onPress={() => handleStatusChange(status)}
                   disabled={updatingStatus || task.status === status}
-                  style={[
+                  style={({ pressed }) => [
                     styles.statusBtn,
                     {
                       backgroundColor: task.status === status ? themeYellow + '22' : colors.background,
                       borderColor: task.status === status ? themeYellow : colors.border,
+                      opacity: updatingStatus ? 0.7 : pressed ? NAV_PRESSED_OPACITY : 1,
                     },
                   ]}
                 >
@@ -231,14 +263,28 @@ export default function TaskDetailScreen() {
                 Comments {task.comments?.length ? `(${task.comments.length})` : ''}
               </ThemedText>
             </View>
-            {(task.comments ?? []).map((c) => (
-              <View key={c.id} style={[styles.comment, { borderBottomColor: colors.border }]}>
-                <ThemedText style={[styles.commentBody, { color: colors.text }]}>{c.body}</ThemedText>
-                <ThemedText style={[styles.commentMeta, { color: colors.textSecondary }]}>
-                  {c.user?.name ?? 'User'} · {formatCommentTime(c.created_at)}
-                </ThemedText>
-              </View>
-            ))}
+            {(task.comments ?? []).map((c) => {
+              const name = c.user?.name ?? 'User';
+              const initial = name.trim().charAt(0).toUpperCase() || '?';
+              return (
+                <View key={c.id} style={styles.commentRow}>
+                  <View style={[styles.commentAvatar, { backgroundColor: themeBlue + (isDark ? '44' : '22') }]}>
+                    <ThemedText style={[styles.commentAvatarText, { color: themeYellow }]}>{initial}</ThemedText>
+                  </View>
+                  <View
+                    style={[
+                      styles.commentBubble,
+                      { backgroundColor: isDark ? colors.background : '#F8FAFC', borderColor: colors.border },
+                    ]}
+                  >
+                    <ThemedText style={[styles.commentBody, { color: colors.text }]}>{c.body}</ThemedText>
+                    <ThemedText style={[styles.commentMeta, { color: colors.textSecondary }]}>
+                      {name} · {formatCommentTime(c.created_at)}
+                    </ThemedText>
+                  </View>
+                </View>
+              );
+            })}
             <View style={styles.commentInputRow}>
               <TextInput
                 value={commentText}
@@ -253,11 +299,11 @@ export default function TaskDetailScreen() {
               <Pressable
                 onPress={handleAddComment}
                 disabled={!commentText.trim() || submittingComment}
-                style={[
+                style={({ pressed }) => [
                   styles.commentSubmit,
                   {
                     backgroundColor: commentText.trim() ? themeYellow : colors.border,
-                    opacity: submittingComment ? 0.7 : 1,
+                    opacity: submittingComment ? 0.7 : pressed ? NAV_PRESSED_OPACITY : 1,
                   },
                 ]}
               >
@@ -289,14 +335,31 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
     marginBottom: Spacing.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm },
   sectionTitleAccent: { width: 3, height: 16, borderRadius: 0 },
   sectionTitle: { fontSize: 15, fontWeight: '700', flex: 1 },
   body: { fontSize: 15, lineHeight: 22 },
   notes: { fontSize: 13, marginTop: Spacing.sm, fontStyle: 'italic' },
-  metaRow: { flexDirection: 'row', gap: Spacing.lg, marginTop: Spacing.sm },
-  meta: { fontSize: 13, marginTop: 4 },
+  metaChips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginTop: Spacing.md },
+  metaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    maxWidth: '100%',
+  },
+  metaChipText: { fontSize: 13, fontWeight: '600', flexShrink: 1 },
+  assigneeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: Spacing.md },
+  assigneeText: { fontSize: 13, flex: 1 },
   statusRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
   completeBtn: {
     marginBottom: Spacing.sm,
@@ -316,9 +379,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   statusBtnText: { fontSize: 14, fontWeight: '600' },
-  comment: { paddingVertical: Spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth },
+  commentRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm, marginBottom: Spacing.md },
+  commentAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commentAvatarText: { fontSize: 15, fontWeight: '700' },
+  commentBubble: {
+    flex: 1,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+  },
   commentBody: { fontSize: 14 },
-  commentMeta: { fontSize: 11, marginTop: 2 },
+  commentMeta: { fontSize: 11, marginTop: 4 },
   commentInputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.sm, marginTop: Spacing.md },
   commentInput: {
     flex: 1,

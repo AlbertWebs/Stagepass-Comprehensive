@@ -5,7 +5,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
-import { StatusColors, themeYellow, VibrantColors } from '@/constants/theme';
+import { StatusColors, themeBlue, themeYellow, VibrantColors } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { NAV_PRESSED_OPACITY } from '@/src/utils/navigationPress';
 import type { Event } from '~/services/api';
@@ -43,7 +43,8 @@ const ACTIVITY_BADGE_BG: Record<MobileActivityBadgeKey, string> = {
   active: VibrantColors.emerald,
   checked_in: StatusColors.checkedIn,
   checked_out: VibrantColors.sky,
-  done_for_the_day: VibrantColors.teal,
+  /** Navy brand accent — not teal/green; white pill text stays readable. */
+  done_for_the_day: themeBlue,
   event_passed: '#94a3b8',
   closed: '#475569',
   completed: '#475569',

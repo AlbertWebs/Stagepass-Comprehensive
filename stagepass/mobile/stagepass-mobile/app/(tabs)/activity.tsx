@@ -41,6 +41,24 @@ function eventDateOnly(event: Event): string {
   return s.length >= 10 ? s.substring(0, 10) : s;
 }
 
+function endDateYmd(event: Event): string {
+  const start = eventDateOnly(event);
+  if (!start) return '';
+  if (event.end_date && typeof event.end_date === 'string') {
+    const s = event.end_date.trim();
+    return s.length >= 10 ? s.substring(0, 10) : start;
+  }
+  return start;
+}
+
+/** Same rule as API `spansDate` — the event’s scheduled day range includes this local Y-m-d. */
+function eventSpansLocalCalendarDay(event: Event, ymd: string): boolean {
+  const start = eventDateOnly(event);
+  if (!start) return false;
+  const end = endDateYmd(event);
+  return start <= ymd && end >= ymd;
+}
+
 function sortByStartTimeThenName(a: Event, b: Event): number {
   const ta = (a.start_time || '').slice(0, 5);
   const tb = (b.start_time || '').slice(0, 5);
@@ -130,8 +148,13 @@ export default function ActivityScreen() {
       if (myToday?.event && !seen.has(myToday.event.id)) {
         merged.push(myToday.event);
       }
-      merged.sort(sortByStartTimeThenName);
-      setTodayEvents(merged);
+      const byId = new Map<number, Event>();
+      for (const e of merged) {
+        if (!byId.has(e.id)) byId.set(e.id, e);
+      }
+      const forToday = [...byId.values()].filter((e) => eventSpansLocalCalendarDay(e, localToday));
+      forToday.sort(sortByStartTimeThenName);
+      setTodayEvents(forToday);
       setActivityPaged(pageRes);
     } catch {
       setTodayEvents([]);
