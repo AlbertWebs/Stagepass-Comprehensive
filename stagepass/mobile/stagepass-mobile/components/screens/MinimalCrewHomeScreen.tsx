@@ -12,11 +12,12 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  Text,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Reanimated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import Reanimated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useDispatch, useSelector } from 'react-redux';
 import { HomeHeader } from '@/components/HomeHeader';
 import { ThemedText } from '@/components/themed-text';
@@ -25,7 +26,7 @@ import { Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { api, type User as ApiUser } from '~/services/api';
 import { setUser } from '~/store/authSlice';
-import { isWithinGeofence } from '~/utils/geofence';
+import { haversineDistanceMeters, isWithinGeofence } from '~/utils/geofence';
 import {
   DEFAULT_OFFICE_CHECKIN_REQUIRED_DAYS,
   parseOfficeCheckinRequiredDays,
@@ -55,6 +56,15 @@ function getTimeGreeting(): 'Good morning' | 'Good afternoon' | 'Good evening' {
   return 'Good evening';
 }
 
+/** Backend may return ISO or `Y-m-d H:i:s`. */
+function formatShortTime(value?: string | null): string | null {
+  if (!value || typeof value !== 'string') return null;
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+  const d = new Date(normalized);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
 export function MinimalCrewHomeScreen({ onRefresh }: Props) {
   const dispatch = useDispatch();
   const insets = useSafeAreaInsets();
@@ -68,6 +78,8 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
   const [mapSourceIndex, setMapSourceIndex] = useState(0);
   const rippleA = useRef(new Animated.Value(0)).current;
   const rippleB = useRef(new Animated.Value(0)).current;
+  /** Weekend map pin: gentle sway + wave pulse (beach motif). */
+  const beachPhase = useRef(new Animated.Value(0)).current;
 
   const officeCheckedInToday = user?.office_checked_in_today ?? false;
   const officeCheckedOutToday = user?.office_checked_out_today ?? false;
@@ -80,6 +92,9 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
   const isWeekendOffDay = isOfficeCheckinOffDay && (dayOfWeek === 0 || dayOfWeek === 6);
   const mainCtaDisabled = loading || officeCheckedOutToday;
   const showRipples = !isOfficeCheckinOffDay && !mainCtaDisabled;
+  const needsFirstOfficeCheckin =
+    isCheckinRequiredToday && !officeCheckedInToday && !officeCheckedOutToday;
+  const inExtraOfficeHours = user?.office_hours_status === 'in_extra_hours' && canCheckout;
   const mapCenter = useMemo(
     () =>
       officeConfig
@@ -97,6 +112,50 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
     ];
   }, [mapCenter]);
   const mapUrl = mapUrls[mapSourceIndex] ?? null;
+
+  const withinOffice = useMemo(() => {
+    if (!officeConfig || !userLocation) return null;
+    return isWithinGeofence(
+      userLocation.latitude,
+      userLocation.longitude,
+      officeConfig.latitude,
+      officeConfig.longitude,
+      officeConfig.radiusMeters
+    );
+  }, [officeConfig, userLocation]);
+
+  const metersFromOffice = useMemo(() => {
+    if (!officeConfig || !userLocation) return null;
+    return haversineDistanceMeters(
+      userLocation.latitude,
+      userLocation.longitude,
+      officeConfig.latitude,
+      officeConfig.longitude
+    );
+  }, [officeConfig, userLocation]);
+
+  const geoHint = useMemo(() => {
+    if (!needsFirstOfficeCheckin) return null;
+    if (!officeConfig) {
+      return { icon: 'business-outline' as const, text: 'Office location isn’t set yet — ask an admin.', tone: 'muted' as const };
+    }
+    if (!userLocation) {
+      return { icon: 'navigate-outline' as const, text: 'Getting your location…', tone: 'muted' as const };
+    }
+    if (withinOffice === true) {
+      return { icon: 'checkmark-circle-outline' as const, text: 'You’re within the office check-in area.', tone: 'ok' as const };
+    }
+    const m = metersFromOffice != null ? Math.round(metersFromOffice) : null;
+    const radius = officeConfig.radiusMeters;
+    return {
+      icon: 'walk-outline' as const,
+      text:
+        m != null
+          ? `About ${m}m from the pin — move within ${radius}m to check in.`
+          : `Move within ${radius}m of the office to check in.`,
+      tone: 'warn' as const,
+    };
+  }, [needsFirstOfficeCheckin, officeConfig, userLocation, withinOffice, metersFromOffice]);
 
   const welcomeFirstName = useMemo(() => {
     const n = user?.name?.trim();
@@ -202,6 +261,31 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
       b.stop();
     };
   }, [rippleA, rippleB, showRipples]);
+
+  useEffect(() => {
+    if (!isWeekendOffDay) {
+      beachPhase.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(beachPhase, {
+          toValue: 1,
+          duration: 2400,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(beachPhase, {
+          toValue: 0,
+          duration: 2400,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [beachPhase, isWeekendOffDay]);
 
   const triggerActionHaptic = useCallback(() => {
     if (Platform.OS === 'web') return;
@@ -320,6 +404,41 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
   /** Clear transparent header + title row so the welcome pill sits on the map below it. */
   const welcomePillTopPad = Math.max(insets.top, Spacing.sm) + 52;
 
+  const checkInTimeLabel = formatShortTime(user?.office_checkin_time);
+  const checkOutTimeLabel = formatShortTime(user?.office_checkout_time);
+
+  const geoHintIconColor =
+    geoHint?.tone === 'ok' ? themeBlue : geoHint?.tone === 'warn' ? themeYellow : colors.textSecondary;
+
+  const todayCaption = useMemo(
+    () =>
+      new Date().toLocaleDateString(undefined, {
+        weekday: 'long',
+        month: 'short',
+        day: 'numeric',
+      }),
+    []
+  );
+
+  /** Keeps welcome copy readable on variable map imagery without a solid card. */
+  const welcomeShadow = useMemo(
+    () =>
+      isDark
+        ? {
+            textShadowColor: 'rgba(0,0,0,0.55)',
+            textShadowOffset: { width: 0, height: 1 },
+            textShadowRadius: 8,
+          }
+        : {
+            textShadowColor: 'rgba(255,255,255,0.92)',
+            textShadowOffset: { width: 0, height: 0 },
+            textShadowRadius: 10,
+          },
+    [isDark]
+  );
+
+  const nameAccentColor = isDark ? themeYellow : themeBlue;
+
   return (
     <ThemedView style={[styles.container, { backgroundColor: mapCardBg }]}>
       <View style={styles.screenRoot}>
@@ -341,6 +460,9 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
             {!mapUrl ? (
               <View style={styles.mapLoadingLayer} pointerEvents="none">
                 <ActivityIndicator size="small" color={isDark ? themeYellow : themeBlue} />
+                <ThemedText style={styles.mapLoadingCaption} maxFontSizeMultiplier={1.3}>
+                  Locating map…
+                </ThemedText>
               </View>
             ) : null}
             <View style={styles.centerActionWrap}>
@@ -424,8 +546,62 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                     !isDark && styles.centerCtaLight,
                     { backgroundColor: isDark ? themeYellow + '22' : themeYellow + '35', borderWidth: 1, borderColor: themeYellow + '55' },
                   ]}
+                  accessibilityRole="image"
+                  accessibilityLabel="Weekend — office check-in not available"
                 >
-                  <Ionicons name="sunny-outline" size={26} color={themeYellow} />
+                  {isWeekendOffDay ? (
+                    <View style={styles.beachStack}>
+                      <Animated.View
+                        style={{
+                          transform: [
+                            {
+                              translateY: beachPhase.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [3, -4],
+                              }),
+                            },
+                            {
+                              rotate: beachPhase.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: ['-7deg', '7deg'],
+                              }),
+                            },
+                          ],
+                        }}
+                      >
+                        <Ionicons name="umbrella" size={26} color={themeYellow} />
+                      </Animated.View>
+                      <Animated.View
+                        style={[
+                          styles.beachWaveRow,
+                          {
+                            transform: [
+                              {
+                                translateX: beachPhase.interpolate({
+                                  inputRange: [0, 1],
+                                  outputRange: [-3, 3],
+                                }),
+                              },
+                              {
+                                scaleX: beachPhase.interpolate({
+                                  inputRange: [0, 1],
+                                  outputRange: [0.92, 1.08],
+                                }),
+                              },
+                            ],
+                            opacity: beachPhase.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0.82, 1],
+                            }),
+                          },
+                        ]}
+                      >
+                        <Ionicons name="water" size={18} color={themeBlue} />
+                      </Animated.View>
+                    </View>
+                  ) : (
+                    <Ionicons name="sunny-outline" size={26} color={themeYellow} />
+                  )}
                 </View>
               )}
             </View>
@@ -436,21 +612,48 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
           <View style={[styles.overlayTop, { paddingTop: welcomePillTopPad }]} pointerEvents="none">
             <Reanimated.View
               entering={FadeInDown.duration(420).delay(40)}
-              style={[
-                styles.welcomePill,
-                isDark ? styles.welcomePillBgDark : styles.welcomePillBgLight,
-                !isDark && styles.welcomePillLiftLight,
-              ]}
+              style={styles.welcomeTextBlock}
               accessibilityRole="header"
-              accessibilityLabel={`Welcome back. ${timeGreeting}${welcomeFirstName ? `, ${welcomeFirstName}` : ''}`}
+              accessibilityLabel={`Welcome back. ${timeGreeting}${welcomeFirstName ? `, ${welcomeFirstName}` : ''}. ${todayCaption}`}
             >
-              <ThemedText style={styles.welcomePillEyebrow} maxFontSizeMultiplier={1.35}>
-                Welcome back
-              </ThemedText>
-              <ThemedText style={styles.welcomePillMain} numberOfLines={2} maxFontSizeMultiplier={1.35}>
-                {timeGreeting}
-                {welcomeFirstName ? ` · ${welcomeFirstName}` : ''}
-              </ThemedText>
+              <View style={styles.welcomeRow}>
+                <View style={[styles.welcomeAccent, { backgroundColor: themeYellow }]} accessibilityElementsHidden />
+                <View style={styles.welcomeColumn}>
+                  <View style={styles.welcomeEyebrowRow}>
+                    <Ionicons name="sparkles" size={13} color={themeYellow} style={styles.welcomeEyebrowIcon} />
+                    <Text
+                      style={[
+                        styles.welcomeEyebrow,
+                        { color: colors.textSecondary },
+                        welcomeShadow,
+                      ]}
+                      maxFontSizeMultiplier={1.35}
+                    >
+                      Welcome back
+                    </Text>
+                  </View>
+                  <Text
+                    style={[styles.welcomeGreetingLine, { color: colors.text }, welcomeShadow]}
+                    maxFontSizeMultiplier={1.35}
+                  >
+                    <Text style={styles.welcomeGreetingPhrase}>{timeGreeting}</Text>
+                    {welcomeFirstName ? (
+                      <Text style={[styles.welcomeGreetingSep, { color: colors.textSecondary }]}> · </Text>
+                    ) : null}
+                    {welcomeFirstName ? (
+                      <Text style={[styles.welcomeName, { color: nameAccentColor }]}>{welcomeFirstName}</Text>
+                    ) : null}
+                  </Text>
+                  <Reanimated.View entering={FadeIn.duration(380).delay(140)}>
+                    <Text
+                      style={[styles.welcomeDate, { color: colors.textSecondary }, welcomeShadow]}
+                      maxFontSizeMultiplier={1.3}
+                    >
+                      {todayCaption}
+                    </Text>
+                  </Reanimated.View>
+                </View>
+              </View>
             </Reanimated.View>
           </View>
           <View style={styles.overlaySpacer} pointerEvents="none" />
@@ -480,6 +683,14 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
               <ThemedText style={[styles.panelTitle, { color: colors.text }]}>
                 {isWeekendOffDay ? 'Weekend' : isOfficeCheckinOffDay ? 'Off today' : 'Check-in status'}
               </ThemedText>
+              {inExtraOfficeHours ? (
+                <View style={styles.extraHoursRow}>
+                  <Ionicons name="time-outline" size={14} color={themeYellow} />
+                  <ThemedText style={[styles.extraHoursText, { color: themeYellow }]} maxFontSizeMultiplier={1.25}>
+                    Extra hours
+                  </ThemedText>
+                </View>
+              ) : null}
             </View>
             <View
               style={[
@@ -527,6 +738,20 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
           >
             {subLabel}
           </ThemedText>
+
+          {geoHint ? (
+            <View style={styles.geoHintRow} accessibilityLiveRegion="polite">
+              <Ionicons name={geoHint.icon} size={16} color={geoHintIconColor} />
+              <ThemedText
+                style={[styles.geoHintText, { color: geoHintIconColor }]}
+                maxFontSizeMultiplier={1.35}
+              >
+                {geoHint.text}
+              </ThemedText>
+            </View>
+          ) : null}
+
+          <View style={[styles.panelDivider, { backgroundColor: colors.border }]} />
 
           <Pressable
             onPress={onMainCtaPress}
@@ -635,7 +860,9 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                 color={themeBlue}
               />
               <ThemedText style={[styles.statusText, { color: colors.textSecondary }]}>
-                {officeCheckedOutToday ? 'Checked out successfully' : 'Checked in successfully'}
+                {officeCheckedOutToday
+                  ? `Checked out successfully${checkOutTimeLabel ? ` · ${checkOutTimeLabel}` : ''}`
+                  : `Checked in successfully${checkInTimeLabel ? ` · ${checkInTimeLabel}` : ''}`}
               </ThemedText>
             </View>
           ) : null}
@@ -687,48 +914,86 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   overlayTop: {
-    alignItems: 'center',
+    alignItems: 'stretch',
+    width: '100%',
     paddingHorizontal: Spacing.lg,
+    backgroundColor: 'transparent',
   },
-  /** VPN-style capsule on the map (dark frosted pill, light text). */
-  welcomePill: {
-    alignItems: 'center',
+  /** Welcome stack — still no card fill; accent bar + shadows only. */
+  welcomeTextBlock: {
+    width: '100%',
     maxWidth: '100%',
-    borderRadius: 999,
-    paddingVertical: 11,
-    paddingHorizontal: 20,
+    backgroundColor: 'transparent',
+    padding: 0,
+    margin: 0,
+    borderWidth: 0,
+    elevation: 0,
+    shadowOpacity: 0,
   },
-  welcomePillBgDark: {
-    backgroundColor: 'rgba(15, 23, 42, 0.78)',
+  welcomeRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 12,
+    width: '100%',
   },
-  welcomePillBgLight: {
-    backgroundColor: 'rgba(15, 23, 42, 0.62)',
+  welcomeAccent: {
+    width: 3,
+    borderRadius: 2,
+    minHeight: 56,
+    alignSelf: 'stretch',
   },
-  welcomePillLiftLight: Platform.select({
-    ios: {
-      shadowColor: '#0f172a',
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.2,
-      shadowRadius: 18,
-    },
-    android: { elevation: 4 },
-    default: {},
-  }),
-  welcomePillEyebrow: {
+  welcomeColumn: {
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+    gap: 4,
+  },
+  welcomeEyebrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  welcomeEyebrowIcon: {
+    marginTop: 1,
+    opacity: 0.95,
+  },
+  welcomeEyebrow: {
     fontSize: 10,
-    letterSpacing: 0.85,
+    letterSpacing: 1,
     fontWeight: '700',
     textTransform: 'uppercase',
-    color: 'rgba(248, 250, 252, 0.72)',
-    marginBottom: 4,
+    backgroundColor: 'transparent',
   },
-  welcomePillMain: {
-    fontSize: 15,
+  welcomeGreetingLine: {
+    fontSize: 17,
     fontWeight: '600',
-    letterSpacing: -0.2,
-    lineHeight: 21,
-    color: '#F8FAFC',
-    textAlign: 'center',
+    letterSpacing: -0.35,
+    lineHeight: 24,
+    backgroundColor: 'transparent',
+  },
+  welcomeGreetingPhrase: {
+    fontSize: 17,
+    fontWeight: '600',
+    lineHeight: 24,
+  },
+  welcomeGreetingSep: {
+    fontSize: 17,
+    fontWeight: '500',
+    lineHeight: 24,
+  },
+  welcomeName: {
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.25,
+    lineHeight: 24,
+  },
+  welcomeDate: {
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+    marginTop: 2,
+    backgroundColor: 'transparent',
   },
   overlaySpacer: {
     flex: 1,
@@ -736,6 +1001,7 @@ const styles = StyleSheet.create({
   },
   overlayBottom: {
     paddingHorizontal: Spacing.lg,
+    marginTop: Spacing.md,
     gap: Spacing.lg + 2,
   },
   mapImage: {
@@ -754,6 +1020,44 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 10,
+  },
+  mapLoadingCaption: {
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+    textAlign: 'center',
+    color: 'rgba(248, 250, 252, 0.88)',
+  },
+  extraHoursRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 4,
+  },
+  extraHoursText: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  geoHintRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    paddingVertical: 2,
+  },
+  geoHintText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '500',
+  },
+  panelDivider: {
+    height: StyleSheet.hairlineWidth,
+    width: '100%',
+    marginTop: 2,
+    marginBottom: 0,
+    opacity: 0.85,
   },
   pinWrap: {
     flex: 1,
@@ -793,6 +1097,14 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },
     elevation: 8,
+  },
+  beachStack: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  beachWaveRow: {
+    marginTop: -10,
+    alignItems: 'center',
   },
   panelOuter: {
     width: '100%',
