@@ -59,6 +59,19 @@
         {
           "defaultChannel": "default"
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Stagepass needs your location to verify you are at the event for check-in and related features."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Stagepass needs access to your photos when you choose a profile picture.",
+          "cameraPermission": "Stagepass needs the camera when you take a profile picture."
+        }
       ]
     ],
     "experiments": {

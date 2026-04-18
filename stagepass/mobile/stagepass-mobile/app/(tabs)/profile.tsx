@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import Animated, { SlideInRight } from 'react-native-reanimated';
 import { useDispatch, useSelector } from 'react-redux';
+import { AppPermissionsCard } from '@/components/AppPermissionsCard';
 import { HomeHeader } from '@/components/HomeHeader';
 import { StagePassButton } from '@/components/StagePassButton';
 import { StagePassInput } from '@/components/StagePassInput';
@@ -29,6 +30,7 @@ import { Cards, Icons, Typography } from '@/constants/ui';
 import { Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
+import { useAppPermissionsStatus } from '~/hooks/useAppPermissionsStatus';
 import { useAppRole } from '~/hooks/useAppRole';
 import { api, resolveUserAvatarUrl } from '~/services/api';
 import { logout, setUser } from '~/store/authSlice';
@@ -134,6 +136,7 @@ export default function ProfileScreen() {
   const { preference, setPreference } = useThemePreference();
   const user = useSelector((s: { auth: { user: User | null } }) => s.auth.user);
   const role = useAppRole();
+  const appPermissions = useAppPermissionsStatus();
 
   const bottomPadding = TAB_BAR_HEIGHT;
   const [animateKey, setAnimateKey] = useState(0);
@@ -707,6 +710,8 @@ export default function ProfileScreen() {
               </View>
             ) : null}
           </View>
+
+          <AppPermissionsCard rows={appPermissions.rows} hint={appPermissions.hint} />
 
           {/* ACCOUNT DETAILS */}
           <View style={styles.sectionTitleRow}>

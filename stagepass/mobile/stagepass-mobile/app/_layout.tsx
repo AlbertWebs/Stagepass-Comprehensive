@@ -11,8 +11,10 @@ import 'react-native-reanimated';
 import { ThemePreferenceProvider } from '@/context/ThemePreferenceContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { setOnUnauthorized } from '~/services/api';
-import { store } from '~/store';
+import { store, type RootState } from '~/store';
+import { setOnboardingState } from '~/store/appSlice';
 import { logout, setCredentials, setLoading } from '~/store/authSlice';
+import { getOnboardingComplete } from '~/store/onboardingPrefs';
 import { clearSessionAfterAuthFailure, clearStoredToken, hydrateAuth, loadStoredToken } from '~/store/persistAuth';
 
 export const unstable_settings = {
@@ -22,16 +24,20 @@ export const unstable_settings = {
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
   const dispatch = useDispatch();
-  const token = useSelector((s: { auth: { token: string | null; isLoading: boolean } }) => s.auth.token);
-  const isLoading = useSelector((s: { auth: { isLoading: boolean } }) => s.auth.isLoading);
+  const token = useSelector((s: RootState) => s.auth.token);
+  const isLoading = useSelector((s: RootState) => s.auth.isLoading);
+  const onboardingHydrated = useSelector((s: RootState) => s.app.onboardingHydrated);
+  const onboardingComplete = useSelector((s: RootState) => s.app.onboardingComplete);
   const segments = useSegments();
-  const onAuthScreen = segments[0] === 'login' || segments[0] === 'forgot-password';
+  const onAuthScreen =
+    segments[0] === 'login' || segments[0] === 'forgot-password' || segments[0] === 'onboarding';
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const t = await loadStoredToken();
+      const [t, obDone] = await Promise.all([loadStoredToken(), getOnboardingComplete()]);
       if (cancelled) return;
+      dispatch(setOnboardingState({ onboardingHydrated: true, onboardingComplete: obDone }));
       if (t) {
         await hydrateAuth(t, (p) => dispatch(setCredentials(p)));
       }
@@ -57,7 +63,10 @@ function RootLayoutNav() {
     return () => setOnUnauthorized(null);
   }, [dispatch, onAuthScreen]);
 
-  const shouldRedirectToLogin = !isLoading && !token && !onAuthScreen;
+  const shouldRedirectToOnboarding =
+    onboardingHydrated && !onboardingComplete && segments[0] !== 'onboarding';
+  const shouldRedirectToLogin =
+    onboardingHydrated && onboardingComplete && !isLoading && !token && !onAuthScreen;
 
   return (
     <SafeAreaProvider>
@@ -69,11 +78,13 @@ function RootLayoutNav() {
             }}
           >
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="onboarding" options={{ headerShown: false, animation: 'fade' }} />
             <Stack.Screen name="login" options={{ headerShown: false }} />
             <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
             <Stack.Screen name="events/[id]" options={{ headerShown: false }} />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack>
+          {shouldRedirectToOnboarding && <Redirect href="/onboarding" />}
           {shouldRedirectToLogin && <Redirect href="/login" />}
         </>
         <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />

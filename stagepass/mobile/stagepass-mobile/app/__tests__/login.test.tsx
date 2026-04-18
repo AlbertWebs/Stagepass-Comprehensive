@@ -38,7 +38,7 @@ jest.mock('~/services/api', () => ({
   api: { auth: { login: jest.fn(), me: jest.fn() } },
 }));
 jest.mock('@/src/utils/navigationPress', () => ({
-  useNavigationPress: () => ({ handleNav: jest.fn() },
+  useNavigationPress: () => ({ handleNav: jest.fn() }),
   NAV_PRESSED_OPACITY: 0.7,
 }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');

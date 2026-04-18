@@ -25,7 +25,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigationPress, NAV_PRESSED_OPACITY } from '@/src/utils/navigationPress';
-import { api } from '~/services/api';
+import { api, type Event } from '~/services/api';
 import { useSelector } from 'react-redux';
 
 /** Match header (top right) icons – Icons.header = 20 */
@@ -46,6 +46,62 @@ function eventDateOnly(event: { date?: string | null }): string {
   if (!event.date || typeof event.date !== 'string') return '';
   const s = event.date.trim();
   return s.length >= 10 ? s.substring(0, 10) : s;
+}
+
+/** Align with My Events "Upcoming" tab — ended statuses are treated as past. */
+function isEventEndedStatus(status: string | undefined): boolean {
+  const s = String(status ?? '')
+    .trim()
+    .toLowerCase();
+  return s === 'completed' || s === 'closed' || s === 'done_for_the_day';
+}
+
+function parseEventDateLocalYmd(dateStr: string | undefined | null): Date | null {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const t = dateStr.trim();
+  const ymd = t.length >= 10 ? t.slice(0, 10) : t;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!m) {
+    const d = new Date(t);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0);
+}
+
+function eventStartDay(event: Event): Date | null {
+  const d = parseEventDateLocalYmd(event.date);
+  if (!d) return null;
+  const x = new Date(d.getTime());
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+/** Same rule as My Events → Upcoming: not ended, and start date is today or in the future. */
+function isUpcomingOrOngoingEvent(event: Event, todayStart: Date): boolean {
+  if (isEventEndedStatus(event.status)) return false;
+  const start = eventStartDay(event);
+  if (!start) return false;
+  return start.getTime() >= todayStart.getTime();
+}
+
+function userAssignedToEvent(event: Event, userId: number | undefined): boolean {
+  if (userId == null) return false;
+  return Boolean(event.crew?.some((c) => Number(c.id) === Number(userId)));
+}
+
+/**
+ * Green dot on My Events: assigned to at least one upcoming/ongoing event only (not past-only).
+ * If the assignment is today, hide after check-in (same as before).
+ */
+function shouldShowMyEventsGlowDot(event: Event, userId: number | undefined, todayStart: Date): boolean {
+  if (!userAssignedToEvent(event, userId)) return false;
+  if (!isUpcomingOrOngoingEvent(event, todayStart)) return false;
+  const todayKey = todayDateString();
+  if (eventDateOnly(event) === todayKey) {
+    const me = event.crew?.find((c) => Number(c.id) === Number(userId));
+    if (me?.pivot?.checkin_time) return false;
+  }
+  return true;
 }
 
 type TabItemConfig =
@@ -100,25 +156,20 @@ export function RoleBasedTabBar({ state, navigation, descriptors }: BottomTabBar
     }
     try {
       const today = todayDateString();
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+
       const res = await api.events.myEventToday(today);
-      if (res?.event) {
-        const currentUserId = authUser?.id;
-        const assignment = currentUserId != null
-          ? res.event.crew?.find((c: { id?: number }) => c.id === currentUserId)
-          : res.event.crew?.find((c: { pivot?: unknown }) => Boolean(c.pivot));
-        const pivot = assignment && typeof assignment === 'object' && 'pivot' in assignment
-          ? (assignment.pivot as { checkin_time?: string | null } | undefined)
-          : undefined;
-        const alreadyCheckedIn = Boolean(pivot?.checkin_time);
-        setHasEventToday(!alreadyCheckedIn);
+      if (res?.event && shouldShowMyEventsGlowDot(res.event, authUser?.id, todayStart)) {
+        setHasEventToday(true);
         return;
       }
 
-      // Fallback: some users still have today's assignment visible in list even when myEventToday is empty.
+      // Fallback: assignments visible in list even when myEventToday is empty (e.g. tomorrow's event).
       const listRes = await api.events.list({ per_page: 100 });
       const list = Array.isArray(listRes?.data) ? listRes.data : [];
-      const hasToday = list.some((e: { date?: string | null }) => eventDateOnly(e) === today);
-      setHasEventToday(hasToday);
+      const hasUpcomingAssigned = list.some((e: Event) => shouldShowMyEventsGlowDot(e, authUser?.id, todayStart));
+      setHasEventToday(hasUpcomingAssigned);
     } catch {
       setHasEventToday(false);
     }

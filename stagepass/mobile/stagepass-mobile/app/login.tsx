@@ -273,6 +273,10 @@ export default function LoginScreen() {
       dispatch(setCredentials({ user, token: res.token }));
       setFailedAttempts(0);
       await refreshBiometricCredentialIfEnabled(res.token);
+      // Re-fetch token after auth is active (permission may resolve after the pre-login call).
+      getDevicePushTokenAsync().then((t) => {
+        if (t) api.auth.updateProfile({ fcm_token: t }).catch(() => {});
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setIsExiting(true);
       return;

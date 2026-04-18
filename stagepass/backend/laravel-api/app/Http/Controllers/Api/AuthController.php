@@ -80,7 +80,15 @@ class AuthController extends Controller
             }
         }
 
-        $user->forceFill(['fcm_token' => $request->fcm_token])->save();
+        // Only set push token when the client sends `fcm_token`. Omitting the key must not clear an
+        // existing token (mobile often omits it when permission is still pending or token is null).
+        $payload = $request->all();
+        if (array_key_exists('fcm_token', $payload)) {
+            $raw = $payload['fcm_token'];
+            $user->fcm_token = ($raw !== null && $raw !== '') ? (string) $raw : null;
+            $user->save();
+        }
+
         $this->sendAssignedEventPushOnLogin($request, $user);
 
         $token = $user->createToken('mobile')->plainTextToken;

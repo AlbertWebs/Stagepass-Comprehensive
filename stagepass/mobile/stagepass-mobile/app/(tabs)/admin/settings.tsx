@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppHeader } from '@/components/AppHeader';
+import { AppPermissionsCard } from '@/components/AppPermissionsCard';
 import { StagePassButton } from '@/components/StagePassButton';
 import { StagePassInput } from '@/components/StagePassInput';
 import { ThemedText } from '@/components/themed-text';
@@ -23,6 +24,7 @@ import { ThemedView } from '@/components/themed-view';
 import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { useAppRole } from '~/hooks/useAppRole';
+import { useAppPermissionsStatus } from '~/hooks/useAppPermissionsStatus';
 import { api } from '~/services/api';
 
 type AppSettings = Record<string, string | number | boolean | null>;
@@ -111,6 +113,7 @@ export default function AdminSettingsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [backupLoading, setBackupLoading] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
+  const appPermissions = useAppPermissionsStatus();
 
   const load = useCallback(async () => {
     try {
@@ -197,7 +200,16 @@ export default function AdminSettingsScreen() {
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={themeYellow} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              void load().then(() => appPermissions.refresh());
+            }}
+            tintColor={themeYellow}
+          />
+        }
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -207,6 +219,8 @@ export default function AdminSettingsScreen() {
             <ThemedText style={[styles.bannerText, { color: colors.error }]}>{error}</ThemedText>
           </View>
         ) : null}
+
+        <AppPermissionsCard rows={appPermissions.rows} hint={appPermissions.hint} />
 
         {/* Application & contact */}
         <View style={[styles.card, styles.cardVibrant, { backgroundColor: cardBg, borderColor: cardBorder }]}>
