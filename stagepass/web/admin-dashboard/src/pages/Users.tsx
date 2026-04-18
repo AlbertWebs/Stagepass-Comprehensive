@@ -4,6 +4,14 @@ import { FormModal } from '@/components/FormModal';
 import { PageHeader } from '@/components/PageHeader';
 import { Preloader } from '@/components/Preloader';
 import { SectionCard } from '@/components/SectionCard';
+import { useAuth } from '@/contexts/AuthContext';
+
+function hasAdminAccess(user: { roles?: Array<{ name?: string }> } | null): boolean {
+  const names = (user?.roles ?? [])
+    .map((r) => String(r?.name ?? '').trim().toLowerCase())
+    .filter(Boolean);
+  return names.some((n) => n === 'admin' || n === 'super_admin' || n === 'director');
+}
 
 type UserFormState = {
   name: string;
@@ -44,6 +52,8 @@ type UsersPageProps = {
   subtitle?: string;
   sectionLabel?: string;
   createButtonLabel?: string;
+  /** Crew page: show “Test push” per row (admins only; uses /checkins/send-push). */
+  showPushTestActions?: boolean;
 };
 
 export default function Users({
@@ -51,7 +61,10 @@ export default function Users({
   subtitle = 'Manage crew and staff. Search, create, edit or delete users and assign roles.',
   sectionLabel = 'Team members',
   createButtonLabel = 'Create user',
+  showPushTestActions = false,
 }: UsersPageProps = {}) {
+  const { user: authUser } = useAuth();
+  const canSendTestPush = showPushTestActions && hasAdminAccess(authUser);
   const [data, setData] = useState<Paginated<User> | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [search, setSearch] = useState('');
@@ -68,6 +81,8 @@ export default function Users({
   const [error, setError] = useState<string | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
   const [form, setForm] = useState<UserFormState>(emptyForm());
+  const [pushTestUserId, setPushTestUserId] = useState<number | null>(null);
+  const [pushTestMessage, setPushTestMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const fetchUsers = useCallback(() => {
     api.users
@@ -84,6 +99,26 @@ export default function Users({
 
   useEffect(() => {
     api.roles.list().then(setRoles).catch(() => setRoles([]));
+  }, []);
+
+  const sendTestPushToUser = useCallback(async (userId: number, userName: string) => {
+    setPushTestUserId(userId);
+    setPushTestMessage(null);
+    try {
+      await api.checkins.sendPush(
+        userId,
+        'Stagepass',
+        `Test notification: Hi ${userName}, this is a test push from the admin dashboard.`
+      );
+      setPushTestMessage({ type: 'success', text: 'Test push notification sent.' });
+    } catch (err) {
+      setPushTestMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Failed to send test push.',
+      });
+    } finally {
+      setPushTestUserId(null);
+    }
   }, []);
 
   const users = data?.data ?? [];
@@ -353,7 +388,29 @@ export default function Users({
           className="input-search-brand w-80"
           aria-label="Search users"
         />
+        {canSendTestPush && authUser?.id != null ? (
+          <button
+            type="button"
+            onClick={() => sendTestPushToUser(authUser.id, authUser.name ?? 'there')}
+            disabled={pushTestUserId === authUser.id}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+          >
+            {pushTestUserId === authUser.id ? 'Sending…' : 'Test push (my device)'}
+          </button>
+        ) : null}
       </div>
+
+      {pushTestMessage ? (
+        <div
+          className={`rounded-lg border px-4 py-3 text-sm ${
+            pushTestMessage.type === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+              : 'border-red-200 bg-red-50 text-red-800'
+          }`}
+        >
+          {pushTestMessage.text}
+        </div>
+      ) : null}
 
       <SectionCard sectionLabel={sectionLabel}>
         <div className="overflow-x-auto scrollbar-thin">
@@ -398,6 +455,17 @@ export default function Users({
                   </td>
                   <td className="px-6 py-4 text-right whitespace-nowrap">
                     <span className="inline-flex items-center justify-end gap-3">
+                      {canSendTestPush ? (
+                        <button
+                          type="button"
+                          onClick={() => sendTestPushToUser(u.id, u.name)}
+                          disabled={pushTestUserId === u.id}
+                          className="link-brand hover:underline disabled:opacity-50"
+                          aria-label={`Send test push to ${u.name}`}
+                        >
+                          {pushTestUserId === u.id ? 'Sending…' : 'Test push'}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => {

@@ -97,6 +97,10 @@ export default function EventDetailScreen() {
   const [attendanceMapSourceIndex, setAttendanceMapSourceIndex] = useState(0);
   const { checkCanCheckIn } = useGeofence();
 
+  const goBackToEvents = useCallback(() => {
+    handleNav(() => router.push('/(tabs)/events'));
+  }, [handleNav, router]);
+
   const fetchEvent = useCallback(() => {
     if (!id) return;
     setLoading(true);
@@ -369,7 +373,7 @@ export default function EventDetailScreen() {
   if (loading || !event) {
     return (
       <ThemedView style={styles.container}>
-        <HomeHeader title="Event details" notificationCount={0} />
+        <HomeHeader title="Event details" showBack onBack={goBackToEvents} notificationCount={0} />
         <View style={[styles.scrollWrapper, styles.loaderArea]}>
           <StagepassLoader message="Loading event…" fullScreen={false} />
         </View>
@@ -392,7 +396,7 @@ export default function EventDetailScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <HomeHeader title="Event details" notificationCount={0} />
+      <HomeHeader title="Event details" showBack onBack={goBackToEvents} notificationCount={0} />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + Spacing.xxl }]}

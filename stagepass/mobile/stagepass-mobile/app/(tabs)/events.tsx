@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -11,17 +11,17 @@ import {
 } from 'react-native';
 import Animated, { SlideInRight } from 'react-native-reanimated';
 import { useSelector } from 'react-redux';
-import { api, type Event } from '~/services/api';
+import { api, type Event, type RoleName } from '~/services/api';
+import { useAppRole } from '~/hooks/useAppRole';
 import { HomeHeader } from '@/components/HomeHeader';
 import { EventCard, type EventDisplayStatus } from '@/components/EventCard';
 import { StagepassLoader } from '@/components/StagepassLoader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Cards, Icons, Typography, UI } from '@/constants/ui';
-import { Spacing, StatusColors, themeBlue, themeYellow } from '@/constants/theme';
+import { Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { useNavigationPress } from '@/src/utils/navigationPress';
-import { useAppRole } from '~/hooks/useAppRole';
 
 const TAB_BAR_HEIGHT = 58;
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -80,15 +80,59 @@ function parseEventDateLocal(input: string | undefined | null | unknown): Date |
   return new Date(year, month - 1, day, 0, 0, 0, 0);
 }
 
+/** Minutes from midnight for HH:mm or HH:mm:ss */
+function timeStringToMinutes(t?: string | null): number | null {
+  if (!t || typeof t !== 'string') return null;
+  const part = t.trim().slice(0, 5);
+  const m = /^(\d{1,2}):(\d{2})$/.exec(part);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(min)) return null;
+  return h * 60 + min;
+}
+
+/** e.g. 10:30 → 03:30 next calendar day — end time is "earlier" than start on a 24h clock */
+function isOvernightTimeRange(event: Event): boolean {
+  const s = timeStringToMinutes(event.start_time);
+  const e = timeStringToMinutes(event.expected_end_time);
+  if (s == null || e == null) return false;
+  return e < s;
+}
+
+/**
+ * For overnight shifts, `end_date` is often the *next calendar day* while the shift is still one
+ * "work day" starting on `date`. For the My Events calendar, show that event only on `date`, not on `end_date`.
+ * True multi-day events (range > 1 day or non-overnight times) keep the full [date, end_date] range.
+ */
+function effectiveCalendarEndDate(event: Event, startDate: Date): Date {
+  const endFromApi = parseEventDateLocal(event.end_date);
+  const startKey = dateKey(startDate);
+  if (!endFromApi) {
+    return new Date(startDate.getTime());
+  }
+  const endKey = dateKey(endFromApi);
+  if (startKey === endKey) {
+    return new Date(startDate.getTime());
+  }
+  const dayAfterStart = new Date(startDate.getTime());
+  dayAfterStart.setDate(dayAfterStart.getDate() + 1);
+  if (dateKey(dayAfterStart) === endKey && isOvernightTimeRange(event)) {
+    return new Date(startDate.getTime());
+  }
+  return endFromApi;
+}
+
 function eventMatchesDate(event: Event, date: Date): boolean {
   const startDate = parseEventDateLocal(event.date);
   if (!startDate) return false;
-  const endDate = parseEventDateLocal(event.end_date) ?? startDate;
+  const endDate = effectiveCalendarEndDate(event, startDate);
   startDate.setHours(0, 0, 0, 0);
-  endDate.setHours(0, 0, 0, 0);
+  const end = new Date(endDate.getTime());
+  end.setHours(0, 0, 0, 0);
   const selected = new Date(date);
   selected.setHours(0, 0, 0, 0);
-  return selected.getTime() >= startDate.getTime() && selected.getTime() <= endDate.getTime();
+  return selected.getTime() >= startDate.getTime() && selected.getTime() <= end.getTime();
 }
 
 function sortByTime(a: Event, b: Event): number {
@@ -101,9 +145,51 @@ function sortByTime(a: Event, b: Event): number {
   }
 }
 
+/** Event-level ended states (align with event detail / backend `Event` model). */
+function isEventEndedStatus(status: string | undefined): boolean {
+  const s = String(status ?? '')
+    .trim()
+    .toLowerCase();
+  return s === 'completed' || s === 'closed' || s === 'done_for_the_day';
+}
+
+/** Start-of-day for `event.date` (crew assignment day), local. */
+function eventStartDay(event: Event): Date | null {
+  const d = parseEventDateLocal(event.date);
+  if (!d) return null;
+  const x = new Date(d.getTime());
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+/** Upcoming = not ended and event start date is today or in the future (past starts → All Events only). */
+function isUpcomingTabEvent(event: Event, todayStart: Date): boolean {
+  if (isEventEndedStatus(event.status)) return false;
+  const start = eventStartDay(event);
+  if (!start) return false;
+  return start.getTime() >= todayStart.getTime();
+}
+
+/** Same rules as event detail `canManageEventCrew` — team leader (or assigned leader id) may open operations. */
+function canManageEventOperations(event: Event, userId: number | undefined, role: RoleName): boolean {
+  if (userId == null) return false;
+  if (role === 'admin') return true;
+  const teamLeader = event.team_leader ?? event.teamLeader;
+  const assignedLeaderId = event.team_leader_id ?? teamLeader?.id;
+  if (assignedLeaderId != null && Number(assignedLeaderId) === userId) {
+    return true;
+  }
+  if (role !== 'team_leader') return false;
+  if (event.team_leader_id != null && event.team_leader_id !== undefined) {
+    return false;
+  }
+  if (Number(event.created_by_id) === userId) return true;
+  return Boolean(event.crew?.some((c) => c.id === userId));
+}
+
 /** My Events: show Created | Checked in | Checked out | Completed from event status + current user's crew pivot */
 function getEventDisplayStatus(event: Event, userId: number | undefined): EventDisplayStatus {
-  if (event.status === 'completed' || event.status === 'closed') return 'completed';
+  if (isEventEndedStatus(event.status)) return 'completed';
   if (userId == null || !event.crew?.length) return 'created';
   const me = event.crew.find((c) => Number(c.id) === Number(userId));
   if (!me?.pivot) return 'created';
@@ -125,8 +211,8 @@ export default function EventsTab() {
   const router = useRouter();
   const handleNav = useNavigationPress();
   const { colors, isDark } = useStagePassTheme();
-  const role = useAppRole();
   const userId = useSelector((s: { auth: { user: { id: number } | null } }) => s.auth.user?.id);
+  const role = useAppRole();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -139,21 +225,8 @@ export default function EventsTab() {
     return d;
   });
   const [eventFilter, setEventFilter] = useState<'all' | 'upcoming' | 'completed'>('upcoming');
-  const [dailyAllowance, setDailyAllowance] = useState<string | number | null>(null);
   const [animateKey, setAnimateKey] = useState(0);
   const scrollBottomPadding = TAB_BAR_HEIGHT;
-
-  const isCrewOrTeamLeader = role === 'crew' || role === 'team_leader';
-  const canAccessSettings = role === 'super_admin' || role === 'director' || role === 'admin';
-
-  useEffect(() => {
-    if (canAccessSettings) {
-      api.settings.get().then((s) => {
-        const v = s?.daily_allowance ?? s?.default_daily_allowance;
-        setDailyAllowance(v != null ? (typeof v === 'number' ? v : Number(v) || v) : null);
-      }).catch(() => {});
-    }
-  }, [canAccessSettings]);
 
   const loadEvents = useCallback(async () => {
     try {
@@ -197,26 +270,22 @@ export default function EventsTab() {
     loadEvents();
   }, [loadEvents]);
 
+  const eventsForSelectedDateOnly = useMemo(
+    () => events.filter((e) => eventMatchesDate(e, selectedDate)),
+    [events, selectedDate]
+  );
+
   const eventsOnSelectedDate = useMemo(() => {
-    let list = events.filter((e) => eventMatchesDate(e, selectedDate));
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    let list = eventsForSelectedDateOnly;
     if (eventFilter === 'upcoming') {
-      list = list.filter((e) => e.status !== 'completed' && e.status !== 'closed');
+      list = list.filter((e) => isUpcomingTabEvent(e, todayStart));
     } else if (eventFilter === 'completed') {
-      list = list.filter((e) => e.status === 'completed' || e.status === 'closed');
+      list = list.filter((e) => isEventEndedStatus(e.status));
     }
     return list;
-  }, [events, selectedDate, eventFilter]);
-
-  const dailyAllowanceFromEvents = useMemo(() => {
-    if (!isCrewOrTeamLeader || eventsOnSelectedDate.length === 0) return null;
-    const firstWithAllowance = eventsOnSelectedDate.find(
-      (e) => e.daily_allowance != null && Number(e.daily_allowance) > 0
-    );
-    const v = firstWithAllowance?.daily_allowance;
-    return v != null ? (typeof v === 'number' ? v : Number(v) || null) : null;
-  }, [isCrewOrTeamLeader, eventsOnSelectedDate]);
-
-  const displayDailyAllowance = canAccessSettings ? dailyAllowance : dailyAllowanceFromEvents;
+  }, [eventsForSelectedDateOnly, eventFilter]);
 
   const weekDays = useMemo(() => {
     const start = startOfWeekLocal(selectedDate);
@@ -255,6 +324,8 @@ export default function EventsTab() {
     return 'Events';
   })();
   const isTodaySelected = sectionTitle === "Today's Events";
+  /** Hide "Today's Events" row when today is selected but nothing is scheduled this calendar day. */
+  const showTodaySectionHeader = !isTodaySelected || eventsForSelectedDateOnly.length > 0;
   const selectedChipTextColor = isDark ? '#111827' : themeBlue;
 
   return (
@@ -412,29 +483,15 @@ export default function EventsTab() {
           })}
         </View>
 
-        {isCrewOrTeamLeader && (
-          <View style={[styles.allowanceCard, { backgroundColor: colors.surface, borderColor: colors.border, borderLeftColor: StatusColors.checkedIn }]}>
-            <View style={[styles.allowanceIconWrap, { backgroundColor: StatusColors.checkedIn + '18', borderColor: StatusColors.checkedIn + '35' }]}>
-              <Ionicons name="wallet-outline" size={Icons.header} color={StatusColors.checkedIn} />
-            </View>
-            <View style={styles.allowanceTextWrap}>
-              <ThemedText style={[styles.allowanceValue, { color: colors.text }]}>
-                {displayDailyAllowance != null
-                  ? `KES ${Number(displayDailyAllowance).toLocaleString()}`
-                  : '0.00 KES'}
-              </ThemedText>
-              <ThemedText style={[styles.allowanceLabel, { color: colors.textSecondary }]}>DAILY ALLOWANCE</ThemedText>
-            </View>
+        {showTodaySectionHeader ? (
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+            <Ionicons name="calendar" size={Icons.header} color={themeYellow} style={styles.sectionIcon} />
+            <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>
+              {sectionTitle}
+            </ThemedText>
           </View>
-        )}
-
-        <View style={styles.sectionHeader}>
-          <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
-          <Ionicons name="calendar" size={Icons.header} color={themeYellow} style={styles.sectionIcon} />
-          <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>
-            {sectionTitle}
-          </ThemedText>
-        </View>
+        ) : null}
 
         {events.length === 0 ? (
           <View style={styles.emptyWrap}>
@@ -465,7 +522,7 @@ export default function EventsTab() {
               )}
             </Pressable>
           </View>
-        ) : eventsOnSelectedDate.length === 0 ? (
+        ) : eventsForSelectedDateOnly.length === 0 ? (
           <View style={styles.emptyWrap}>
             <View style={[styles.emptyIconWrapSmall, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Ionicons name="today-outline" size={Icons.xl} color={colors.textSecondary} />
@@ -475,6 +532,22 @@ export default function EventsTab() {
             </ThemedText>
             <ThemedText style={[styles.emptySub, { color: colors.textSecondary }]}>
               Select another date or pull down to refresh.
+            </ThemedText>
+          </View>
+        ) : eventsOnSelectedDate.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <View style={[styles.emptyIconWrapSmall, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Ionicons name="funnel-outline" size={Icons.xl} color={colors.textSecondary} />
+            </View>
+            <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>
+              {eventFilter === 'upcoming'
+                ? 'No upcoming events on this day'
+                : 'No completed events on this day'}
+            </ThemedText>
+            <ThemedText style={[styles.emptySub, { color: colors.textSecondary }]}>
+              {eventFilter === 'upcoming'
+                ? 'Upcoming only lists events whose start date is today or later and that are not ended yet. Past start dates and finished shifts are under All Events or Completed.'
+                : 'Nothing finished or closed on this day yet. Try All Events or Upcoming.'}
             </ThemedText>
           </View>
         ) : (
@@ -504,6 +577,23 @@ export default function EventsTab() {
                 displayStatus={getEventDisplayStatus(item, userId)}
                 borderOnly={isTodaySelected}
                 onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(item.id) } }))}
+                extraActions={
+                  canManageEventOperations(item, userId, role)
+                    ? [
+                        {
+                          label: 'Operations',
+                          icon: 'briefcase-outline',
+                          onPress: () =>
+                            handleNav(() =>
+                              router.push({
+                                pathname: '/(tabs)/admin/events/[id]/operations',
+                                params: { id: String(item.id) },
+                              })
+                            ),
+                        },
+                      ]
+                    : undefined
+                }
               />
             ))}
           </ScrollView>
@@ -640,39 +730,6 @@ const styles = StyleSheet.create({
   filterTabText: {
     fontSize: Typography.label,
     fontWeight: Typography.labelWeight,
-  },
-  allowanceCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    padding: Spacing.lg,
-    borderRadius: Cards.borderRadius,
-    borderWidth: 1,
-    borderLeftWidth: 4,
-    marginTop: Spacing.md,
-    marginBottom: Spacing.lg,
-  },
-  allowanceIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  allowanceTextWrap: {
-    flex: 1,
-  },
-  allowanceValue: {
-    fontSize: Typography.body,
-    fontWeight: Typography.titleCardWeight,
-    letterSpacing: 0.2,
-  },
-  allowanceLabel: {
-    fontSize: Typography.labelSmall,
-    fontWeight: Typography.labelSmallWeight,
-    letterSpacing: 0.5,
-    marginTop: 2,
   },
   sectionHeader: {
     flexDirection: 'row',
