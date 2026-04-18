@@ -10,6 +10,7 @@ use App\Models\EventUser;
 use App\Models\Setting;
 use App\Services\AttendanceOvertimeService;
 use App\Services\GeofenceService;
+use App\Support\EventAttendanceEligibility;
 use Carbon\Carbon;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -206,6 +207,10 @@ class AttendanceController extends Controller
 
         if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED, Event::STATUS_DONE_FOR_DAY], true)) {
             return response()->json(['message' => 'Cannot check in to an event that is already ended.'], 422);
+        }
+
+        if (! EventAttendanceEligibility::canCheckIn($event)) {
+            return response()->json(['message' => 'This event’s scheduled time has already passed. Check-in is no longer available.'], 422);
         }
 
         $assignment = EventUser::where('event_id', $event->id)

@@ -464,16 +464,26 @@ export const api = {
     },
   },
   events: {
-    /** List events. Backend returns only assigned for crew; admins get all. */
-    list: (params?: { status?: string; page?: number; per_page?: number; refresh?: boolean }) =>
-      request<{ data: Event[] }>('/events', {
-        params: params
-          ? ({
-              ...params,
-              refresh: params.refresh ? '1' : undefined,
-            } as Record<string, string>)
-          : undefined,
-      }),
+    /** List events. Backend returns only assigned for crew; admins get all. Supports Laravel pagination. */
+    list: (params?: {
+      status?: string;
+      page?: number;
+      per_page?: number;
+      refresh?: boolean;
+      activities_view?: boolean;
+      on_date?: string;
+      exclude_spanning_date?: string;
+    }) => {
+      const q: Record<string, string> = {};
+      if (params?.status) q.status = params.status;
+      if (params?.page != null) q.page = String(params.page);
+      if (params?.per_page != null) q.per_page = String(params.per_page);
+      if (params?.refresh) q.refresh = '1';
+      if (params?.activities_view) q.activities_view = '1';
+      if (params?.on_date) q.on_date = params.on_date;
+      if (params?.exclude_spanning_date) q.exclude_spanning_date = params.exclude_spanning_date;
+      return request<Paginated<Event>>('/events', Object.keys(q).length ? { params: q } : undefined);
+    },
     get: (id: number) => request<Event>(`/events/${id}`),
     /** Event assigned to current user for today (crew/leader home). Pass localDate (YYYY-MM-DD) so backend uses device date. */
     myEventToday: (localDate?: string) =>
@@ -1019,6 +1029,17 @@ export function getRole(user: User | null): RoleName {
   if (names.includes('operations')) return 'operations';
   return 'crew';
 }
+
+/** Laravel `paginate()` JSON shape */
+export type Paginated<T> = {
+  data: T[];
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+  from?: number | null;
+  to?: number | null;
+};
 
 export interface Event {
   id: number;

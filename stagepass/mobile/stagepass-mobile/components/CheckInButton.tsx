@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Pressable, StyleSheet, Text } from 'react-native';
+import { BEVEL_PRIMARY, BUTTON_3D_SHADOW } from '@/constants/button3d';
 import { StagePassColors, themeBlue } from '@/constants/theme';
 
 type CheckInButtonProps = {
@@ -54,11 +55,8 @@ const styles = StyleSheet.create({
     borderRadius: SIZE / 2,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 8,
+    ...BUTTON_3D_SHADOW,
+    ...BEVEL_PRIMARY,
   },
   label: { fontSize: 22, fontWeight: '800', color: themeBlue, letterSpacing: 1.2 },
 });

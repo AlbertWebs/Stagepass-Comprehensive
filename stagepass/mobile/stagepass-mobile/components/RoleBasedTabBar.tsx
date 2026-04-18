@@ -31,7 +31,9 @@ import { useSelector } from 'react-redux';
 /** Match header (top right) icons – Icons.header = 20 */
 const TAB_ICON_SIZE = Icons.header;
 const LABEL_FONT_SIZE = 8;
-const MIN_BOTTOM = Platform.OS === 'android' ? 12 : 8;
+/** Floor when safe-area insets are 0 or too small (common with Android edge-to-edge). */
+const MIN_BOTTOM_TAB =
+  Platform.OS === 'android' ? 22 : 8;
 const TAB_MIN_HEIGHT = 36;
 const HIT_SLOP = { top: 8, bottom: 8, left: 12, right: 12 };
 const INACTIVE_COLOR_LIGHT = '#6B7280';
@@ -126,13 +128,18 @@ const ADMIN_TABS: TabItemConfig[] = [
   { name: 'profile', route: 'profile', label: 'Profile', iconName: 'person.fill' },
 ];
 
-export function RoleBasedTabBar({ state, navigation, descriptors }: BottomTabBarProps) {
+export function RoleBasedTabBar({ state, navigation, descriptors, insets: tabNavigatorInsets }: BottomTabBarProps) {
   const role = useAppRole();
   const router = useRouter();
   const pathname = usePathname();
-  const insets = useSafeAreaInsets();
+  const safeAreaInsets = useSafeAreaInsets();
   const { colors, isDark } = useStagePassTheme();
-  const bottomInset = Math.max(insets.bottom, MIN_BOTTOM);
+  /** Navigator + context insets — both are needed when edge-to-edge reports 0 for one source. */
+  const bottomInset = Math.max(
+    tabNavigatorInsets.bottom,
+    safeAreaInsets.bottom,
+    MIN_BOTTOM_TAB
+  );
   const isTeamLeaderOrAdmin = role === 'admin' || role === 'team_leader';
   const tabs = isTeamLeaderOrAdmin ? ADMIN_TABS : USER_TABS;
   const activeRouteName = state.routes[state.index]?.name;
@@ -341,12 +348,12 @@ export function RoleBasedTabBar({ state, navigation, descriptors }: BottomTabBar
 const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 5,
+    paddingTop: 4,
     paddingHorizontal: 4,
     paddingBottom: 1,
-    minHeight: 42,
+    minHeight: 40,
     borderTopWidth: 1,
     elevation: 8,
     shadowOffset: { width: 0, height: -2 },
@@ -358,7 +365,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: TAB_MIN_HEIGHT,
-    paddingVertical: 2,
+    paddingVertical: 1,
     paddingHorizontal: 3,
     minWidth: 0,
     borderRadius: 13,
@@ -406,7 +413,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: LABEL_FONT_SIZE,
     fontWeight: '600',
-    marginTop: 4,
+    marginTop: 3,
     letterSpacing: 0.3,
   },
   labelActive: {

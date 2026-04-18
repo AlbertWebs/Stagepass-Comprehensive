@@ -28,6 +28,13 @@ import { Cards, Icons, Typography } from '@/constants/ui';
 import { BorderRadius, Spacing, StatusColors, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import * as Location from 'expo-location';
+import {
+  canCheckInEligibility,
+  canCheckOutEligibility,
+  canLeaderManualCheckIn,
+  eventTimeHasPassed,
+  isEndedEventStatus,
+} from '@/src/utils/eventEligibility';
 
 function formatEventDate(dateStr: string | undefined): string {
   if (!dateStr) return '—';
@@ -158,6 +165,8 @@ export default function EventDetailScreen() {
     return () => clearInterval(interval);
   }, []);
 
+  const eligibilityNowDetail = useMemo(() => new Date(), [clockTick]);
+
   const sessionStats = useMemo(() => {
     void clockTick;
     if (!checkinTime) {
@@ -237,6 +246,10 @@ export default function EventDetailScreen() {
 
   const handleLeaderCheckInMember = async (userId: number) => {
     if (!event?.id) return;
+    if (!canLeaderManualCheckIn(event, eligibilityNowDetail)) {
+      Alert.alert('Cannot check in', 'This event is no longer open for check-in.');
+      return;
+    }
     setLeaderCheckInUserId(userId);
     let lat: number | undefined;
     let lon: number | undefined;
@@ -259,6 +272,17 @@ export default function EventDetailScreen() {
 
   const handleCheckIn = async () => {
     if (!event?.id || actionLoading) return;
+    if (currentUserId != null && !canCheckInEligibility(event, currentUserId, new Date())) {
+      Alert.alert(
+        'Cannot check in',
+        isEndedEventStatus(event.status)
+          ? 'This event is no longer open for check-in.'
+          : eventTimeHasPassed(event)
+            ? 'This event’s scheduled time has already passed.'
+            : 'You are not eligible to check in for this event.'
+      );
+      return;
+    }
     const eventLat = event.latitude ?? null;
     const eventLon = event.longitude ?? null;
     const radius = event.geofence_radius ?? 100;
@@ -285,6 +309,10 @@ export default function EventDetailScreen() {
 
   const handleCheckOut = async () => {
     if (!event?.id || actionLoading || checkoutTime) return;
+    if (currentUserId != null && !canCheckOutEligibility(event, currentUserId, new Date())) {
+      Alert.alert('Cannot check out', 'This event is no longer open for check-out.');
+      return;
+    }
     setActionLoading(true);
     try {
       await api.attendance.checkout(event.id);
@@ -319,7 +347,13 @@ export default function EventDetailScreen() {
   const rippleEasing = Easing.out(Easing.cubic);
   const RIPPLE_DURATION = 4800;
   useEffect(() => {
-    if (checkinTime) {
+    if (
+      checkinTime ||
+      !event ||
+      myAssignment == null ||
+      currentUserId == null ||
+      !canCheckInEligibility(event, currentUserId, eligibilityNowDetail)
+    ) {
       rippleProgress.value = withTiming(0);
       rippleProgress2.value = withTiming(0);
       return;
@@ -337,7 +371,7 @@ export default function EventDetailScreen() {
         false
       )
     );
-  }, [checkinTime, rippleProgress, rippleProgress2]);
+  }, [checkinTime, event, myAssignment, currentUserId, eligibilityNowDetail, rippleProgress, rippleProgress2]);
 
   const rippleStyle = useAnimatedStyle(() => {
     const scale = 1 + 0.72 * rippleProgress.value;
@@ -382,8 +416,30 @@ export default function EventDetailScreen() {
   }
 
   const isEventEnded = event.status === 'completed' || event.status === 'closed' || event.status === 'done_for_the_day';
+  const canSelfCheckIn =
+    myAssignment != null && currentUserId != null && canCheckInEligibility(event, currentUserId, eligibilityNowDetail);
+  const canSelfCheckOut =
+    myAssignment != null && currentUserId != null && canCheckOutEligibility(event, currentUserId, eligibilityNowDetail);
+  const checkInBlockedReason = (() => {
+    if (myAssignment == null || checkinTime) return null;
+    if (isEventEnded) return 'This event is closed for check-in.';
+    if (eventTimeHasPassed(event, eligibilityNowDetail)) return 'Status: Event has already passed';
+    return null;
+  })();
+  const checkOutBlockedReason =
+    checkinTime && !checkoutTime && myAssignment != null && !canSelfCheckOut && isEventEnded
+      ? 'Check-out is disabled because the event has ended.'
+      : null;
   const locationLabel = event.location_name ?? 'No location';
-  const timeLabel = formatEventTime(event.start_time);
+  const dateLabel = formatEventDate(event.date);
+  const timeRangeLabel = (() => {
+    const start = formatEventTime(event.start_time);
+    const end = formatEventTime(event.expected_end_time);
+    if (start && end) return `${start} – ${end}`;
+    if (start) return start;
+    if (end) return `Until ${end}`;
+    return '—';
+  })();
 
   const accent = isDark ? '#f8fafc' : '#0f172a';
   const cardSurface = colors.surface;
@@ -433,10 +489,11 @@ export default function EventDetailScreen() {
               ) : null}
               <View style={[styles.attendanceMapTint, { backgroundColor: isDark ? 'rgba(2,6,23,0.5)' : 'rgba(15,23,42,0.38)' }]} />
               <View style={styles.attendanceMapGrid} />
+              {myAssignment != null ? (
               <View style={styles.mapActionOverlay}>
                 <View style={styles.roundCheckInWrap}>
                   <Animated.View style={styles.roundCheckInButtonWrap}>
-                    {!checkinTime ? (
+                    {!checkinTime && canSelfCheckIn && userLocation ? (
                       <>
                         <Animated.View style={[styles.rippleRing, styles.rippleRingPrimary, { borderColor: themeYellow }, rippleStyle]} pointerEvents="none" />
                         <Animated.View style={[styles.rippleRing, styles.rippleRingSecondary, { borderColor: themeYellow + 'bb' }, rippleStyle2]} pointerEvents="none" />
@@ -444,25 +501,51 @@ export default function EventDetailScreen() {
                     ) : null}
                     <Pressable
                       onPress={!checkinTime ? handleCheckIn : !checkoutTime ? handleCheckOut : undefined}
-                      disabled={actionLoading || (!checkinTime && !userLocation) || !!checkoutTime}
+                      disabled={
+                        actionLoading ||
+                        (!checkinTime && (!canSelfCheckIn || !userLocation)) ||
+                        (!!checkinTime && !checkoutTime && !canSelfCheckOut) ||
+                        !!checkoutTime
+                      }
                       style={({ pressed }) => [
                         styles.roundCheckInButton,
                         styles.roundCheckInButtonEvent,
-                        !checkinTime && { backgroundColor: themeYellow, shadowColor: themeYellow, shadowOpacity: 0.38 },
-                        checkinTime && !checkoutTime && { backgroundColor: themeBlue, shadowColor: themeBlue, shadowOpacity: 0.4 },
+                        !checkinTime && canSelfCheckIn && { backgroundColor: themeYellow, shadowColor: themeYellow, shadowOpacity: 0.38 },
+                        checkinTime && !checkoutTime && canSelfCheckOut && { backgroundColor: themeBlue, shadowColor: themeBlue, shadowOpacity: 0.4 },
                         checkoutTime && { backgroundColor: '#334155', shadowColor: '#334155', shadowOpacity: 0.2 },
-                        (actionLoading || (!checkinTime && !userLocation) || !!checkoutTime) && styles.roundCheckInButtonDisabled,
-                        (actionLoading || (!checkinTime && !userLocation) || !!checkoutTime) && { backgroundColor: themeBlue + '22' },
+                        (actionLoading ||
+                          (!checkinTime && (!canSelfCheckIn || !userLocation)) ||
+                          (!!checkinTime && !checkoutTime && !canSelfCheckOut) ||
+                          !!checkoutTime) &&
+                          styles.roundCheckInButtonDisabled,
+                        (actionLoading ||
+                          (!checkinTime && (!canSelfCheckIn || !userLocation)) ||
+                          (!!checkinTime && !checkoutTime && !canSelfCheckOut) ||
+                          !!checkoutTime) && { backgroundColor: themeBlue + '22' },
                         pressed && !actionLoading && styles.roundCheckInButtonPressed,
                       ]}
                     >
-                      {(actionLoading || (!checkinTime && !userLocation)) ? (
+                      {actionLoading ? (
                         <View style={styles.roundCheckInInner}>
                           <Ionicons name="location" size={Icons.standard} color={colors.textSecondary} />
                           <ThemedText style={[styles.roundCheckInLabel, { color: colors.textSecondary }]} numberOfLines={1}>
-                            {actionLoading ? (!checkinTime ? 'Checking in…' : 'Checking out…') : 'Getting location…'}
+                            {!checkinTime ? 'Checking in…' : 'Checking out…'}
                           </ThemedText>
                           <ThemedText style={[styles.roundCheckInSub, { color: colors.textSecondary }]} numberOfLines={1}>AT VENUE</ThemedText>
+                        </View>
+                      ) : !checkinTime && canSelfCheckIn && !userLocation ? (
+                        <View style={styles.roundCheckInInner}>
+                          <Ionicons name="location" size={Icons.standard} color={colors.textSecondary} />
+                          <ThemedText style={[styles.roundCheckInLabel, { color: colors.textSecondary }]} numberOfLines={1}>
+                            Getting location…
+                          </ThemedText>
+                          <ThemedText style={[styles.roundCheckInSub, { color: colors.textSecondary }]} numberOfLines={1}>AT VENUE</ThemedText>
+                        </View>
+                      ) : !checkinTime && !canSelfCheckIn ? (
+                        <View style={styles.roundCheckInInner}>
+                          <Ionicons name="lock-closed-outline" size={Icons.standard} color={colors.textSecondary} />
+                          <ThemedText style={[styles.roundCheckInLabel, { color: colors.textSecondary }]} numberOfLines={1}>Check in</ThemedText>
+                          <ThemedText style={[styles.roundCheckInSub, { color: colors.textSecondary }]} numberOfLines={1} />
                         </View>
                       ) : !checkinTime ? (
                         <View style={styles.roundCheckInInner}>
@@ -487,8 +570,19 @@ export default function EventDetailScreen() {
                   </Animated.View>
                 </View>
               </View>
+              ) : null}
             </View>
             </View>
+            {checkInBlockedReason ? (
+              <View style={[styles.statusBanner, { borderColor: cardBorder, backgroundColor: isDark ? '#0f172a55' : '#f8fafc' }]}>
+                <ThemedText style={[styles.statusBannerText, { color: colors.textSecondary }]}>{checkInBlockedReason}</ThemedText>
+              </View>
+            ) : null}
+            {checkOutBlockedReason ? (
+              <View style={[styles.statusBanner, { borderColor: cardBorder, backgroundColor: isDark ? '#0f172a55' : '#f8fafc' }]}>
+                <ThemedText style={[styles.statusBannerText, { color: colors.textSecondary }]}>{checkOutBlockedReason}</ThemedText>
+              </View>
+            ) : null}
             {checkinTime && !checkoutTime ? (
               <View style={[styles.liveHoursCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
               <ThemedText style={[styles.liveHoursTitle, { color: colors.text }]}>Active session</ThemedText>
@@ -528,17 +622,24 @@ export default function EventDetailScreen() {
             <ThemedText style={[styles.sectionTitle, { color: accent }]}>Event details</ThemedText>
           </View>
           <View style={[styles.detailsCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
-            {timeLabel ? (
-              <View style={[styles.detailRow, { borderBottomColor: colors.border }]}>
-                <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                  <Ionicons name="time-outline" size={Icons.small} color={themeYellow} />
-                </View>
-                <View style={styles.detailTextWrap}>
-                  <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Time</ThemedText>
-                  <ThemedText style={[styles.detailValue, { color: colors.text }]}>{timeLabel}</ThemedText>
-                </View>
+            <View style={[styles.detailRow, { borderBottomColor: colors.border }]}>
+              <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
+                <Ionicons name="calendar-outline" size={Icons.small} color={themeYellow} />
               </View>
-            ) : null}
+              <View style={styles.detailTextWrap}>
+                <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Date</ThemedText>
+                <ThemedText style={[styles.detailValue, { color: colors.text }]}>{dateLabel}</ThemedText>
+              </View>
+            </View>
+            <View style={[styles.detailRow, { borderBottomColor: cardBorder }]}>
+              <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
+                <Ionicons name="time-outline" size={Icons.small} color={themeYellow} />
+              </View>
+              <View style={styles.detailTextWrap}>
+                <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Time</ThemedText>
+                <ThemedText style={[styles.detailValue, { color: colors.text }]}>{timeRangeLabel}</ThemedText>
+              </View>
+            </View>
               <View style={[styles.detailRow, { borderBottomColor: cardBorder }, teamLeader == null && myAssignment == null && styles.detailRowLast]}>
               <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
                 <Ionicons name="location-outline" size={Icons.small} color={themeYellow} />
@@ -681,10 +782,19 @@ export default function EventDetailScreen() {
                     {row.status === 'pending' ? (
                       <Pressable
                         onPress={() => handleLeaderCheckInMember(row.id)}
-                        disabled={leaderCheckInUserId === row.id}
+                        disabled={
+                          leaderCheckInUserId === row.id || !canLeaderManualCheckIn(event, eligibilityNowDetail)
+                        }
                         style={({ pressed }) => [
                           styles.leaderCheckInBtn,
-                          { backgroundColor: themeYellow + '22', borderColor: themeYellow },
+                          {
+                            backgroundColor: themeYellow + '22',
+                            borderColor: themeYellow,
+                            opacity:
+                              leaderCheckInUserId === row.id || !canLeaderManualCheckIn(event, eligibilityNowDetail)
+                                ? 0.45
+                                : 1,
+                          },
                           pressed && { opacity: 0.85 },
                         ]}
                       >
@@ -815,6 +925,17 @@ const styles = StyleSheet.create({
     padding: 0,
     marginBottom: Spacing.lg,
     overflow: 'visible',
+  },
+  statusBanner: {
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+  },
+  statusBannerText: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   attendanceMapOuter: {
     borderTopLeftRadius: 22,

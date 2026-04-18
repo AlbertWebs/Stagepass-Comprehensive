@@ -4,7 +4,7 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
   RefreshControl,
@@ -12,8 +12,9 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
+import { useSelector } from 'react-redux';
 import Animated, { SlideInRight } from 'react-native-reanimated';
-import { api, type Communication, type Event } from '~/services/api';
+import { api, type Communication, type Event, type Paginated } from '~/services/api';
 import { HomeHeader } from '@/components/HomeHeader';
 import { EventCard } from '@/components/EventCard';
 import { StagepassLoader } from '@/components/StagepassLoader';
@@ -24,27 +25,28 @@ import { Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 import { useAppRole } from '~/hooks/useAppRole';
+import { canCheckInEligibility, getMobileActivityBadge } from '@/src/utils/eventEligibility';
 
 const TAB_BAR_HEIGHT = 58;
 
-function isUpcoming(dateStr: string): boolean {
-  try {
-    const d = new Date(dateStr);
-    d.setHours(0, 0, 0, 0);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return d.getTime() >= today.getTime();
-  } catch {
-    return true;
-  }
+function todayDateString(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function sortByDate(a: Event, b: Event): number {
-  try {
-    return new Date(b.date).getTime() - new Date(a.date).getTime();
-  } catch {
-    return 0;
-  }
+/** YYYY-MM-DD from API event.date */
+function eventDateOnly(event: Event): string {
+  if (!event.date || typeof event.date !== 'string') return '';
+  const s = event.date.trim();
+  return s.length >= 10 ? s.substring(0, 10) : s;
+}
+
+function sortByStartTimeThenName(a: Event, b: Event): number {
+  const ta = (a.start_time || '').slice(0, 5);
+  const tb = (b.start_time || '').slice(0, 5);
+  const c = ta.localeCompare(tb);
+  if (c !== 0) return c;
+  return (a.name || '').localeCompare(b.name || '');
 }
 
 function formatTime(timeStr?: string): string {
@@ -60,27 +62,23 @@ function formatTime(timeStr?: string): string {
   }
 }
 
-function getCheckinStatus(event: Event): 'checked_in' | 'checked_out' | 'pending' | null {
-  const crew = event.crew ?? [];
-  const me = crew.find((c) => c.pivot);
-  if (!me?.pivot) return null;
-  if (me.pivot.checkout_time) return 'checked_out';
-  if (me.pivot.checkin_time) return 'checked_in';
-  return 'pending';
-}
-
 export default function ActivityScreen() {
   const router = useRouter();
   const handleNav = useNavigationPress();
   const { colors, isDark } = useStagePassTheme();
   const role = useAppRole();
+  const authUser = useSelector((s: { auth: { user: { id?: number } | null } }) => s.auth.user);
+  const viewerId = authUser?.id;
   const [animateKey, setAnimateKey] = useState(0);
-  const [eventToday, setEventToday] = useState<Event | null | undefined>(undefined);
-  const [events, setEvents] = useState<Event[]>([]);
+  const [todayEvents, setTodayEvents] = useState<Event[]>([]);
+  const [activityPage, setActivityPage] = useState(1);
+  const [activityPaged, setActivityPaged] = useState<Paginated<Event> | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [communications, setCommunications] = useState<Communication[]>([]);
+  const [nowTick, setNowTick] = useState(0);
   const scrollBottomPadding = TAB_BAR_HEIGHT;
+  const eligibilityNow = useMemo(() => new Date(), [nowTick]);
 
   useFocusEffect(
     useCallback(() => {
@@ -88,54 +86,96 @@ export default function ActivityScreen() {
     }, [])
   );
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    const t = setInterval(() => setNowTick((x) => x + 1), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  const fetchActivityData = useCallback(async (page: number) => {
+    if (role === 'admin') {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
     try {
-      const [todayRes, listRes] = await Promise.all([
-        api.events.myEventToday(),
-        api.events.list(),
+      const localToday = todayDateString();
+      const [todayRes, pageRes, myToday] = await Promise.all([
+        api.events.list({
+          on_date: localToday,
+          per_page: 50,
+          activities_view: true,
+          refresh: true,
+        }),
+        api.events.list({
+          exclude_spanning_date: localToday,
+          page,
+          per_page: 5,
+          activities_view: true,
+          refresh: true,
+        }),
+        api.events.myEventToday(localToday),
       ]);
-      setEventToday(todayRes.event ?? null);
-      const list = Array.isArray(listRes?.data) ? listRes.data : [];
-      setEvents(list.sort(sortByDate));
-      try {
-        const commRes = await api.communications.list();
-        const commList = Array.isArray(commRes?.data) ? commRes.data : [];
-        setCommunications(commList.slice(0, 8));
-      } catch {
-        setCommunications([]);
+
+      const fromApi = Array.isArray(todayRes?.data) ? todayRes.data : [];
+      const merged: Event[] = [];
+      const seen = new Set<number>();
+      for (const e of fromApi) {
+        if (myToday?.event?.id === e.id) {
+          merged.push(myToday.event);
+        } else {
+          merged.push(e);
+        }
+        seen.add(e.id);
       }
+      if (myToday?.event && !seen.has(myToday.event.id)) {
+        merged.push(myToday.event);
+      }
+      merged.sort(sortByStartTimeThenName);
+      setTodayEvents(merged);
+      setActivityPaged(pageRes);
     } catch {
-      setEventToday(null);
-      setEvents([]);
+      setTodayEvents([]);
+      setActivityPaged(null);
+    }
+    try {
+      const commRes = await api.communications.list();
+      const commList = Array.isArray(commRes?.data) ? commRes.data : [];
+      setCommunications(commList.slice(0, 8));
+    } catch {
       setCommunications([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [role]);
 
   useEffect(() => {
     if (role === 'admin') {
       setLoading(false);
       return;
     }
-    load();
-  }, [role, load]);
+    void fetchActivityData(activityPage);
+  }, [role, activityPage, fetchActivityData]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    load();
-  }, [load]);
+    if (activityPage <= 1) {
+      void fetchActivityData(1);
+    } else {
+      setActivityPage(1);
+    }
+  }, [activityPage, fetchActivityData]);
+
+  const pagedRows = activityPaged?.data ?? [];
+  const lastPage = activityPaged?.last_page ?? 1;
+  const currentPage = activityPaged?.current_page ?? activityPage;
+  const totalAssignedPages = activityPaged?.total ?? 0;
+
+  const hasAnyEvents = todayEvents.length > 0 || pagedRows.length > 0 || totalAssignedPages > 0;
 
   if (loading && role !== 'admin') {
     return <StagepassLoader message="Loading activities…" fullScreen />;
   }
-
-  const today = eventToday ?? null;
-  const checkinStatus = today ? getCheckinStatus(today) : null;
-  const upcoming = events.filter((e) => isUpcoming(e.date) && e.id !== today?.id);
-  const past = events.filter((e) => !isUpcoming(e.date));
-  const hasAnyEvents = today || upcoming.length > 0 || past.length > 0;
 
   const roleSubtitle =
     role === 'crew'
@@ -171,8 +211,8 @@ export default function ActivityScreen() {
             </View>
           </View>
 
-          {/* Today's event */}
-          {today && (
+          {/* Today: only events whose calendar date is today (local) */}
+          {todayEvents.length > 0 && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
@@ -181,71 +221,102 @@ export default function ActivityScreen() {
                 </ThemedText>
                 <View style={[styles.statusDot, { backgroundColor: themeYellow }]} />
               </View>
-              <Pressable
-                onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(today.id) } }))}
-                style={({ pressed }) => [
-                  styles.todayCard,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                    opacity: pressed ? NAV_PRESSED_OPACITY : 1,
-                  },
-                ]}
-              >
-                <View style={[styles.todayAccent, { backgroundColor: themeBlue }]} />
-                <View style={styles.todayBody}>
-                  <ThemedText style={[styles.todayName, { color: colors.text }]} numberOfLines={2}>
-                    {today.name}
-                  </ThemedText>
-                  {(today.location_name || today.start_time) && (
-                    <View style={styles.todayMeta}>
-                      {today.location_name ? (
-                        <View style={styles.todayMetaRow}>
-                          <Ionicons name="location" size={Icons.xs} color={colors.textSecondary} />
-                          <ThemedText style={[styles.todayMetaText, { color: colors.textSecondary }]} numberOfLines={1}>
-                            {today.location_name}
-                          </ThemedText>
+              {todayEvents.map((ev) => {
+                const activityBadge =
+                  viewerId != null ? getMobileActivityBadge(ev, viewerId, eligibilityNow) : null;
+                const canIn = viewerId != null && canCheckInEligibility(ev, viewerId, eligibilityNow);
+                const showTapCheckIn =
+                  activityBadge?.key !== 'checked_in' &&
+                  activityBadge?.key !== 'checked_out' &&
+                  activityBadge?.key !== 'event_passed' &&
+                  canIn;
+                return (
+                  <Pressable
+                    key={ev.id}
+                    onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(ev.id) } }))}
+                    style={({ pressed }) => [
+                      styles.todayCard,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                        opacity: pressed ? NAV_PRESSED_OPACITY : 1,
+                        marginBottom: Spacing.sm,
+                      },
+                    ]}
+                  >
+                    <View style={[styles.todayAccent, { backgroundColor: themeBlue }]} />
+                    <View style={styles.todayBody}>
+                      <ThemedText style={[styles.todayName, { color: colors.text }]} numberOfLines={2}>
+                        {ev.name}
+                      </ThemedText>
+                      {(ev.location_name || ev.start_time) && (
+                        <View style={styles.todayMeta}>
+                          {ev.location_name ? (
+                            <View style={styles.todayMetaRow}>
+                              <Ionicons name="location" size={Icons.xs} color={colors.textSecondary} />
+                              <ThemedText style={[styles.todayMetaText, { color: colors.textSecondary }]} numberOfLines={1}>
+                                {ev.location_name}
+                              </ThemedText>
+                            </View>
+                          ) : null}
+                          {ev.start_time ? (
+                            <View style={styles.todayMetaRow}>
+                              <Ionicons name="time" size={Icons.xs} color={colors.textSecondary} />
+                              <ThemedText style={[styles.todayMetaText, { color: colors.textSecondary }]}>
+                                {formatTime(ev.start_time)}
+                              </ThemedText>
+                            </View>
+                          ) : null}
                         </View>
-                      ) : null}
-                      {today.start_time ? (
-                        <View style={styles.todayMetaRow}>
-                          <Ionicons name="time" size={Icons.xs} color={colors.textSecondary} />
-                          <ThemedText style={[styles.todayMetaText, { color: colors.textSecondary }]}>
-                            {formatTime(today.start_time)}
-                          </ThemedText>
-                        </View>
-                      ) : null}
+                      )}
+                      <View style={styles.todayFooter}>
+                        {activityBadge ? (
+                          <View
+                            style={[
+                              styles.badge,
+                              {
+                                backgroundColor:
+                                  activityBadge.key === 'event_passed' || activityBadge.key === 'closed' || activityBadge.key === 'completed'
+                                    ? colors.textSecondary + '22'
+                                    : activityBadge.key === 'checked_in'
+                                      ? colors.success + '22'
+                                      : themeYellow + '22',
+                              },
+                            ]}
+                          >
+                            {activityBadge.key === 'checked_in' ? (
+                              <Ionicons name="checkmark-circle" size={Icons.xs} color={colors.success} />
+                            ) : null}
+                            <ThemedText
+                              style={[
+                                styles.badgeText,
+                                {
+                                  color:
+                                    activityBadge.key === 'event_passed' || activityBadge.key === 'closed' || activityBadge.key === 'completed'
+                                      ? colors.textSecondary
+                                      : activityBadge.key === 'checked_in'
+                                        ? colors.success
+                                        : colors.brandText,
+                                },
+                              ]}
+                            >
+                              {activityBadge.label}
+                            </ThemedText>
+                          </View>
+                        ) : null}
+                        {showTapCheckIn ? (
+                          <View style={[styles.badge, { backgroundColor: themeYellow + '22' }]}>
+                            <ThemedText style={[styles.badgeText, { color: colors.brandText }]}>Tap to check in</ThemedText>
+                          </View>
+                        ) : null}
+                        <ThemedText style={[styles.todayCta, { color: colors.brandText }]}>
+                          View details →
+                        </ThemedText>
+                      </View>
                     </View>
-                  )}
-                  <View style={styles.todayFooter}>
-                    {checkinStatus === 'checked_in' && (
-                      <View style={[styles.badge, { backgroundColor: colors.success + '22' }]}>
-                        <Ionicons name="checkmark-circle" size={Icons.xs} color={colors.success} />
-                        <ThemedText style={[styles.badgeText, { color: colors.success }]}>
-                          Checked in
-                        </ThemedText>
-                      </View>
-                    )}
-                    {checkinStatus === 'checked_out' && (
-                      <View style={[styles.badge, { backgroundColor: colors.textSecondary + '22' }]}>
-                        <ThemedText style={[styles.badgeText, { color: colors.textSecondary }]}>
-                          Checked out
-                        </ThemedText>
-                      </View>
-                    )}
-                    {checkinStatus === 'pending' && (
-                      <View style={[styles.badge, { backgroundColor: themeYellow + '22' }]}>
-                        <ThemedText style={[styles.badgeText, { color: colors.brandText }]}>
-                          Tap to check in
-                        </ThemedText>
-                      </View>
-                    )}
-                    <ThemedText style={[styles.todayCta, { color: colors.brandText }]}>
-                      View details →
-                    </ThemedText>
-                  </View>
-                </View>
-              </Pressable>
+                  </Pressable>
+                );
+              })}
             </View>
           )}
 
@@ -271,7 +342,12 @@ export default function ActivityScreen() {
                 <ThemedText style={[styles.quickLabel, { color: colors.text }]}>My Events</ThemedText>
               </Pressable>
               <Pressable
-                onPress={() => today && handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(today.id) } }))}
+                onPress={() =>
+                  todayEvents[0] &&
+                  handleNav(() =>
+                    router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(todayEvents[0].id) } })
+                  )
+                }
                 style={({ pressed }) => [
                   styles.quickCard,
                   { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? NAV_PRESSED_OPACITY : 1 },
@@ -281,14 +357,18 @@ export default function ActivityScreen() {
                   <Ionicons name="location" size={Icons.header} color={themeYellow} />
                 </View>
                 <ThemedText style={[styles.quickLabel, { color: colors.text }]}>
-                  {today ? 'Today’s event' : 'No event today'}
+                  {todayEvents.length > 1
+                    ? 'Today’s events'
+                    : todayEvents.length === 1
+                      ? 'Today’s event'
+                      : 'No event today'}
                 </ThemedText>
               </Pressable>
             </View>
           </View>
 
-          {/* Upcoming / Past events */}
-          {(upcoming.length > 0 || past.length > 0) && (
+          {/* Assigned events (server-paginated; excludes today’s calendar rows) */}
+          {role !== 'admin' && (pagedRows.length > 0 || (activityPaged?.total ?? 0) > 0) ? (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
@@ -296,22 +376,52 @@ export default function ActivityScreen() {
                   Your events
                 </ThemedText>
               </View>
-              {upcoming.slice(0, 5).map((item) => (
+              {pagedRows.map((item) => (
                 <EventCard
                   key={item.id}
                   event={item}
+                  viewerUserId={viewerId}
+                  eligibilityNow={eligibilityNow}
                   onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(item.id) } }))}
                 />
               ))}
-              {past.slice(0, 3).map((item) => (
-                <EventCard
-                  key={item.id}
-                  event={item}
-                  onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(item.id) } }))}
-                />
-              ))}
+              {lastPage > 1 ? (
+                <View style={[styles.pagerRow, { borderColor: colors.border }]}>
+                  <Pressable
+                    onPress={() => setActivityPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage <= 1}
+                    style={({ pressed }) => [
+                      styles.pagerBtn,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: colors.surface,
+                        opacity: currentPage <= 1 ? 0.45 : pressed ? NAV_PRESSED_OPACITY : 1,
+                      },
+                    ]}
+                  >
+                    <ThemedText style={[styles.pagerBtnText, { color: colors.text }]}>Previous</ThemedText>
+                  </Pressable>
+                  <ThemedText style={[styles.pagerInfo, { color: colors.textSecondary }]}>
+                    Page {currentPage} of {lastPage}
+                  </ThemedText>
+                  <Pressable
+                    onPress={() => setActivityPage((p) => Math.min(lastPage, p + 1))}
+                    disabled={currentPage >= lastPage}
+                    style={({ pressed }) => [
+                      styles.pagerBtn,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: colors.surface,
+                        opacity: currentPage >= lastPage ? 0.45 : pressed ? NAV_PRESSED_OPACITY : 1,
+                      },
+                    ]}
+                  >
+                    <ThemedText style={[styles.pagerBtnText, { color: colors.text }]}>Next</ThemedText>
+                  </Pressable>
+                </View>
+              ) : null}
             </View>
-          )}
+          ) : null}
 
           {/* Crew messages */}
           {(role === 'crew' || role === 'team_leader') && (
@@ -514,4 +624,22 @@ const styles = StyleSheet.create({
   },
   emptyButtonText: { fontSize: Typography.bodySmall, fontWeight: Typography.buttonTextWeight, color: '#fff' },
   bottomSpacer: { height: Spacing.lg },
+  pagerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.xs,
+    borderRadius: Cards.borderRadius,
+    borderWidth: 1,
+  },
+  pagerBtn: {
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Cards.borderRadius,
+    borderWidth: 1,
+  },
+  pagerBtnText: { fontSize: Typography.bodySmall, fontWeight: '600' },
+  pagerInfo: { fontSize: Typography.titleSection, fontWeight: '600' },
 });

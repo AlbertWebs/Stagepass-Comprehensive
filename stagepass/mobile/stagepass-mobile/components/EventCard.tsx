@@ -5,9 +5,11 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
-import { BorderRadius, Spacing, StatusColors, themeYellow, VibrantColors } from '@/constants/theme';
+import { StatusColors, themeYellow, VibrantColors } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { NAV_PRESSED_OPACITY } from '@/src/utils/navigationPress';
+import type { Event } from '~/services/api';
+import { getMobileActivityBadge, type MobileActivityBadgeKey } from '@/src/utils/eventEligibility';
 
 export type EventCardEvent = {
   id: number;
@@ -36,12 +38,27 @@ const DISPLAY_STATUS_BG: Record<EventDisplayStatus, string> = {
   completed: VibrantColors.teal,
 };
 
+const ACTIVITY_BADGE_BG: Record<MobileActivityBadgeKey, string> = {
+  upcoming: '#64748b',
+  active: VibrantColors.emerald,
+  checked_in: StatusColors.checkedIn,
+  checked_out: VibrantColors.sky,
+  done_for_the_day: VibrantColors.teal,
+  event_passed: '#94a3b8',
+  closed: '#475569',
+  completed: '#475569',
+};
+
 type EventCardProps = {
   event: EventCardEvent;
   onPress: () => void;
   onEdit?: () => void;
   /** Optional: for My Events, use this to show Created/Checked in/Checked out/Completed with standard colors */
   displayStatus?: EventDisplayStatus;
+  /** When set (e.g. Activities), badge uses unified eligibility labels (Upcoming, Active, …). */
+  viewerUserId?: number;
+  /** Bumps with time so badges refresh when event passes or TL ends the day. */
+  eligibilityNow?: Date;
   /** Optional extra action buttons (e.g. Crew, Operations) shown in same row as View */
   extraActions?: { label: string; onPress: () => void; icon?: keyof typeof Ionicons.glyphMap }[];
   /** Use border-only surface (no shadow/elevation). */
@@ -87,17 +104,36 @@ function statusDisplay(status: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 }
 
-export function EventCard({ event, onPress, onEdit, extraActions, displayStatus, borderOnly = false }: EventCardProps) {
+export function EventCard({
+  event,
+  onPress,
+  onEdit,
+  extraActions,
+  displayStatus,
+  viewerUserId,
+  eligibilityNow,
+  borderOnly = false,
+}: EventCardProps) {
   const { colors, isDark } = useStagePassTheme();
   const timeRange = formatTimeRange(event.start_time, event.expected_end_time);
   const useDisplayStatus = displayStatus != null;
-  const statusLabel = useDisplayStatus ? DISPLAY_STATUS_LABEL[displayStatus] : statusDisplay(event.status);
-  const statusBg = useDisplayStatus
-    ? (displayStatus === 'checked_out' && isDark ? '#475569' : DISPLAY_STATUS_BG[displayStatus])
-    : themeYellow;
-  const accentColor = useDisplayStatus
-    ? (displayStatus === 'checked_out' && isDark ? '#64748b' : DISPLAY_STATUS_BG[displayStatus])
-    : VibrantColors.emerald;
+  const activityBadge =
+    viewerUserId != null ? getMobileActivityBadge(event as Event, viewerUserId, eligibilityNow ?? new Date()) : null;
+  const statusLabel = activityBadge
+    ? activityBadge.label
+    : useDisplayStatus
+      ? DISPLAY_STATUS_LABEL[displayStatus]
+      : statusDisplay(event.status);
+  const statusBg = activityBadge
+    ? ACTIVITY_BADGE_BG[activityBadge.key]
+    : useDisplayStatus
+      ? (displayStatus === 'checked_out' && isDark ? '#475569' : DISPLAY_STATUS_BG[displayStatus])
+      : themeYellow;
+  const accentColor = activityBadge
+    ? ACTIVITY_BADGE_BG[activityBadge.key]
+    : useDisplayStatus
+      ? (displayStatus === 'checked_out' && isDark ? '#64748b' : DISPLAY_STATUS_BG[displayStatus])
+      : VibrantColors.emerald;
 
   return (
     <View
@@ -225,7 +261,7 @@ const styles = StyleSheet.create({
   statusPill: {
     paddingHorizontal: U.sm,
     paddingVertical: 3,
-    borderRadius: BorderRadius.full,
+    borderRadius: CARD_RADIUS,
   },
   statusText: {
     fontSize: 10,

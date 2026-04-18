@@ -46,6 +46,7 @@ import {
 import { StagepassFaviconLogo } from '@/components/StagepassFaviconLogo';
 import { ThemedText } from '@/components/themed-text';
 import { useThemePreference } from '@/context/ThemePreferenceContext';
+import { BEVEL_PRIMARY, BUTTON_3D_PRESSED, BUTTON_3D_SHADOW, BUTTON_3D_SHADOW_SOFT } from '@/constants/button3d';
 import { Buttons, Cards, Form, Icons, Typography, UI } from '@/constants/ui';
 import { Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
@@ -466,6 +467,7 @@ export default function LoginScreen() {
                       onPress={handleBiometricLogin}
                       style={({ pressed }) => [
                         styles.biometricBtnSide,
+                        BUTTON_3D_SHADOW_SOFT,
                         {
                           borderColor: accentColor,
                           opacity: biometricLoading
@@ -506,10 +508,13 @@ export default function LoginScreen() {
                       style={({ pressed }) => [
                         styles.loginBtn,
                         styles.loginBtnWider,
+                        BUTTON_3D_SHADOW,
+                        BEVEL_PRIMARY,
                         {
                           backgroundColor: accentColor,
                           opacity: loading ? 1 : pressed ? 0.9 : 1,
                         },
+                        !loading && pressed && [BUTTON_3D_PRESSED, { transform: [{ scale: 0.985 }] }],
                       ]}
                     >
                       {loading ? (
@@ -531,11 +536,14 @@ export default function LoginScreen() {
                     disabled={loading}
                     style={({ pressed }) => [
                       styles.loginBtn,
+                      BUTTON_3D_SHADOW,
+                      BEVEL_PRIMARY,
                       {
                         backgroundColor: accentColor,
                         opacity: loading ? 1 : pressed ? 0.9 : 1,
                         marginTop: serverAllowsBiometric && biometricAvailable ? Spacing.md : 0,
                       },
+                      !loading && pressed && [BUTTON_3D_PRESSED, { transform: [{ scale: 0.985 }] }],
                     ]}
                   >
                     {loading ? (

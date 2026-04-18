@@ -8,6 +8,7 @@ use App\Models\EventUser;
 use App\Models\ReminderLog;
 use App\Models\User;
 use App\Services\AttendanceOvertimeService;
+use App\Support\EventAttendanceEligibility;
 use Carbon\Carbon;
 use App\Notifications\CrewAddedToEventReminder;
 use Illuminate\Http\JsonResponse;
@@ -225,6 +226,10 @@ class EventCrewController extends Controller
 
         if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED, Event::STATUS_DONE_FOR_DAY], true)) {
             return response()->json(['message' => 'Cannot record attendance for an event that is already ended.'], 422);
+        }
+
+        if (! EventAttendanceEligibility::canCheckIn($event)) {
+            return response()->json(['message' => 'This event’s scheduled time has already passed. Check-in is no longer available.'], 422);
         }
 
         $assignment = EventUser::where('event_id', $event->id)

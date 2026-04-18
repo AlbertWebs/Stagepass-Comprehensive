@@ -2,7 +2,6 @@ import { isRunningInExpoGo } from 'expo';
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { getPermissionsAsync as getNotificationPermissionsAsync } from 'expo-notifications';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Platform } from 'react-native';
@@ -73,7 +72,8 @@ export function useAppPermissionsStatus() {
     let notificationStatus: PermissionKind = 'unavailable';
     if (!expoGo) {
       try {
-        const n = await getNotificationPermissionsAsync();
+        const { getPermissionsAsync } = await import('expo-notifications');
+        const n = await getPermissionsAsync();
         notificationStatus = mapPermissionStatus(n.status);
       } catch {
         notificationStatus = 'unavailable';

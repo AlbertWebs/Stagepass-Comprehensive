@@ -73,8 +73,35 @@ class EventController extends Controller
             $query->where('status', $request->status);
         }
 
-        $perPage = min((int) $request->input('per_page', 20), 100);
-        $events = $query->orderBy('date', 'desc')->paginate($perPage);
+        $localDate = $request->header('X-Local-Date');
+        $today = $localDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $localDate)
+            ? $localDate
+            : now()->toDateString();
+
+        if ($request->filled('on_date') && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $request->input('on_date'))) {
+            $query->spansDate((string) $request->input('on_date'));
+        }
+
+        if ($request->filled('exclude_spanning_date') && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $request->input('exclude_spanning_date'))) {
+            $d = (string) $request->input('exclude_spanning_date');
+            $query->where(function ($q) use ($d) {
+                $q->whereDate('date', '>', $d)
+                    ->orWhereRaw('COALESCE(end_date, date) < ?', [$d]);
+            });
+        }
+
+        if ($request->boolean('activities_view')) {
+            $query->orderByRaw('CASE WHEN COALESCE(end_date, date) >= ? THEN 0 ELSE 1 END', [$today]);
+            $query->orderByRaw('CASE WHEN COALESCE(end_date, date) >= ? THEN date END ASC', [$today]);
+            $query->orderByRaw('CASE WHEN COALESCE(end_date, date) < ? THEN date END DESC', [$today]);
+            $query->orderBy('start_time');
+        } else {
+            $query->orderBy('date', 'desc');
+        }
+
+        $defaultPerPage = $request->boolean('activities_view') ? 5 : 20;
+        $perPage = min((int) $request->input('per_page', $defaultPerPage), 100);
+        $events = $query->paginate($perPage);
 
         return response()->json($events);
     }

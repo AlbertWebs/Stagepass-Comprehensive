@@ -7,12 +7,6 @@ import { isRunningInExpoGo } from 'expo';
 import Constants from 'expo-constants';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
-import {
-  AndroidImportance,
-  getPermissionsAsync as getNotificationPermissionsAsync,
-  requestPermissionsAsync as requestNotificationPermissionsAsync,
-  setNotificationChannelAsync,
-} from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -163,17 +157,18 @@ export default function OnboardingScreen() {
         return;
       }
       try {
+        const Notifications = await import('expo-notifications');
         if (Platform.OS === 'android') {
-          await setNotificationChannelAsync('default', {
+          await Notifications.setNotificationChannelAsync('default', {
             name: 'Default',
-            importance: AndroidImportance.DEFAULT,
+            importance: Notifications.AndroidImportance.DEFAULT,
           });
         }
-        const { status: before } = await getNotificationPermissionsAsync();
+        const { status: before } = await Notifications.getPermissionsAsync();
         if (before !== 'granted') {
-          await requestNotificationPermissionsAsync();
+          await Notifications.requestPermissionsAsync();
         }
-        const { status } = await getNotificationPermissionsAsync();
+        const { status } = await Notifications.getPermissionsAsync();
         const granted = status === 'granted';
         afterAllow(granted, 'Notifications are on', goNext);
       } catch {
