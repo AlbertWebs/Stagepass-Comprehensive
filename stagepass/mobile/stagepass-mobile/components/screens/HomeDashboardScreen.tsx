@@ -40,6 +40,7 @@ import { Cards, Icons, Typography, UI } from '@/constants/ui';
 import { BorderRadius, Spacing, StatusColors, themeBlue, themeYellow, VibrantColors, VibrantColorsList } from '@/constants/theme';
 import { getOfficeCheckinConfig } from '@/constants/officeCheckin';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { parseOfficeCheckinRequiredDays } from '@/src/utils/officeCheckinRequiredDays';
 import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 import { useGeofence } from '~/hooks/useGeofence';
 import { api, type User as ApiUser, type Payment } from '~/services/api';
@@ -260,6 +261,7 @@ export function HomeDashboardScreen({
   const [checkInLoading, setCheckInLoading] = useState(false);
   const [officeCheckinWindow, setOfficeCheckinWindow] = useState<{ start: string; end: string }>({ start: '09:00', end: '10:00' });
   const [officeConfigFromApi, setOfficeConfigFromApi] = useState<{ latitude: number; longitude: number; radiusMeters: number } | null>(null);
+  const [officeCheckinRequiredDays, setOfficeCheckinRequiredDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [officeCheckinStep, setOfficeCheckinStep] = useState<'idle' | 'checking_in' | 'location_confirmed' | 'you_made_it'>('idle');
   const [officeCheckoutStep, setOfficeCheckoutStep] = useState<'idle' | 'checking_out' | 'success_thankyou' | 'see_you'>('idle');
   const [optimisticOfficeCheckedIn, setOptimisticOfficeCheckedIn] = useState(false);
@@ -300,14 +302,15 @@ export function HomeDashboardScreen({
   // Default to true when unknown so crew see office check-in unless backend explicitly marks them temporary
   const isPermanentEmployee = user?.is_permanent_employee !== false;
   const dayOfWeek = currentTime.getDay();
-  /** Saturdays closed; Sundays use a friendly “Chill day” card (office check-in not required). */
-  const isOfficeOpenToday = dayOfWeek !== 0 && dayOfWeek !== 6;
+  /** Admin-configured weekdays (0=Sun … 6=Sat) when office check-in is required. */
+  const isCheckinRequiredDay = officeCheckinRequiredDays.includes(dayOfWeek);
 
   const applyOfficeCheckinConfig = useCallback((s: Awaited<ReturnType<typeof api.settings.getOfficeCheckinConfig>>) => {
     setOfficeCheckinWindow({
       start: s?.office_checkin_start_time ?? '09:00',
       end: s?.office_checkin_end_time ?? '10:00',
     });
+    setOfficeCheckinRequiredDays(parseOfficeCheckinRequiredDays(s?.office_checkin_required_days));
     const lat = parseOfficeCoord(s?.office_latitude);
     const lng = parseOfficeCoord(s?.office_longitude);
     const rawRadius = s?.office_radius_m;
@@ -531,8 +534,15 @@ export function HomeDashboardScreen({
   /** Office check-in only: confirm user has entered the office (geofence from admin settings). */
   const handleOfficeCheckIn = useCallback(async () => {
     if (checkInLoading) return;
-    if (new Date().getDay() === 0) {
-      Alert.alert('Chill day', 'Office check-in isn’t required on Sundays — enjoy your day off.');
+    const dow = new Date().getDay();
+    if (!officeCheckinRequiredDays.includes(dow)) {
+      const weekend = dow === 0 || dow === 6;
+      Alert.alert(
+        weekend ? 'Weekend' : 'No office check-in',
+        weekend
+          ? 'We’re off for the weekend — office check-in isn’t available.'
+          : 'Office check-in isn’t required today.'
+      );
       return;
     }
     const nowHour = new Date().getHours();
@@ -615,7 +625,7 @@ export function HomeDashboardScreen({
       setCheckInLoading(false);
       setOfficeCheckinStep('idle');
     }
-  }, [userLocation, checkInLoading, onRefresh, officeConfig]);
+  }, [userLocation, checkInLoading, onRefresh, officeConfig, officeCheckinRequiredDays]);
 
   const handleOfficeCheckOut = useCallback(async () => {
     if (checkInLoading) return;
@@ -844,7 +854,7 @@ export function HomeDashboardScreen({
   const showOfficeRipple = Boolean(
     (role === 'crew' || role === 'team_leader' || role === 'admin') &&
     !hasApprovedTimeOffToday &&
-    isOfficeOpenToday &&
+    isCheckinRequiredDay &&
     !officeCheckedOutToday &&
     (!eventToday || hasEventCheckedOut || !hasEventCheckedIn)
   );
@@ -1056,7 +1066,7 @@ export function HomeDashboardScreen({
                       </Pressable>
                     </View>
                   ) : null}
-                  {(role === 'crew' || role === 'team_leader' || role === 'admin') && !hasApprovedTimeOffToday && isOfficeOpenToday && !officeCheckedOutToday ? (
+                  {(role === 'crew' || role === 'team_leader' || role === 'admin') && !hasApprovedTimeOffToday && isCheckinRequiredDay && !officeCheckedOutToday ? (
                     <View style={[styles.roundCheckInWrap, styles.officeAfterEventCheckoutWrap]}>
                       <AnimatedReanimated.View style={[styles.roundCheckInButtonWrap, showCheckoutCta ? checkoutButtonAnimatedStyle : undefined]}>
                         <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle]} pointerEvents="none" />
@@ -1123,7 +1133,7 @@ export function HomeDashboardScreen({
               ) : (
                 /* Event check-in is on the event details page; home shows office only or a link to event */
                 <View style={styles.roundCheckInRow}>
-                  {(role === 'crew' || role === 'team_leader' || role === 'admin') && !hasApprovedTimeOffToday && isOfficeOpenToday && !officeCheckedOutToday ? (
+                  {(role === 'crew' || role === 'team_leader' || role === 'admin') && !hasApprovedTimeOffToday && isCheckinRequiredDay && !officeCheckedOutToday ? (
                     <View style={styles.roundCheckInWrap}>
                         <AnimatedReanimated.View style={[styles.roundCheckInButtonWrap, showCheckoutCta ? checkoutButtonAnimatedStyle : undefined]}>
                           <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle]} pointerEvents="none" />
@@ -1171,7 +1181,7 @@ export function HomeDashboardScreen({
 
               {(role === 'crew' || role === 'team_leader' || role === 'admin') &&
                 !hasApprovedTimeOffToday &&
-                isOfficeOpenToday &&
+                isCheckinRequiredDay &&
                 showCheckoutCta &&
                 officeShiftLive &&
                 !officeCheckedOutToday && (
@@ -1217,7 +1227,7 @@ export function HomeDashboardScreen({
                 )}
 
               {/* Daily check-in (office): done or checkout row when event today */}
-              {(role === 'crew' || role === 'team_leader' || role === 'admin') && !hasApprovedTimeOffToday && isOfficeOpenToday && (officeCheckedOutToday || showCheckoutCta) && (
+              {(role === 'crew' || role === 'team_leader' || role === 'admin') && !hasApprovedTimeOffToday && isCheckinRequiredDay && (officeCheckedOutToday || showCheckoutCta) && (
                 <View style={[styles.dailyCheckInSecondary, { backgroundColor: cardBg, borderColor: homeBorderColor }]}>
                   {officeCheckedOutToday ? (
                     <View style={styles.dailyCheckInSecondaryRow}>
@@ -1256,21 +1266,23 @@ export function HomeDashboardScreen({
                 <Ionicons name="calendar-outline" size={Icons.xl} color={colors.textSecondary} />
                 <ThemedText style={[styles.dailyCheckInStatusText, { color: colors.textSecondary }]}>You're on time off today</ThemedText>
               </View>
-            ) : dayOfWeek === 0 ? (
-              /* Sunday: office check-in not required */
+            ) : !isCheckinRequiredDay ? (
+              (dayOfWeek === 0 || dayOfWeek === 6) ? (
               <View style={[styles.dailyCheckInStatus, { backgroundColor: cardBg, borderColor: homeBorderColor }]}>
                 <Ionicons name="sunny-outline" size={Icons.xl} color={themeYellow} />
-                <ThemedText style={[styles.dailyCheckInStatusText, { color: colors.text }]}>Chill day</ThemedText>
+                <ThemedText style={[styles.dailyCheckInStatusText, { color: colors.text }]}>Weekend</ThemedText>
                 <ThemedText style={[styles.dailyCheckInTime, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm }]}>
-                  Your day to relax — office check-in isn’t required on Sundays.
+                  We’re off for the weekend — office check-in isn’t available.
                 </ThemedText>
               </View>
-            ) : !isOfficeOpenToday ? (
-              /* Saturday: office closed */
+              ) : (
               <View style={[styles.dailyCheckInStatus, styles.dailyCheckInStatusCompact, { backgroundColor: cardBg, borderColor: homeBorderColor }]}>
                 <Ionicons name="business-outline" size={Icons.standard} color={colors.textSecondary} />
-                <ThemedText style={[styles.dailyCheckInStatusTextCompact, { color: colors.textSecondary }]}>Office closed (weekend)</ThemedText>
+                <ThemedText style={[styles.dailyCheckInStatusTextCompact, { color: colors.textSecondary }]}>
+                  Office check-in isn’t required today.
+                </ThemedText>
               </View>
+              )
             ) : (isPermanentEmployee || role === 'team_leader' || role === 'admin') ? (
               /* No event today: Daily (office) check-in for permanent crew, team leaders, and admin. After checkout, hide button until next day. */
               hasCheckedIn && officeCheckedOutToday ? (

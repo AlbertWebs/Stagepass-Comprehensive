@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Setting;
+use App\Support\OfficeCheckinRequiredDays;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -41,6 +42,8 @@ class SettingsController extends Controller
         'office_radius_m',
         'office_checkin_start_time',
         'office_checkin_end_time',
+        /** JSON array of weekday ints 0=Sun … 6=Sat (same as JS Date.getDay()). */
+        'office_checkin_required_days',
     ];
     /**
      * Minimal app policy for unauthenticated clients (e.g. login screen before token).
@@ -72,6 +75,7 @@ class SettingsController extends Controller
         $radius = (int) Setting::get('office_radius_m', 100);
         $start = Setting::get('office_checkin_start_time', '09:00');
         $end = Setting::get('office_checkin_end_time', '10:00');
+        $requiredDays = OfficeCheckinRequiredDays::parsed();
 
         return response()->json([
             'office_latitude' => $lat !== null && $lat !== '' ? (float) $lat : null,
@@ -79,6 +83,7 @@ class SettingsController extends Controller
             'office_radius_m' => $radius > 0 ? $radius : 100,
             'office_checkin_start_time' => is_string($start) ? $start : '09:00',
             'office_checkin_end_time' => is_string($end) ? $end : '10:00',
+            'office_checkin_required_days' => $requiredDays,
         ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
 

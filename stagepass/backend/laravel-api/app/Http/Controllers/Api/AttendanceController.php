@@ -11,6 +11,7 @@ use App\Models\Setting;
 use App\Services\AttendanceOvertimeService;
 use App\Services\GeofenceService;
 use App\Support\EventAttendanceEligibility;
+use App\Support\OfficeCheckinRequiredDays;
 use Carbon\Carbon;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -49,6 +50,12 @@ class AttendanceController extends Controller
             'longitude' => (float) $request->longitude,
             'requested_at' => $now->toIso8601String(),
         ]);
+
+        if (! OfficeCheckinRequiredDays::isRequiredForInstant($now)) {
+            return response()->json([
+                'message' => 'Office check-in is not required today.',
+            ], 422);
+        }
 
         $startTime = Setting::get('office_checkin_start_time', '09:00');
         $endTime = Setting::get('office_checkin_end_time', '12:00');

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Event;
 use App\Models\EventUser;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -86,5 +87,18 @@ class AttendanceApiTest extends TestCase
                 'longitude' => 36.8219,
             ]);
         $response->assertStatus(422)->assertJsonFragment(['message' => 'Already checked in']);
+    }
+
+    public function test_office_checkin_rejects_on_weekend_with_default_weekday_policy(): void
+    {
+        $user = User::factory()->create();
+        Carbon::setTestNow(Carbon::parse('2026-04-11 10:00:00', 'Africa/Nairobi')); // Saturday
+
+        $this->withHeaders($this->auth($user))
+            ->postJson('/api/attendance/office-checkin', ['latitude' => -1.286389, 'longitude' => 36.817223])
+            ->assertStatus(422)
+            ->assertJsonFragment(['message' => 'Office check-in is not required today.']);
+
+        Carbon::setTestNow();
     }
 }

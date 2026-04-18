@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Holiday;
+use App\Models\Setting;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -42,6 +43,8 @@ class AttendanceOvertimeTest extends TestCase
     public function test_sunday_uses_standard_eight_hour_split(): void
     {
         $user = User::factory()->create();
+        // Default org policy excludes Sunday; allow Sunday for this overtime-calculation test.
+        Setting::set('office_checkin_required_days', '[0]');
         Carbon::setTestNow(Carbon::parse('2026-04-12 09:00:00', 'Africa/Nairobi')); // Sunday
 
         $this->withHeaders($this->auth($user))

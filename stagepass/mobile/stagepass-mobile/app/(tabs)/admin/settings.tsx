@@ -25,6 +25,7 @@ import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { useAppRole } from '~/hooks/useAppRole';
 import { useAppPermissionsStatus } from '~/hooks/useAppPermissionsStatus';
+import { parseOfficeCheckinRequiredDays } from '@/src/utils/officeCheckinRequiredDays';
 import { api } from '~/services/api';
 
 type AppSettings = Record<string, string | number | boolean | null>;
@@ -58,6 +59,7 @@ const DEFAULTS: AppSettings = {
   office_radius_m: 100,
   office_checkin_start_time: '09:00',
   office_checkin_end_time: '10:00',
+  office_checkin_required_days: '[1,2,3,4,5]',
 };
 
 const TIMEZONES = ['Africa/Nairobi', 'Africa/Lagos', 'Africa/Johannesburg', 'UTC', 'Europe/London', 'America/New_York'];
@@ -84,6 +86,23 @@ const EVENT_STATUSES = [
   { value: 'created', label: 'Created' },
   { value: 'active', label: 'Active' },
 ];
+
+const OFFICE_CHECKIN_DOW: { dow: number; label: string }[] = [
+  { dow: 0, label: 'Sun' },
+  { dow: 1, label: 'Mon' },
+  { dow: 2, label: 'Tue' },
+  { dow: 3, label: 'Wed' },
+  { dow: 4, label: 'Thu' },
+  { dow: 5, label: 'Fri' },
+  { dow: 6, label: 'Sat' },
+];
+
+function toggleOfficeCheckinDow(current: number[], dow: number): number[] {
+  const set = new Set(current);
+  if (set.has(dow)) set.delete(dow);
+  else set.add(dow);
+  return Array.from(set).sort((a, b) => a - b);
+}
 
 function getStr(v: unknown): string {
   if (v == null) return '';
@@ -331,6 +350,39 @@ export default function AdminSettingsScreen() {
               <ThemedText style={[styles.fieldLabel, { color: colors.textSecondary, marginVertical: Spacing.sm }]}>to</ThemedText>
               <StagePassInput value={getStr(data.office_checkin_end_time).slice(0, 5)} onChangeText={(v) => update('office_checkin_end_time', v)} editable={canEdit} style={styles.input} placeholder="10:00" />
             </View>
+          </View>
+          <View style={styles.fieldGroup}>
+            <ThemedText style={[styles.fieldLabel, { color: colors.textSecondary }]}>Check-in required on</ThemedText>
+            <ThemedText style={{ color: colors.textSecondary, fontSize: 12, marginBottom: Spacing.sm, lineHeight: 18 }}>
+              Tap days when crew must check in; leave weekend days off if not required.
+            </ThemedText>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+              {OFFICE_CHECKIN_DOW.map(({ dow, label }) => {
+                const selected = parseOfficeCheckinRequiredDays(data.office_checkin_required_days).includes(dow);
+                return (
+                  <ThemedText
+                    key={dow}
+                    onPress={() =>
+                      canEdit &&
+                      update(
+                        'office_checkin_required_days',
+                        JSON.stringify(
+                          toggleOfficeCheckinDow(parseOfficeCheckinRequiredDays(data.office_checkin_required_days), dow)
+                        )
+                      )
+                    }
+                    style={[
+                      styles.chip,
+                      selected
+                        ? { backgroundColor: isDark ? themeYellow : themeBlue, color: isDark ? themeBlue : themeYellow }
+                        : { backgroundColor: colors.inputBackground, color: colors.text },
+                    ]}
+                  >
+                    {label}
+                  </ThemedText>
+                );
+              })}
+            </ScrollView>
           </View>
         </View>
 

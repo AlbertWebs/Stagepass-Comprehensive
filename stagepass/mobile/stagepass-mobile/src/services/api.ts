@@ -858,6 +858,8 @@ export const api = {
         office_radius_m: number;
         office_checkin_start_time: string;
         office_checkin_end_time: string;
+        /** Weekdays when check-in is required: 0=Sun … 6=Sat (same as Date.getDay()). */
+        office_checkin_required_days?: number[];
       }>('/settings/office-checkin-config'),
     update: (settings: Record<string, unknown>) =>
       request<Record<string, unknown>>('/settings', { method: 'POST', body: JSON.stringify({ settings }) }),

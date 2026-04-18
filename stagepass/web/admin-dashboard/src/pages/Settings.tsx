@@ -72,6 +72,8 @@ const DEFAULTS: AppSettings = {
   office_radius_m: 100,
   office_checkin_start_time: '09:00',
   office_checkin_end_time: '10:00',
+  /** JSON array of 0–6 (Sun–Sat), same as JavaScript Date.getDay(). Default Mon–Fri. */
+  office_checkin_required_days: '[1,2,3,4,5]',
 };
 
 function getBool(v: unknown): boolean {
@@ -95,6 +97,42 @@ function parseCoord(v: unknown): number | null {
   if (v == null || v === '') return null;
   const n = parseFloat(String(v).trim());
   return Number.isFinite(n) ? n : null;
+}
+
+const OFFICE_CHECKIN_DOW: { dow: number; label: string }[] = [
+  { dow: 0, label: 'Sun' },
+  { dow: 1, label: 'Mon' },
+  { dow: 2, label: 'Tue' },
+  { dow: 3, label: 'Wed' },
+  { dow: 4, label: 'Thu' },
+  { dow: 5, label: 'Fri' },
+  { dow: 6, label: 'Sat' },
+];
+
+function parseOfficeCheckinRequiredDays(v: unknown): number[] {
+  if (Array.isArray(v)) {
+    const days = v.map(Number).filter((n) => !Number.isNaN(n) && n >= 0 && n <= 6);
+    return days.length > 0 ? [...new Set(days)].sort((a, b) => a - b) : [1, 2, 3, 4, 5];
+  }
+  const s = getStr(v);
+  if (!s) return [1, 2, 3, 4, 5];
+  try {
+    const a = JSON.parse(s) as unknown;
+    if (Array.isArray(a)) {
+      const days = a.map(Number).filter((n) => !Number.isNaN(n) && n >= 0 && n <= 6);
+      return days.length > 0 ? [...new Set(days)].sort((a, b) => a - b) : [1, 2, 3, 4, 5];
+    }
+  } catch {
+    /* ignore */
+  }
+  return [1, 2, 3, 4, 5];
+}
+
+function toggleOfficeCheckinDow(current: number[], dow: number): number[] {
+  const set = new Set(current);
+  if (set.has(dow)) set.delete(dow);
+  else set.add(dow);
+  return Array.from(set).sort((a, b) => a - b);
 }
 
 export default function Settings() {
@@ -568,6 +606,42 @@ export default function Settings() {
                         />
                       </div>
                       <p className="mt-1 text-xs text-slate-500">Permanent crew can office check-in only in this time window.</p>
+                    </div>
+                    <div className="form-field sm:col-span-2">
+                      <span className="form-label">Office check-in required on these days</span>
+                      <p className="mb-2 text-xs text-slate-500">
+                        Crew cannot check in on days you leave unchecked (e.g. leave Saturday and Sunday off for weekends).
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {OFFICE_CHECKIN_DOW.map(({ dow, label }) => {
+                          const selected = parseOfficeCheckinRequiredDays(appSettings.office_checkin_required_days).includes(dow);
+                          return (
+                            <label
+                              key={dow}
+                              className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                                selected
+                                  ? 'border-amber-400 bg-amber-50 text-slate-900 dark:border-amber-500/60 dark:bg-amber-500/15 dark:text-slate-100'
+                                  : 'border-slate-200 bg-white text-slate-500 dark:border-slate-600 dark:bg-slate-800/80'
+                              } ${!canEditSettings ? 'cursor-not-allowed opacity-70' : ''}`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="rounded border-slate-300"
+                                checked={selected}
+                                disabled={!canEditSettings}
+                                onChange={() => {
+                                  const next = toggleOfficeCheckinDow(
+                                    parseOfficeCheckinRequiredDays(appSettings.office_checkin_required_days),
+                                    dow
+                                  );
+                                  updateSetting('office_checkin_required_days', JSON.stringify(next));
+                                }}
+                              />
+                              {label}
+                            </label>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -97,9 +97,20 @@ export interface HomeHeaderProps {
   onBack?: () => void;
   /** Kept for compatibility; header no longer shows notification icon. */
   notificationCount?: number;
+  /**
+   * Transparent bar over full-bleed content (e.g. map hero). Title and actions stay padded for the status bar;
+   * no solid header background or bottom hairline.
+   */
+  transparentOverlay?: boolean;
 }
 
-export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeHeaderProps) {
+export function HomeHeader({
+  title,
+  showBack,
+  onBack,
+  notificationCount,
+  transparentOverlay,
+}: HomeHeaderProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const pathname = usePathname();
@@ -153,28 +164,60 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
     setPreference(isDark ? 'light' : 'dark');
   }, [isDark, setPreference]);
 
-  const headerBg = isDark ? '#171B24' : '#F8FAFF';
+  const headerBg = transparentOverlay ? 'transparent' : isDark ? '#171B24' : '#F8FAFF';
   const headerHairline = isDark ? 'rgba(148, 163, 184, 0.22)' : 'rgba(37, 99, 235, 0.18)';
   const headerAccent = 'rgba(251,191,36,0.55)';
-  const iconTint = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(15,23,42,0.04)';
-  const iconBorder = isDark ? 'rgba(255,255,255,0.16)' : 'rgba(15,23,42,0.10)';
-  const iconColor = colors.text;
-  const titleColor = isDark ? '#F8FAFC' : '#0B1220';
+  const iconTint = transparentOverlay
+    ? isDark
+      ? 'rgba(255,255,255,0.14)'
+      : 'rgba(15,23,42,0.08)'
+    : isDark
+      ? 'rgba(255,255,255,0.10)'
+      : 'rgba(15,23,42,0.04)';
+  const iconBorder = transparentOverlay
+    ? isDark
+      ? 'rgba(255,255,255,0.22)'
+      : 'rgba(15,23,42,0.12)'
+    : isDark
+      ? 'rgba(255,255,255,0.16)'
+      : 'rgba(15,23,42,0.10)';
+  const iconColor = transparentOverlay ? (isDark ? '#F8FAFC' : '#0B1220') : colors.text;
+  const titleColor = transparentOverlay ? (isDark ? '#F8FAFC' : '#0B1220') : isDark ? '#F8FAFC' : '#0B1220';
   const titleCapColor = isDark ? 'rgba(251,191,36,0.85)' : themeYellow;
-  const actionsTrayBg = isDark ? 'rgba(15,23,42,0.52)' : 'rgba(255,255,255,0.86)';
+  const actionsTrayBg = transparentOverlay
+    ? isDark
+      ? 'rgba(15,23,42,0.55)'
+      : 'rgba(255,255,255,0.88)'
+    : isDark
+      ? 'rgba(15,23,42,0.52)'
+      : 'rgba(255,255,255,0.86)';
   const actionsTrayBorder = isDark ? 'rgba(148,163,184,0.28)' : 'rgba(148,163,184,0.24)';
   const breadcrumbColor = isDark ? 'rgba(226,232,240,0.90)' : themeYellow;
   const breadcrumbDot = isDark ? 'rgba(251,191,36,0.80)' : themeYellow;
-  const outerShadow = isDark
-    ? { shadowOpacity: 0.2, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 7 }
-    : { shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 };
+  const outerShadow = transparentOverlay
+    ? {}
+    : isDark
+      ? { shadowOpacity: 0.2, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 7 }
+      : { shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 };
   const trayShadow = isDark
     ? { shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 }
     : { shadowColor: '#1E3A8A', shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 };
   void notificationCount;
 
   return (
-    <View style={[styles.outer, { paddingTop, backgroundColor: headerBg, borderBottomColor: headerHairline }, outerShadow]}>
+    <View
+      style={[
+        styles.outer,
+        {
+          paddingTop,
+          backgroundColor: headerBg,
+          borderBottomColor: headerHairline,
+          borderBottomWidth: transparentOverlay ? 0 : StyleSheet.hairlineWidth,
+        },
+        outerShadow,
+        transparentOverlay && styles.outerTransparent,
+      ]}
+    >
       <Modal visible={signingOut} transparent animationType="fade" statusBarTranslucent>
         <View style={[styles.logoutOverlay, { backgroundColor: colors.background + 'EE' }]}>
           <ActivityIndicator size="large" color={colors.text} />
@@ -338,7 +381,9 @@ export function HomeHeader({ title, showBack, onBack, notificationCount }: HomeH
           </Pressable>
         </Modal>
       )}
-      {isDark ? <View style={[styles.bottomAccent, { backgroundColor: headerAccent }]} /> : null}
+      {isDark && !transparentOverlay ? (
+        <View style={[styles.bottomAccent, { backgroundColor: headerAccent }]} />
+      ) : null}
     </View>
   );
 }
@@ -355,6 +400,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 6,
     elevation: 3,
+  },
+  outerTransparent: {
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
   },
   bar: {
     paddingVertical: Spacing.xs + 1,
