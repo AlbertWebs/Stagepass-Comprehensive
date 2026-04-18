@@ -324,8 +324,11 @@ export default function EventsTab() {
     return 'Events';
   })();
   const isTodaySelected = sectionTitle === "Today's Events";
-  /** Hide "Today's Events" row when today is selected but nothing is scheduled this calendar day. */
-  const showTodaySectionHeader = !isTodaySelected || eventsForSelectedDateOnly.length > 0;
+  /**
+   * Hide "Today's Events" when the visible list for today is empty — including when the calendar
+   * has events but the active tab (e.g. Upcoming) filters them all out.
+   */
+  const showTodaySectionHeader = !isTodaySelected || eventsOnSelectedDate.length > 0;
   const selectedChipTextColor = isDark ? '#111827' : themeBlue;
 
   return (

@@ -7,6 +7,7 @@ use App\Models\DailyOfficeCheckin;
 use App\Models\EventUser;
 use App\Models\TimeOffRequest;
 use App\Models\User;
+use App\Services\ExpoPushSender;
 use App\Services\FcmSender;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -344,7 +345,8 @@ class CheckinsController extends Controller
         ]);
 
         $user = User::find($request->user_id);
-        if (! $user->fcm_token) {
+        $token = trim((string) ($user->fcm_token ?? ''));
+        if ($token === '') {
             return response()->json([
                 'message' => 'This user has no device registered for push notifications.',
             ], 422);
@@ -353,7 +355,10 @@ class CheckinsController extends Controller
         $title = $request->input('title', 'Stagepass');
         $body = $request->input('body', 'Please check in when you\'re ready.');
 
-        $sent = app(FcmSender::class)->send($user->fcm_token, $title, $body, []);
+        // Mobile stores Expo push tokens (ExponentPushToken[...]) in fcm_token; native builds use FCM device tokens.
+        $sent = ExpoPushSender::isExpoPushToken($token)
+            ? app(ExpoPushSender::class)->send($token, $title, $body, [])
+            : app(FcmSender::class)->send($token, $title, $body, []);
 
         if (! $sent) {
             return response()->json([
