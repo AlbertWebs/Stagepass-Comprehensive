@@ -20,7 +20,7 @@ import { useSelector } from 'react-redux';
 import { api, type Event as EventType, type User } from '~/services/api';
 import { useAppRole } from '~/hooks/useAppRole';
 import { canManageEventCrew as computeCanManageEventCrew } from '~/utils/eventCrewPermissions';
-import { buildVenueStaticMapPreviewUrls } from '~/utils/staticMapPreview';
+import { buildVenueStaticMapPreviewUrls, mapPreviewImageSource } from '~/utils/staticMapPreview';
 import { useGeofence } from '~/hooks/useGeofence';
 import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 import { StagepassLoader } from '@/components/StagepassLoader';
@@ -488,7 +488,8 @@ export default function EventDetailScreen() {
               {attendanceMapUrl ? (
                 <>
                   <Image
-                    source={{ uri: attendanceMapUrl }}
+                    key={attendanceMapUrl}
+                    source={mapPreviewImageSource(attendanceMapUrl)}
                     style={styles.attendanceMapImage}
                     contentFit="cover"
                     transition={100}

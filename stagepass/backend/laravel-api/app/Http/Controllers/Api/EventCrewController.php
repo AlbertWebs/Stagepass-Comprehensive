@@ -9,6 +9,7 @@ use App\Models\ReminderLog;
 use App\Models\User;
 use App\Services\AttendanceOvertimeService;
 use App\Support\EventAttendanceEligibility;
+use App\Support\EventTeamLeaderGate;
 use Carbon\Carbon;
 use App\Notifications\CrewAddedToEventReminder;
 use Illuminate\Http\JsonResponse;
@@ -37,6 +38,13 @@ class EventCrewController extends Controller
         if ($user->hasRole('team_leader') && blank($event->team_leader_id)) {
             return (int) $event->created_by_id === (int) $user->id
                 || $event->crew()->whereKey($user->id)->exists();
+        }
+        // Crew pivot "Team Leader" when no official events.team_leader_id (admin often sets role text only).
+        if (blank($event->team_leader_id)) {
+            $assignment = $event->eventCrew()->where('user_id', $user->id)->first();
+            if ($assignment && EventTeamLeaderGate::pivotRoleLooksLikeTeamLeader($assignment->role_in_event)) {
+                return true;
+            }
         }
 
         return false;

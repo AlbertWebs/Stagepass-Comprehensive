@@ -5,8 +5,24 @@ import { getGoogleMapsApiKey } from '~/services/googlePlaces';
 const MAX_RASTER_DIM = 1024;
 
 /**
+ * Do not use https://tile.openstreetmap.org/... as an Image source — OSM blocks many app
+ * requests with 403 (tile usage policy). See https://operations.osmfoundation.org/policies/tiles/
+ *
+ * Static map generators (e.g. staticmap.openstreetmap.de) are separate from the main tile CDN.
+ */
+export const MAP_PREVIEW_REQUEST_HEADERS = {
+  'User-Agent': 'Stagepass/1.0 (https://stagepass.co.ke; in-app map preview)',
+  Accept: 'image/*,*/*',
+};
+
+/** expo-image / RN Image source with headers for remote map images. */
+export function mapPreviewImageSource(uri: string): { uri: string; headers: typeof MAP_PREVIEW_REQUEST_HEADERS } {
+  return { uri, headers: MAP_PREVIEW_REQUEST_HEADERS };
+}
+
+/**
  * Ordered list of static map image URLs for a venue pin (try in order on failure).
- * Prefer Google Static Maps when an API key is configured (reliable on mobile).
+ * Prefer Google Static Maps when an API key is configured (enable "Maps Static API" in Google Cloud).
  */
 export function buildVenueStaticMapPreviewUrls(latitude: number, longitude: number): string[] {
   const lat = latitude.toFixed(6);

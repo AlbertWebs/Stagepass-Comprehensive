@@ -13,6 +13,17 @@ function crewHasUser(event: Event, userId: number): boolean {
   return (event.crew ?? []).some((c) => sameId(c.id, userId));
 }
 
+/** Free-text "Role in event" on the crew pivot (admin dashboard) — not the same as events.team_leader_id. */
+export function pivotRoleLooksLikeTeamLeader(role: string | null | undefined): boolean {
+  if (role == null || !String(role).trim()) return false;
+  const n = String(role)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  const compact = n.replace(/\s/g, '');
+  return n === 'team leader' || n === 'team_leader' || compact === 'teamleader';
+}
+
 /** Spatie may store "Team Leader", "team_leader", etc. */
 function hasTeamLeaderSpatieRole(names: string[]): boolean {
   return names.some((raw) => {
@@ -43,6 +54,13 @@ export function canManageEventCrew(user: User | null, event: Event | null): bool
     if (noAssignedLeader) {
       if (sameId(event.created_by_id, user.id)) return true;
       if (crewHasUser(event, user.id)) return true;
+    }
+  }
+  if (!hasAssignedLeader) {
+    const myCrew = (event.crew ?? []).find((c) => sameId(c.id, user.id));
+    const pivotRole = (myCrew?.pivot as { role_in_event?: string | null } | undefined)?.role_in_event;
+    if (pivotRoleLooksLikeTeamLeader(pivotRole)) {
+      return true;
     }
   }
   return false;

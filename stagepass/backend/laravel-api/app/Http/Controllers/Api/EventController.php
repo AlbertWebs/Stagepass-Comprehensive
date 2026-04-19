@@ -5,7 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Event;
 use App\Models\EventUser;
+use App\Models\User;
+use App\Notifications\TeamLeaderAssignedNotification;
 use App\Services\AttendanceOvertimeService;
+use App\Support\EventTeamLeaderGate;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -164,7 +167,7 @@ class EventController extends Controller
     public function end(Request $request, Event $event): JsonResponse
     {
         $user = $request->user();
-        $isTeamLeader = (int) $event->team_leader_id === (int) $user->id;
+        $isTeamLeader = EventTeamLeaderGate::userIsAssignedOrRosterTeamLeader($event, $user);
         $isAdmin = $user->hasRole('super_admin') || $user->hasRole('director');
         if (! $isTeamLeader && ! $isAdmin) {
             return response()->json(['message' => 'Only the team leader or an admin can end this event.'], 403);
@@ -191,7 +194,7 @@ class EventController extends Controller
     public function doneForDay(Request $request, Event $event): JsonResponse
     {
         $user = $request->user();
-        $isTeamLeader = (int) $event->team_leader_id === (int) $user->id;
+        $isTeamLeader = EventTeamLeaderGate::userIsAssignedOrRosterTeamLeader($event, $user);
         $isAdmin = $user->hasRole('super_admin') || $user->hasRole('director') || $user->hasRole('admin');
         if (! $isTeamLeader && ! $isAdmin) {
             return response()->json(['message' => 'Only the team leader or an admin can close this event for the day.'], 403);
@@ -261,7 +264,24 @@ class EventController extends Controller
             'status' => 'sometimes|in:created,active,completed,closed,done_for_the_day',
         ]);
 
+        $previousTeamLeaderId = $event->team_leader_id;
+
         $event->update($validated);
+
+        if (array_key_exists('team_leader_id', $validated)) {
+            $event->refresh();
+            $newTeamLeaderId = $event->team_leader_id;
+            if ($newTeamLeaderId !== null) {
+                $previous = $previousTeamLeaderId === null ? null : (int) $previousTeamLeaderId;
+                $next = (int) $newTeamLeaderId;
+                if ($previous !== $next) {
+                    $assignee = User::query()->find($newTeamLeaderId);
+                    if ($assignee) {
+                        $assignee->notify(new TeamLeaderAssignedNotification($event));
+                    }
+                }
+            }
+        }
 
         return response()->json($event->fresh()->load(['teamLeader', 'client']));
     }

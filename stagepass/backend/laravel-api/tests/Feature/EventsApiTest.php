@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\Event;
 use App\Models\User;
+use App\Notifications\TeamLeaderAssignedNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
 
 class EventsApiTest extends TestCase
@@ -144,6 +146,50 @@ class EventsApiTest extends TestCase
         $response->assertStatus(200)->assertJsonPath('name', 'Updated Name');
         $event->refresh();
         $this->assertSame('Updated Name', $event->name);
+    }
+
+    public function test_events_update_assigning_team_leader_notifies_new_leader(): void
+    {
+        Notification::fake();
+
+        $editor = User::factory()->create();
+        $newLeader = User::factory()->create(['fcm_token' => 'ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]']);
+        $event = Event::create([
+            'name' => 'Gig',
+            'date' => now()->toDateString(),
+            'start_time' => '09:00',
+            'created_by_id' => $editor->id,
+            'team_leader_id' => null,
+            'status' => Event::STATUS_CREATED,
+        ]);
+
+        $response = $this->withHeaders($this->auth($editor))
+            ->putJson('/api/events/'.$event->id, ['team_leader_id' => $newLeader->id]);
+
+        $response->assertStatus(200)->assertJsonPath('team_leader_id', $newLeader->id);
+        Notification::assertSentTo($newLeader, TeamLeaderAssignedNotification::class);
+    }
+
+    public function test_events_update_same_team_leader_does_not_send_duplicate_notification(): void
+    {
+        Notification::fake();
+
+        $editor = User::factory()->create();
+        $leader = User::factory()->create(['fcm_token' => 'ExponentPushToken[yyyyyyyyyyyyyyyyyyyyyy]']);
+        $event = Event::create([
+            'name' => 'Gig',
+            'date' => now()->toDateString(),
+            'start_time' => '09:00',
+            'created_by_id' => $editor->id,
+            'team_leader_id' => $leader->id,
+            'status' => Event::STATUS_CREATED,
+        ]);
+
+        $response = $this->withHeaders($this->auth($editor))
+            ->putJson('/api/events/'.$event->id, ['name' => 'Renamed only', 'team_leader_id' => $leader->id]);
+
+        $response->assertStatus(200);
+        Notification::assertNothingSent();
     }
 
     public function test_events_destroy_deletes_event(): void

@@ -27,7 +27,7 @@ import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { api, type User as ApiUser } from '~/services/api';
 import { setUser } from '~/store/authSlice';
 import { haversineDistanceMeters, isWithinGeofence } from '~/utils/geofence';
-import { buildVenueStaticMapPreviewUrls } from '~/utils/staticMapPreview';
+import { buildVenueStaticMapPreviewUrls, mapPreviewImageSource } from '~/utils/staticMapPreview';
 import {
   DEFAULT_OFFICE_CHECKIN_REQUIRED_DAYS,
   parseOfficeCheckinRequiredDays,
@@ -458,7 +458,8 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
           <View style={[styles.mapHeroInner, { backgroundColor: mapCardBg }]} collapsable={false}>
             {mapUrl ? (
               <Image
-                source={{ uri: mapUrl }}
+                key={mapUrl}
+                source={mapPreviewImageSource(mapUrl)}
                 style={[styles.mapImage, { minWidth: windowWidth, minHeight: windowHeight }]}
                 contentFit="cover"
                 transition={0}
