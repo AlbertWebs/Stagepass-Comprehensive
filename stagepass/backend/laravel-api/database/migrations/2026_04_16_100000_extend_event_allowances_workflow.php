@@ -11,31 +11,106 @@ return new class extends Migration
     {
         $driver = Schema::getConnection()->getDriverName();
 
-        // Must use the migration-defined index name — dropUnique([columns]) targets Laravel's
-        // auto name (…_unique), but create_allowance_types… names it `event_allowances_dedupe_key`.
-        Schema::table('event_allowances', function (Blueprint $table) {
-            $table->dropUnique('event_allowances_dedupe_key');
-        });
+        // Partial runs or DBs created without the custom index name: drop the old 4-column
+        // composite unique only when it still exists (either `event_allowances_dedupe_key` or
+        // Laravel’s default …_event_id_crew_id_…_unique).
+        $this->dropLegacyCompositeDedupeUniqueIfExists();
 
         Schema::table('event_allowances', function (Blueprint $table) {
-            $table->string('source', 20)->default('manual');
-            $table->string('attachment_path', 500)->nullable();
-            $table->text('rejection_comment')->nullable();
-            $table->text('approval_comment')->nullable();
-            $table->string('meal_slot', 20)->nullable();
-            $table->date('meal_grant_date')->nullable();
-            $table->string('dedupe_key', 96)->nullable();
-            $table->foreignId('rejected_by')->nullable()->constrained('users')->nullOnDelete();
-            $table->timestamp('rejected_at')->nullable();
+            if (! Schema::hasColumn('event_allowances', 'source')) {
+                $table->string('source', 20)->default('manual');
+            }
+            if (! Schema::hasColumn('event_allowances', 'attachment_path')) {
+                $table->string('attachment_path', 500)->nullable();
+            }
+            if (! Schema::hasColumn('event_allowances', 'rejection_comment')) {
+                $table->text('rejection_comment')->nullable();
+            }
+            if (! Schema::hasColumn('event_allowances', 'approval_comment')) {
+                $table->text('approval_comment')->nullable();
+            }
+            if (! Schema::hasColumn('event_allowances', 'meal_slot')) {
+                $table->string('meal_slot', 20)->nullable();
+            }
+            if (! Schema::hasColumn('event_allowances', 'meal_grant_date')) {
+                $table->date('meal_grant_date')->nullable();
+            }
+            if (! Schema::hasColumn('event_allowances', 'dedupe_key')) {
+                $table->string('dedupe_key', 96)->nullable();
+            }
+            if (! Schema::hasColumn('event_allowances', 'rejected_by')) {
+                $table->foreignId('rejected_by')->nullable()->constrained('users')->nullOnDelete();
+            }
+            if (! Schema::hasColumn('event_allowances', 'rejected_at')) {
+                $table->timestamp('rejected_at')->nullable();
+            }
         });
 
-        Schema::table('event_allowances', function (Blueprint $table) {
-            $table->unique('dedupe_key');
-        });
+        if (! $this->hasUniqueIndexOnColumn('event_allowances', 'dedupe_key')) {
+            Schema::table('event_allowances', function (Blueprint $table) {
+                $table->unique('dedupe_key');
+            });
+        }
 
         if ($driver === 'mysql') {
             DB::statement("ALTER TABLE event_allowances MODIFY COLUMN status ENUM('pending', 'approved', 'rejected', 'paid') NOT NULL DEFAULT 'pending'");
         }
+    }
+
+    /**
+     * The original migration named this index `event_allowances_dedupe_key`; older Laravel
+     * defaults use `event_allowances_event_id_crew_id_allowance_type_id_recorded_at_unique`.
+     * After a failed run the composite index may already be gone — only drop when present.
+     */
+    private function dropLegacyCompositeDedupeUniqueIfExists(): void
+    {
+        if (! Schema::hasTable('event_allowances')) {
+            return;
+        }
+
+        $legacyNames = [
+            'event_allowances_dedupe_key',
+            'event_allowances_event_id_crew_id_allowance_type_id_recorded_at_unique',
+        ];
+
+        $targetColumns = ['allowance_type_id', 'crew_id', 'event_id', 'recorded_at'];
+        sort($targetColumns);
+
+        foreach (Schema::getIndexes('event_allowances') as $index) {
+            if (empty($index['unique']) || ! empty($index['primary'])) {
+                continue;
+            }
+            $name = $index['name'] ?? '';
+            $cols = $index['columns'] ?? [];
+            $sorted = $cols;
+            sort($sorted);
+
+            $matchesLegacyColumns = $sorted === $targetColumns;
+            $matchesKnownName = in_array($name, $legacyNames, true);
+
+            if ($matchesLegacyColumns || $matchesKnownName) {
+                Schema::table('event_allowances', function (Blueprint $table) use ($name) {
+                    $table->dropUnique($name);
+                });
+
+                return;
+            }
+        }
+    }
+
+    private function hasUniqueIndexOnColumn(string $table, string $column): bool
+    {
+        foreach (Schema::getIndexes($table) as $index) {
+            if (empty($index['unique']) || ! empty($index['primary'])) {
+                continue;
+            }
+            $cols = $index['columns'] ?? [];
+            if (count($cols) === 1 && ($cols[0] ?? null) === $column) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function down(): void
