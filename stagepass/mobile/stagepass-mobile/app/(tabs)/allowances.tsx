@@ -231,7 +231,7 @@ export default function AllowancesScreen() {
             <View style={[styles.iconWrap, { backgroundColor: themeYellow + '28' }]}>
               <Ionicons name="cash-outline" size={14} color={themeYellow} />
             </View>
-            <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Allocated allowances</ThemedText>
+            <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>My allowances</ThemedText>
           </View>
           {role === 'team_leader' ? (
             <StagePassButton
@@ -248,19 +248,32 @@ export default function AllowancesScreen() {
             </View>
           ) : (
             <View style={[styles.card, { backgroundColor: cardBg, borderColor: colors.border }]}>
-              {allocatedAllowances.map((a) => (
-                <View key={a.id} style={styles.row}>
-                  <View style={[styles.dot, { backgroundColor: a.status === 'paid' ? StatusColors.checkedIn : themeYellow }]} />
-                  <View style={styles.rowContent}>
-                    <ThemedText style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
-                      {a.allowance_type} · {a.event_name}
-                    </ThemedText>
-                    <ThemedText style={[styles.rowSub, { color: colors.textSecondary }]}>
-                      KES {Number(a.amount).toLocaleString('en-GB', { minimumFractionDigits: 2 })} · {a.status}
-                    </ThemedText>
+              {allocatedAllowances.map((a) => {
+                const st = (a.status ?? '').toLowerCase();
+                const dotColor =
+                  st === 'rejected' ? '#c0392b' : st === 'approved' || st === 'paid' ? StatusColors.checkedIn : themeYellow;
+                return (
+                  <View key={a.id} style={styles.row}>
+                    <View style={[styles.dot, { backgroundColor: dotColor }]} />
+                    <View style={styles.rowContent}>
+                      <ThemedText style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
+                        {a.allowance_type} · {a.event_name ?? 'Event'}
+                      </ThemedText>
+                      <ThemedText style={[styles.rowSub, { color: colors.textSecondary }]}>
+                        KES {Number(a.amount).toLocaleString('en-GB', { minimumFractionDigits: 2 })} · {a.status}
+                        {a.recorded_at
+                          ? ` · ${new Date(a.recorded_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+                          : ''}
+                      </ThemedText>
+                      {st === 'rejected' && a.rejection_comment ? (
+                        <ThemedText style={[styles.rowSub, { color: colors.textSecondary, marginTop: 4 }]} numberOfLines={3}>
+                          {a.rejection_comment}
+                        </ThemedText>
+                      ) : null}
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
         </View>

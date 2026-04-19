@@ -13,11 +13,12 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
-import { api, type Event as EventType, type User } from '~/services/api';
+import { api, type EarnedAllowanceDetail, type Event as EventType, type User } from '~/services/api';
 import { canManageEventCrew } from '~/utils/eventCrewPermissions';
 import { AppHeader } from '@/components/AppHeader';
 import { TransferCrewModal } from '@/components/TransferCrewModal';
@@ -84,6 +85,11 @@ export default function AdminEventOperationsScreen() {
   const [endComment, setEndComment] = useState('');
   const [ending, setEnding] = useState(false);
   const [transferModalVisible, setTransferModalVisible] = useState(false);
+  const [pendingAllowances, setPendingAllowances] = useState<EarnedAllowanceDetail[]>([]);
+  const [rejectModalVisible, setRejectModalVisible] = useState(false);
+  const [rejectAllowanceId, setRejectAllowanceId] = useState<number | null>(null);
+  const [rejectComment, setRejectComment] = useState('');
+  const [allowanceActionLoading, setAllowanceActionLoading] = useState(false);
 
   const currentUser = useSelector((s: { auth: { user: User | null } }) => s.auth.user);
 
@@ -136,6 +142,74 @@ export default function AdminEventOperationsScreen() {
   useEffect(() => {
     loadEvent();
   }, [loadEvent]);
+
+  const loadPendingAllowances = useCallback(async () => {
+    if (!eventId) return;
+    try {
+      const res = await api.payments.earnedAllowances({
+        event_id: eventId,
+        status: 'pending',
+        per_page: 50,
+      });
+      const flat = Array.isArray(res?.flat) ? res.flat : [];
+      setPendingAllowances(flat);
+    } catch {
+      setPendingAllowances([]);
+    }
+  }, [eventId]);
+
+  useEffect(() => {
+    if (!event || isEnded || !canManageCrew) return;
+    void loadPendingAllowances();
+  }, [event, isEnded, canManageCrew, loadPendingAllowances]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!event || isEnded || !canManageCrew) return;
+      void loadPendingAllowances();
+    }, [event, isEnded, canManageCrew, loadPendingAllowances])
+  );
+
+  const approveAllowance = async (row: EarnedAllowanceDetail) => {
+    setAllowanceActionLoading(true);
+    try {
+      await api.payments.updateAllowanceStatus(row.id, 'approved');
+      await loadPendingAllowances();
+      Alert.alert('Approved', 'The crew member has been notified.');
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Could not approve.');
+    } finally {
+      setAllowanceActionLoading(false);
+    }
+  };
+
+  const openReject = (id: number) => {
+    setRejectAllowanceId(id);
+    setRejectComment('');
+    setRejectModalVisible(true);
+  };
+
+  const confirmReject = async () => {
+    if (rejectAllowanceId == null) return;
+    const c = rejectComment.trim();
+    if (!c) {
+      Alert.alert('Required', 'Add a comment explaining the rejection.');
+      return;
+    }
+    setAllowanceActionLoading(true);
+    try {
+      await api.payments.updateAllowanceStatus(rejectAllowanceId, 'rejected', c);
+      setRejectModalVisible(false);
+      setRejectAllowanceId(null);
+      setRejectComment('');
+      await loadPendingAllowances();
+      Alert.alert('Rejected', 'The crew member has been notified.');
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Could not reject.');
+    } finally {
+      setAllowanceActionLoading(false);
+    }
+  };
 
   const handleEndEvent = async () => {
     if (!reportReady || !reportConfirmedBy || !reportSignature) {
@@ -338,6 +412,59 @@ export default function AdminEventOperationsScreen() {
 
         </View>
 
+        {canManageCrew && !isEnded && (role === 'team_leader' || role === 'admin') ? (
+          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: opsBorder }]}>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionAccent, { backgroundColor: themeYellow }]} />
+              <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Pending allowances</ThemedText>
+            </View>
+            {pendingAllowances.length === 0 ? (
+              <ThemedText style={[styles.cardSub, { color: colors.textSecondary, paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg }]}>
+                No pending allowance requests for this event.
+              </ThemedText>
+            ) : (
+              pendingAllowances.map((row) => (
+                <View
+                  key={row.id}
+                  style={[styles.allowRow, { borderBottomColor: opsBorder, paddingHorizontal: Spacing.lg }]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <ThemedText style={{ color: colors.text, fontWeight: '700' }}>{row.crew_name}</ThemedText>
+                    <ThemedText style={[styles.opsSub, { color: colors.textSecondary }]}>
+                      {row.allowance_type} · KES {Number(row.amount).toLocaleString()}
+                    </ThemedText>
+                    {row.description ? (
+                      <ThemedText style={[styles.opsSub, { color: colors.textSecondary, marginTop: 4 }]}>
+                        {row.description}
+                      </ThemedText>
+                    ) : null}
+                    {row.recorded_at ? (
+                      <ThemedText style={[styles.opsSub, { color: colors.textSecondary }]}>
+                        {new Date(row.recorded_at).toLocaleString()}
+                      </ThemedText>
+                    ) : null}
+                  </View>
+                  <View style={{ gap: 8 }}>
+                    <StagePassButton
+                      title="Approve"
+                      onPress={() => approveAllowance(row)}
+                      disabled={allowanceActionLoading}
+                      style={{ paddingVertical: 8, minHeight: 40, backgroundColor: themeBlue }}
+                    />
+                    <StagePassButton
+                      title="Reject"
+                      variant="outline"
+                      onPress={() => openReject(row.id)}
+                      disabled={allowanceActionLoading}
+                      style={{ paddingVertical: 8, minHeight: 40, borderColor: themeYellow }}
+                    />
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+        ) : null}
+
         {!isEnded && (
           <View style={[styles.card, styles.cardWithAccent, { backgroundColor: colors.surface, borderColor: opsBorder }]}>
             <View style={[styles.cardAccent, { backgroundColor: themeYellow }]} />
@@ -437,6 +564,57 @@ export default function AdminEventOperationsScreen() {
         member={null}
         onTransferred={loadEvent}
       />
+
+      <Modal visible={rejectModalVisible} transparent animationType="fade">
+        <Pressable style={styles.modalBackdrop} onPress={() => !allowanceActionLoading && setRejectModalVisible(false)}>
+          <Pressable style={[styles.modalContent, { backgroundColor: colors.background, borderColor: themeYellow }]} onPress={(e) => e.stopPropagation()}>
+            <View style={[styles.modalTitleStrip, { backgroundColor: themeBlue }]}>
+              <View style={[styles.modalTitleAccent, { backgroundColor: themeYellow }]} />
+              <ThemedText style={styles.modalTitle}>Reject allowance</ThemedText>
+            </View>
+            <View style={styles.modalBody}>
+              <ThemedText style={[styles.modalSub, { color: colors.textSecondary }]}>
+                A comment is required. The crew member will see this in the app.
+              </ThemedText>
+              <TextInput
+                value={rejectComment}
+                onChangeText={setRejectComment}
+                placeholder="Reason for rejection"
+                multiline
+                numberOfLines={3}
+                placeholderTextColor={colors.textSecondary}
+                style={[
+                  styles.input,
+                  {
+                    color: colors.text,
+                    borderWidth: 1,
+                    borderColor: opsBorder,
+                    borderRadius: BorderRadius.md,
+                    padding: Spacing.md,
+                    minHeight: 88,
+                    textAlignVertical: 'top',
+                  },
+                ]}
+              />
+              <View style={styles.modalActions}>
+                <StagePassButton
+                  title="Cancel"
+                  variant="outline"
+                  onPress={() => setRejectModalVisible(false)}
+                  disabled={allowanceActionLoading}
+                  style={styles.modalBtn}
+                />
+                <StagePassButton
+                  title={allowanceActionLoading ? 'Saving…' : 'Reject'}
+                  onPress={confirmReject}
+                  disabled={allowanceActionLoading || !rejectComment.trim()}
+                  style={[styles.modalBtn, { backgroundColor: themeYellow }]}
+                />
+              </View>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal visible={endModalVisible} transparent animationType="fade">
         <Pressable style={styles.modalBackdrop} onPress={() => !ending && setEndModalVisible(false)}>
@@ -570,4 +748,11 @@ const styles = StyleSheet.create({
   input: { marginBottom: Spacing.md },
   modalActions: { flexDirection: 'row', gap: Spacing.md },
   modalBtn: { flex: 1 },
+  allowRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
 });

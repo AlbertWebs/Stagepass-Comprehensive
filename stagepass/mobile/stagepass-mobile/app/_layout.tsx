@@ -82,6 +82,7 @@ function RootLayoutNav() {
             <Stack.Screen name="login" options={{ headerShown: false }} />
             <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
             <Stack.Screen name="events/[id]" options={{ headerShown: false }} />
+            <Stack.Screen name="events/request-allowance" options={{ headerShown: false }} />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack>
           {shouldRedirectToOnboarding && <Redirect href="/onboarding" />}

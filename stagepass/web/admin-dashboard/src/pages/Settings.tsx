@@ -74,6 +74,12 @@ const DEFAULTS: AppSettings = {
   office_checkin_end_time: '10:00',
   /** JSON array of 0–6 (Sun–Sat), same as JavaScript Date.getDay(). Default Mon–Fri. */
   office_checkin_required_days: '[1,2,3,4,5]',
+  meal_allowance_breakfast_time: '06:30',
+  meal_allowance_lunch_time: '13:00',
+  meal_allowance_dinner_time: '20:30',
+  meal_allowance_breakfast_amount: 0,
+  meal_allowance_lunch_amount: 0,
+  meal_allowance_dinner_amount: 0,
 };
 
 function getBool(v: unknown): boolean {
@@ -642,6 +648,102 @@ export default function Settings() {
                           );
                         })}
                       </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-5">
+                  <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-600">
+                    Automatic meal allowances (events)
+                  </h3>
+                  <p className="mb-4 text-xs text-slate-500">
+                    When crew are checked in to an active event at these local times, the server creates one approved meal line per
+                    person (no duplicate per meal per day). Set amounts to 0 to disable a slot.
+                  </p>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="form-field">
+                      <label className="form-label" htmlFor="meal_allowance_breakfast_time">
+                        Breakfast time
+                      </label>
+                      <input
+                        id="meal_allowance_breakfast_time"
+                        type="time"
+                        value={getStr(appSettings.meal_allowance_breakfast_time).slice(0, 5)}
+                        onChange={(e) => updateSetting('meal_allowance_breakfast_time', e.target.value)}
+                        className="form-input max-w-[8rem]"
+                        disabled={!canEditSettings}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label className="form-label" htmlFor="meal_allowance_breakfast_amount">
+                        Breakfast amount (KES)
+                      </label>
+                      <input
+                        id="meal_allowance_breakfast_amount"
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={getNum(appSettings.meal_allowance_breakfast_amount)}
+                        onChange={(e) => updateSetting('meal_allowance_breakfast_amount', parseFloat(e.target.value) || 0)}
+                        className="form-input"
+                        disabled={!canEditSettings}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label className="form-label" htmlFor="meal_allowance_lunch_time">
+                        Lunch time
+                      </label>
+                      <input
+                        id="meal_allowance_lunch_time"
+                        type="time"
+                        value={getStr(appSettings.meal_allowance_lunch_time).slice(0, 5)}
+                        onChange={(e) => updateSetting('meal_allowance_lunch_time', e.target.value)}
+                        className="form-input max-w-[8rem]"
+                        disabled={!canEditSettings}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label className="form-label" htmlFor="meal_allowance_lunch_amount">
+                        Lunch amount (KES)
+                      </label>
+                      <input
+                        id="meal_allowance_lunch_amount"
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={getNum(appSettings.meal_allowance_lunch_amount)}
+                        onChange={(e) => updateSetting('meal_allowance_lunch_amount', parseFloat(e.target.value) || 0)}
+                        className="form-input"
+                        disabled={!canEditSettings}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label className="form-label" htmlFor="meal_allowance_dinner_time">
+                        Dinner time
+                      </label>
+                      <input
+                        id="meal_allowance_dinner_time"
+                        type="time"
+                        value={getStr(appSettings.meal_allowance_dinner_time).slice(0, 5)}
+                        onChange={(e) => updateSetting('meal_allowance_dinner_time', e.target.value)}
+                        className="form-input max-w-[8rem]"
+                        disabled={!canEditSettings}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label className="form-label" htmlFor="meal_allowance_dinner_amount">
+                        Dinner amount (KES)
+                      </label>
+                      <input
+                        id="meal_allowance_dinner_amount"
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={getNum(appSettings.meal_allowance_dinner_amount)}
+                        onChange={(e) => updateSetting('meal_allowance_dinner_amount', parseFloat(e.target.value) || 0)}
+                        className="form-input"
+                        disabled={!canEditSettings}
+                      />
                     </div>
                   </div>
                 </div>

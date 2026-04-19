@@ -691,25 +691,45 @@ export const api = {
         body: JSON.stringify({ payment_id: paymentId, rejection_reason: reason }),
       }),
     earnedAllowances: (params?: { event_id?: number; crew_id?: number; status?: string; search?: string; page?: number; per_page?: number }) =>
-      request<{ data: EarnedAllowanceEventGroup[]; pagination: { current_page: number; last_page: number; total: number; per_page: number } }>(
-        '/payments/earned-allowances',
-        {
-          params: params
-            ? (Object.fromEntries(
-                Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)])
-              ) as Record<string, string>)
-            : undefined,
-        }
-      ),
+      request<{
+        data: EarnedAllowanceEventGroup[];
+        flat?: EarnedAllowanceDetail[];
+        pagination: { current_page: number; last_page: number; total: number; per_page: number };
+      }>('/payments/earned-allowances', {
+        params: params
+          ? (Object.fromEntries(
+              Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)])
+            ) as Record<string, string>)
+          : undefined,
+      }),
     addEarnedAllowance: (body: { event_id: number; crew_id: number; allowance_type_id: number; amount: number; description?: string }) =>
       request<EarnedAllowanceDetail>('/payments/earned-allowances', {
         method: 'POST',
         body: JSON.stringify(body),
       }),
-    updateAllowanceStatus: (id: number, status: 'pending' | 'approved' | 'paid') =>
+    submitAllowanceRequest: (body: {
+      event_id: number;
+      allowance_type_id: number;
+      amount: number;
+      reason: string;
+      attachment: { uri: string; name?: string; mimeType?: string };
+    }) => {
+      const formData = new FormData();
+      formData.append('event_id', String(body.event_id));
+      formData.append('allowance_type_id', String(body.allowance_type_id));
+      formData.append('amount', String(body.amount));
+      formData.append('reason', body.reason);
+      formData.append('attachment', {
+        uri: body.attachment.uri,
+        name: body.attachment.name ?? 'receipt.jpg',
+        type: body.attachment.mimeType ?? 'image/jpeg',
+      } as unknown as Blob);
+      return requestMultipart<{ message: string; data: EarnedAllowanceDetail }>('/payments/allowance-requests', formData);
+    },
+    updateAllowanceStatus: (id: number, status: 'pending' | 'approved' | 'rejected' | 'paid', comment?: string) =>
       request<EarnedAllowanceDetail>(`/payments/earned-allowances/${id}/status`, {
         method: 'POST',
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, comment: comment ?? undefined }),
       }),
     allowanceTypes: () => request<{ data: AllowanceTypeItem[] }>('/payments/allowance-types'),
     createAllowanceType: (name: string) =>
@@ -1129,6 +1149,8 @@ export interface AllowanceTypeItem {
 
 export interface EarnedAllowanceDetail {
   id: number;
+  event_id?: number;
+  event_name?: string | null;
   crew_id: number;
   crew_name: string;
   allowance_type_id: number;
@@ -1137,7 +1159,17 @@ export interface EarnedAllowanceDetail {
   description?: string | null;
   recorded_by?: string | null;
   recorded_at?: string | null;
-  status: 'pending' | 'approved' | 'paid';
+  status: 'pending' | 'approved' | 'rejected' | 'paid';
+  source?: string | null;
+  attachment_url?: string | null;
+  rejection_comment?: string | null;
+  approval_comment?: string | null;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  rejected_by?: string | null;
+  rejected_at?: string | null;
+  meal_slot?: string | null;
+  meal_grant_date?: string | null;
 }
 
 export interface EarnedAllowanceEventGroup {
@@ -1148,7 +1180,7 @@ export interface EarnedAllowanceEventGroup {
   team_lead?: string | null;
   crew_count: number;
   total_allowances: number;
-  status_breakdown: { pending: number; approved: number; paid: number };
+  status_breakdown: { pending: number; approved: number; rejected?: number; paid: number };
   details: EarnedAllowanceDetail[];
 }
 

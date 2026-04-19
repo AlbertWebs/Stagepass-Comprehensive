@@ -2,14 +2,19 @@
 
 namespace Database\Seeders;
 
+use App\Models\AllowanceType;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
 
 class AllowanceTypesTableSeeder extends Seeder
 {
     public function run(): void
     {
-        // No rows in snapshot.
-        return;
+        $names = ['Taxi', 'Transport', 'Emergency', 'Other', 'Breakfast', 'Lunch', 'Dinner'];
+        foreach ($names as $name) {
+            AllowanceType::query()->firstOrCreate(
+                ['name' => $name],
+                ['is_active' => true]
+            );
+        }
     }
 }

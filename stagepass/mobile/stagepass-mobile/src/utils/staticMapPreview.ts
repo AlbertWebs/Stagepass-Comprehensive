@@ -1,4 +1,3 @@
-import { PixelRatio } from 'react-native';
 import { getGoogleMapsApiKey } from '~/services/googlePlaces';
 
 /** OSM/Yandex static endpoints often fail or return blank above ~1024px. */
@@ -9,15 +8,19 @@ const MAX_RASTER_DIM = 1024;
  * requests with 403 (tile usage policy). See https://operations.osmfoundation.org/policies/tiles/
  *
  * Static map generators (e.g. staticmap.openstreetmap.de) are separate from the main tile CDN.
+ *
+ * Note: Do not attach custom headers to these URLs when using expo-image. Google Static Maps
+ * and several CDNs reject or mishandle non-browser requests with a custom User-Agent, which
+ * caused all previews to fail and fall through to the error placeholder.
  */
 export const MAP_PREVIEW_REQUEST_HEADERS = {
   'User-Agent': 'Stagepass/1.0 (https://stagepass.co.ke; in-app map preview)',
   Accept: 'image/*,*/*',
 };
 
-/** expo-image / RN Image source with headers for remote map images. */
-export function mapPreviewImageSource(uri: string): { uri: string; headers: typeof MAP_PREVIEW_REQUEST_HEADERS } {
-  return { uri, headers: MAP_PREVIEW_REQUEST_HEADERS };
+/** Preferred: plain remote URI so Static Maps and fallbacks load reliably in expo-image. */
+export function mapPreviewImageSource(uri: string): { uri: string } {
+  return { uri };
 }
 
 /**
@@ -27,19 +30,16 @@ export function mapPreviewImageSource(uri: string): { uri: string; headers: type
 export function buildVenueStaticMapPreviewUrls(latitude: number, longitude: number): string[] {
   const lat = latitude.toFixed(6);
   const lon = longitude.toFixed(6);
-  const scalePx = Math.min(PixelRatio.get(), 3);
-  const w = Math.min(Math.round(900 * scalePx), MAX_RASTER_DIM);
-  const h = Math.min(Math.round(520 * scalePx), MAX_RASTER_DIM);
+  const w = Math.min(640, MAX_RASTER_DIM);
+  const h = Math.min(400, MAX_RASTER_DIM);
 
   const urls: string[] = [];
 
-  const key = getGoogleMapsApiKey();
+  const key = getGoogleMapsApiKey()?.trim();
   if (key) {
-    const gw = Math.min(640, Math.max(120, Math.round(w / scalePx)));
-    const gh = Math.min(640, Math.max(120, Math.round(h / scalePx)));
     const marker = encodeURIComponent(`color:0xca8a04|${lat},${lon}`);
     urls.push(
-      `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lon}&zoom=15&size=${gw}x${gh}&scale=2&maptype=roadmap&markers=${marker}&key=${encodeURIComponent(key)}`
+      `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lon}&zoom=15&size=480x320&scale=2&maptype=roadmap&markers=${marker}&key=${encodeURIComponent(key)}`
     );
   }
 

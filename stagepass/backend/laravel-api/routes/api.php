@@ -125,10 +125,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('payments/initiate', [PaymentController::class, 'initiate']);
     Route::post('payments/approve', [PaymentController::class, 'approve']);
     Route::post('payments/reject', [PaymentController::class, 'reject']);
-    Route::get('payments/earned-allowances', [EarnedAllowanceController::class, 'index']);
-    Route::post('payments/earned-allowances', [EarnedAllowanceController::class, 'store']);
-    Route::post('payments/earned-allowances/{eventAllowance}/status', [EarnedAllowanceController::class, 'updateStatus']);
     Route::get('payments/earned-allowances/export', [EarnedAllowanceController::class, 'export']);
+    Route::get('payments/earned-allowances', [EarnedAllowanceController::class, 'index']);
+    Route::post('payments/allowance-requests', [EarnedAllowanceController::class, 'crewRequest']);
+    Route::post('payments/earned-allowances', [EarnedAllowanceController::class, 'store']);
+    Route::get('payments/earned-allowances/{eventAllowance}/attachment', [EarnedAllowanceController::class, 'attachment']);
+    Route::post('payments/earned-allowances/{eventAllowance}/status', [EarnedAllowanceController::class, 'updateStatus']);
     Route::get('payments/allowance-types', [EarnedAllowanceController::class, 'typeIndex']);
     Route::post('payments/allowance-types', [EarnedAllowanceController::class, 'typeStore']);
     Route::put('payments/allowance-types/{allowanceType}', [EarnedAllowanceController::class, 'typeUpdate']);

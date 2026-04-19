@@ -44,6 +44,12 @@ class SettingsController extends Controller
         'office_checkin_end_time',
         /** JSON array of weekday ints 0=Sun … 6=Sat (same as JS Date.getDay()). */
         'office_checkin_required_days',
+        'meal_allowance_breakfast_time',
+        'meal_allowance_lunch_time',
+        'meal_allowance_dinner_time',
+        'meal_allowance_breakfast_amount',
+        'meal_allowance_lunch_amount',
+        'meal_allowance_dinner_amount',
     ];
     /**
      * Minimal app policy for unauthenticated clients (e.g. login screen before token).

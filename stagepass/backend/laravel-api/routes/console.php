@@ -87,3 +87,4 @@ Artisan::command('user:create-test-credentials {--password=Test@12345} {--rewrit
 |--------------------------------------------------------------------------
 */
 Schedule::command('attendance:send-overtime-threshold-notifications')->everyMinute();
+Schedule::command('allowances:process-meals')->everyMinute();

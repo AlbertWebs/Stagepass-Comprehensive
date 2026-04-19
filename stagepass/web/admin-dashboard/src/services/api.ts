@@ -288,6 +288,8 @@ export interface AllowanceTypeItem {
 
 export interface EarnedAllowanceDetail {
   id: number;
+  event_id?: number;
+  event_name?: string | null;
   crew_id: number;
   crew_name: string;
   allowance_type_id: number;
@@ -296,7 +298,15 @@ export interface EarnedAllowanceDetail {
   description?: string | null;
   recorded_by?: string | null;
   recorded_at?: string | null;
-  status: 'pending' | 'approved' | 'paid';
+  status: 'pending' | 'approved' | 'rejected' | 'paid';
+  source?: string | null;
+  attachment_url?: string | null;
+  rejection_comment?: string | null;
+  approval_comment?: string | null;
+  approved_at?: string | null;
+  rejected_at?: string | null;
+  meal_slot?: string | null;
+  meal_grant_date?: string | null;
 }
 
 export interface EarnedAllowanceEventGroup {
@@ -307,7 +317,7 @@ export interface EarnedAllowanceEventGroup {
   team_lead?: string | null;
   crew_count: number;
   total_allowances: number;
-  status_breakdown: { pending: number; approved: number; paid: number };
+  status_breakdown: { pending: number; approved: number; rejected?: number; paid: number };
   details: EarnedAllowanceDetail[];
 }
 
@@ -502,16 +512,17 @@ export const api = {
         body: JSON.stringify({ payment_id: paymentId, rejection_reason: rejectionReason }),
       }),
     earnedAllowances: (params?: Record<string, string | number>) =>
-      request<{ data: EarnedAllowanceEventGroup[]; pagination: { current_page: number; last_page: number; per_page: number; total: number } }>(
-        '/payments/earned-allowances',
-        { params: params as Record<string, string | number> }
-      ),
+      request<{
+        data: EarnedAllowanceEventGroup[];
+        flat?: EarnedAllowanceDetail[];
+        pagination: { current_page: number; last_page: number; per_page: number; total: number };
+      }>('/payments/earned-allowances', { params: params as Record<string, string | number> }),
     addEarnedAllowance: (body: { event_id: number; crew_id: number; allowance_type_id: number; amount: number; description?: string; recorded_at?: string }) =>
       request<EarnedAllowanceDetail>('/payments/earned-allowances', { method: 'POST', body: JSON.stringify(body) }),
-    updateAllowanceStatus: (id: number, status: 'pending' | 'approved' | 'paid') =>
+    updateAllowanceStatus: (id: number, status: 'pending' | 'approved' | 'rejected' | 'paid', comment?: string) =>
       request<EarnedAllowanceDetail>(`/payments/earned-allowances/${id}/status`, {
         method: 'POST',
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, comment: comment ?? undefined }),
       }),
     exportEarnedAllowances: (format: 'csv' | 'pdf' | 'excel') =>
       request<Blob | unknown>(`/payments/earned-allowances/export`, { params: { format } }),

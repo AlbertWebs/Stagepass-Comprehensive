@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, type Event, type Paginated, type PaymentItem } from '@/services/api';
+import { api, type EarnedAllowanceDetail, type Event, type Paginated, type PaymentItem } from '@/services/api';
 import { PageHeader } from '@/components/PageHeader';
 import { SectionCard } from '@/components/SectionCard';
 
@@ -69,22 +69,29 @@ export default function Allowances() {
   const [error, setError] = useState<string | null>(null);
   const [eventQuery, setEventQuery] = useState('');
   const [paymentQuery, setPaymentQuery] = useState('');
+  const [earnedRows, setEarnedRows] = useState<EarnedAllowanceDetail[]>([]);
+  const [earnedEventId, setEarnedEventId] = useState<string>('');
+  const [earnedStatus, setEarnedStatus] = useState<string>('');
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [eventsRes, payRes] = await Promise.all([
+      const [eventsRes, payRes, earnedRes] = await Promise.all([
         api.events.list({ per_page: 100 }),
         api.payments.list({ status: 'approved', per_page: 100 }),
+        api.payments.earnedAllowances({ per_page: 200 }),
       ]);
       const ev = (eventsRes as Paginated<Event>)?.data ?? [];
       const pay = (payRes as Paginated<PaymentItem>)?.data ?? [];
       setEvents(Array.isArray(ev) ? ev : []);
       setPayments(Array.isArray(pay) ? pay : []);
+      const flat = (earnedRes as { flat?: EarnedAllowanceDetail[] })?.flat;
+      setEarnedRows(Array.isArray(flat) ? flat : []);
     } catch {
       setEvents([]);
       setPayments([]);
+      setEarnedRows([]);
       setError('Could not load allowances data. Check your connection and API settings, then try again.');
     } finally {
       setLoading(false);
@@ -123,6 +130,18 @@ export default function Allowances() {
       return crew.includes(q) || ev.includes(q) || purpose.includes(q);
     });
   }, [payments, paymentQuery]);
+
+  const filteredEarnedRows = useMemo(() => {
+    let rows = earnedRows;
+    if (earnedEventId) {
+      const id = Number(earnedEventId);
+      rows = rows.filter((r) => r.event_id === id);
+    }
+    if (earnedStatus) {
+      rows = rows.filter((r) => (r.status ?? '') === earnedStatus);
+    }
+    return rows;
+  }, [earnedRows, earnedEventId, earnedStatus]);
 
   const stats = useMemo(() => {
     const withAllowance = todayEvents.filter((e) => e.daily_allowance != null && Number(e.daily_allowance) > 0).length;
@@ -335,6 +354,92 @@ export default function Allowances() {
                         <Link to={`/events/${p.event_id}`} className="link-brand text-sm font-medium">
                           Event →
                         </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </SectionCard>
+
+      <SectionCard sectionLabel="Earned allowance requests (mobile &amp; automatic)">
+        <div className="p-5 sm:p-6">
+          <p className="mb-4 text-sm text-slate-600">
+            Manual requests, approvals, automatic meal lines, and attachment receipts from the API.
+          </p>
+          <div className="mb-4 flex flex-wrap gap-3">
+            <select
+              className="input max-w-xs"
+              aria-label="Filter by event"
+              value={earnedEventId}
+              onChange={(e) => setEarnedEventId(e.target.value)}
+              disabled={loading && earnedRows.length === 0}
+            >
+              <option value="">All events</option>
+              {events.map((e) => (
+                <option key={e.id} value={String(e.id)}>
+                  {e.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="input max-w-xs"
+              aria-label="Filter by status"
+              value={earnedStatus}
+              onChange={(e) => setEarnedStatus(e.target.value)}
+              disabled={loading && earnedRows.length === 0}
+            >
+              <option value="">All statuses</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+              <option value="paid">Paid</option>
+            </select>
+          </div>
+          {loading && earnedRows.length === 0 ? (
+            <p className="py-10 text-center text-sm text-slate-500">Loading earned allowances…</p>
+          ) : filteredEarnedRows.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-500">No rows match your filters.</p>
+          ) : (
+            <div className="overflow-x-auto scrollbar-thin -mx-5 sm:-mx-6">
+              <table className="w-full min-w-[960px] table-header-brand">
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Event</th>
+                    <th>Type</th>
+                    <th className="text-right">Amount</th>
+                    <th>Status</th>
+                    <th>Requested</th>
+                    <th>Approved</th>
+                    <th>Attachment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredEarnedRows.map((r) => (
+                    <tr key={r.id} className="border-b border-slate-100 transition hover:bg-slate-50/60">
+                      <td className="px-6 py-4 text-sm font-medium text-slate-900">{r.crew_name}</td>
+                      <td className="px-6 py-4 text-sm text-slate-700">{r.event_name ?? '—'}</td>
+                      <td className="px-6 py-4 text-sm text-slate-700">
+                        {r.allowance_type}
+                        {r.source === 'automatic' ? (
+                          <span className="ml-2 text-xs text-slate-500">(auto{r.meal_slot ? ` · ${r.meal_slot}` : ''})</span>
+                        ) : null}
+                      </td>
+                      <td className="px-6 py-4 text-right tabular-nums text-slate-700">{formatMoney(Number(r.amount))}</td>
+                      <td className="px-6 py-4 text-sm capitalize text-slate-800">{r.status}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{r.recorded_at ? formatPayDate(r.recorded_at) : '—'}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{r.approved_at ? formatPayDate(r.approved_at) : '—'}</td>
+                      <td className="px-6 py-4 text-sm">
+                        {r.attachment_url ? (
+                          <a href={r.attachment_url} target="_blank" rel="noreferrer" className="link-brand font-medium">
+                            View
+                          </a>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                     </tr>
                   ))}

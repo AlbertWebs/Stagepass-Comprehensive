@@ -1,11 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { useFocusEffect } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { HomeHeader } from '@/components/HomeHeader';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   SlideInRight,
@@ -22,7 +21,7 @@ import { useAppRole } from '~/hooks/useAppRole';
 import { canManageEventCrew as computeCanManageEventCrew } from '~/utils/eventCrewPermissions';
 import { buildVenueStaticMapPreviewUrls, mapPreviewImageSource } from '~/utils/staticMapPreview';
 import { useGeofence } from '~/hooks/useGeofence';
-import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
+import { useNavigationPress } from '@/src/utils/navigationPress';
 import { StagepassLoader } from '@/components/StagepassLoader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -30,6 +29,8 @@ import { Cards, Icons, Typography } from '@/constants/ui';
 import { BorderRadius, Spacing, StatusColors, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import * as Location from 'expo-location';
+
+const TAB_BAR_HEIGHT = 58;
 import {
   canCheckInEligibility,
   canCheckOutEligibility,
@@ -55,20 +56,6 @@ function formatEventTime(timeStr: string | undefined): string {
   const ampm = hour >= 12 ? 'PM' : 'AM';
   const h12 = hour % 12 || 12;
   return `${h12}:${m || '00'} ${ampm}`;
-}
-
-/** Format ISO or "Y-m-d H:i:s" timestamp to HH:mm (24h) for checkout badge. */
-function formatCheckoutTime(value: string | undefined): string {
-  if (!value || typeof value !== 'string') return '';
-  try {
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return value.slice(11, 16) || '';
-    const h = d.getHours();
-    const m = d.getMinutes();
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-  } catch {
-    return value.slice(11, 16) || value;
-  }
 }
 
 function formatHoursLabel(hours: number): string {
@@ -162,7 +149,6 @@ export default function EventDetailScreen() {
     is_holiday?: boolean;
     holiday_name?: string | null;
   };
-  const checkoutTimeFormatted = formatCheckoutTime(checkoutTime as string | undefined);
   const myRoleInEvent = hasPivot && (myAssignment?.pivot as { role_in_event?: string | null })?.role_in_event;
   useEffect(() => {
     const interval = setInterval(() => setClockTick((v) => v + 1), 60000);
@@ -458,13 +444,21 @@ export default function EventDetailScreen() {
   const iconWrapBg = isDark ? themeYellow + '2a' : themeYellow + '18';
   const iconWrapBorder = isDark ? themeYellow + '56' : themeYellow + '38';
   const sectionIconBg = isDark ? '#f8fafc1f' : themeYellow + '1f';
+  /** Same as card surface so rounded map edges don’t show a different color at the curve. */
+  const mapWellColor = cardSurface;
 
   return (
     <ThemedView style={styles.container}>
       <HomeHeader title="Event details" showBack onBack={goBackToEvents} notificationCount={0} />
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + Spacing.xxl }]}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingBottom: insets.bottom + TAB_BAR_HEIGHT + Spacing.xxl,
+            backgroundColor: colors.background,
+          },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <Animated.View entering={SlideInRight.duration(320)}>
@@ -477,14 +471,8 @@ export default function EventDetailScreen() {
             <ThemedText style={[styles.sectionTitle, { color: accent }]}>Selected Venue</ThemedText>
           </View>
           <View style={[styles.attendanceCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
-            <View
-              style={[
-                styles.attendanceMapOuter,
-                { backgroundColor: cardSurface },
-                isDark ? styles.attendanceMapOuterDark : styles.attendanceMapOuterLight,
-              ]}
-            >
-            <View style={styles.attendanceMapCard}>
+            <View style={[styles.attendanceMapOuter, { backgroundColor: mapWellColor }]}>
+            <View style={[styles.attendanceMapCard, { backgroundColor: mapWellColor }]}>
               {attendanceMapUrl ? (
                 <>
                   <Image
@@ -495,6 +483,10 @@ export default function EventDetailScreen() {
                     transition={100}
                     cachePolicy="memory-disk"
                     onError={() => {
+                      if (__DEV__) {
+                        const u = attendanceMapUrls[mapPreviewSourceIndex];
+                        console.warn('[map preview] failed, trying next', mapPreviewSourceIndex, u?.slice(0, 120));
+                      }
                       setMapPreviewSourceIndex((idx) => {
                         if (idx + 1 < attendanceMapUrls.length) return idx + 1;
                         setMapPreviewExhausted(true);
@@ -511,7 +503,7 @@ export default function EventDetailScreen() {
                   <View style={styles.attendanceMapGrid} />
                 </>
               ) : (
-                <View style={[styles.attendanceMapPlaceholder, { backgroundColor: isDark ? '#1e293b' : '#e2e8f0' }]}>
+                <View style={[styles.attendanceMapPlaceholder, { backgroundColor: mapWellColor }]}>
                   <Ionicons name="map-outline" size={44} color={colors.textSecondary} />
                   <ThemedText style={[styles.attendanceMapPlaceholderTitle, { color: colors.text }]}>
                     {!attendanceMapCenter
@@ -628,6 +620,7 @@ export default function EventDetailScreen() {
                           (!checkinTime && (!canSelfCheckIn || !userLocation)) ||
                           (!!checkinTime && !checkoutTime && !canSelfCheckOut) ||
                           !!checkoutTime) && { backgroundColor: themeBlue + '22' },
+                        styles.roundCheckInButtonMap,
                         pressed && !actionLoading && styles.roundCheckInButtonPressed,
                       ]}
                     >
@@ -689,35 +682,45 @@ export default function EventDetailScreen() {
                 <ThemedText style={[styles.statusBannerText, { color: colors.textSecondary }]}>{checkOutBlockedReason}</ThemedText>
               </View>
             ) : null}
-            {checkinTime && !checkoutTime ? (
-              <View style={[styles.liveHoursCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
-              <ThemedText style={[styles.liveHoursTitle, { color: colors.text }]}>Active session</ThemedText>
-              <ThemedText style={[styles.liveHoursValue, { color: colors.textSecondary }]}>
-                Check-in:{' '}
-                {checkinTime
-                  ? new Date(checkinTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-                  : '—'}
-              </ThemedText>
-              <ThemedText style={[styles.liveHoursValue, { color: colors.textSecondary }]}>
-                Duration: {formatHoursLabel(sessionStats.totalHours)}
-              </ThemedText>
-              <ThemedText style={[styles.liveHoursValue, { color: colors.textSecondary }]}>
-                Standard (0–8h): {formatHoursLabel(sessionStats.standardHours)}
-              </ThemedText>
-              <ThemedText style={[styles.liveHoursValue, { color: sessionStats.extraHours > 0 ? '#f97316' : colors.textSecondary }]}>
-                Extra hours: {formatHoursLabel(sessionStats.extraHours)}
-              </ThemedText>
-              <ThemedText
-                style={[
-                  styles.liveHoursValue,
-                  { fontWeight: '600', color: sessionStats.extraHours > 0 ? '#f97316' : StatusColors.checkedIn },
-                ]}
-              >
-                {sessionStats.extraHours > 0 ? 'Extra Hours Running' : 'Within Standard Hours'}
-              </ThemedText>
-            </View>
-            ) : null}
           </View>
+
+          {checkinTime && !checkoutTime ? (
+            <>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                <View style={[styles.sectionTitleIconWrap, { backgroundColor: sectionIconBg }]}>
+                  <Ionicons name="timer-outline" size={Icons.small} color={themeYellow} />
+                </View>
+                <ThemedText style={[styles.sectionTitle, { color: accent }]}>Active session</ThemedText>
+              </View>
+              <View style={[styles.liveHoursCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+                <ThemedText style={[styles.liveHoursValue, { color: colors.textSecondary }]}>
+                  Check-in:{' '}
+                  {checkinTime
+                    ? new Date(checkinTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+                    : '—'}
+                </ThemedText>
+                <ThemedText style={[styles.liveHoursValue, { color: colors.textSecondary }]}>
+                  Duration: {formatHoursLabel(sessionStats.totalHours)}
+                </ThemedText>
+                <ThemedText style={[styles.liveHoursValue, { color: colors.textSecondary }]}>
+                  Standard (0–8h): {formatHoursLabel(sessionStats.standardHours)}
+                </ThemedText>
+                <ThemedText style={[styles.liveHoursValue, { color: sessionStats.extraHours > 0 ? '#f97316' : colors.textSecondary }]}>
+                  Extra hours: {formatHoursLabel(sessionStats.extraHours)}
+                </ThemedText>
+                <ThemedText
+                  style={[
+                    styles.liveHoursValue,
+                    styles.liveHoursStatusLine,
+                    { color: sessionStats.extraHours > 0 ? '#f97316' : StatusColors.checkedIn },
+                  ]}
+                >
+                  {sessionStats.extraHours > 0 ? 'Extra Hours Running' : 'Within Standard Hours'}
+                </ThemedText>
+              </View>
+            </>
+          ) : null}
 
           {/* Details section */}
           <View style={styles.sectionTitleRow}>
@@ -816,6 +819,46 @@ export default function EventDetailScreen() {
                   <ThemedText style={[styles.allowanceLabel, { color: colors.textSecondary }]}>Daily allowance</ThemedText>
                 </View>
               </View>
+            </>
+          ) : null}
+
+          {myAssignment != null &&
+          !isEventEnded &&
+          (role === 'crew' || role === 'team_leader') ? (
+            <>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                <View style={[styles.sectionTitleIconWrap, { backgroundColor: sectionIconBg }]}>
+                  <Ionicons name="cash-outline" size={Icons.small} color={themeYellow} />
+                </View>
+                <ThemedText style={[styles.sectionTitle, { color: accent }]}>Extra allowance</ThemedText>
+              </View>
+              <Pressable
+                onPress={() =>
+                  handleNav(() =>
+                    router.push({
+                      pathname: '/events/request-allowance',
+                      params: { eventId: String(event.id) },
+                    })
+                  )
+                }
+                style={({ pressed }) => [
+                  styles.leadOpsCard,
+                  { backgroundColor: cardSurface, borderColor: leadOpsCardBorder },
+                  pressed && { opacity: 0.92 },
+                ]}
+              >
+                <View style={[styles.leadOpsIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
+                  <Ionicons name="add-circle-outline" size={Icons.standard} color={themeYellow} />
+                </View>
+                <View style={styles.leadOpsTextWrap}>
+                  <ThemedText style={[styles.leadOpsTitle, { color: colors.text }]}>Request allowance</ThemedText>
+                  <ThemedText style={[styles.leadOpsSub, { color: colors.textSecondary }]}>
+                    Taxi, transport, emergency, or other — include a receipt photo
+                  </ThemedText>
+                </View>
+                <Ionicons name="chevron-forward" size={22} color={colors.textSecondary} />
+              </Pressable>
             </>
           ) : null}
 
@@ -1029,11 +1072,12 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     padding: 0,
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.xl,
     overflow: 'visible',
   },
   statusBanner: {
     marginHorizontal: Spacing.md,
+    marginTop: Spacing.md,
     marginBottom: Spacing.md,
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
@@ -1043,33 +1087,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  /** No drop shadow here — large shadowOffset/elevation read as a dark band under the map. */
   attendanceMapOuter: {
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
+    borderRadius: 22,
+    overflow: 'hidden',
+    marginBottom: Spacing.sm,
   },
-  attendanceMapOuterLight: Platform.select({
-    ios: {
-      shadowColor: '#0f172a',
-      shadowOffset: { width: 0, height: 12 },
-      shadowOpacity: 0.13,
-      shadowRadius: 24,
-    },
-    android: { elevation: 9 },
-    default: {},
-  }),
-  attendanceMapOuterDark: Platform.select({
-    ios: {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 10 },
-      shadowOpacity: 0.5,
-      shadowRadius: 20,
-    },
-    android: { elevation: 11 },
-    default: {},
-  }),
   attendanceMapCard: {
     height: 320,
-    borderRadius: 22,
     overflow: 'hidden',
     position: 'relative',
   },
@@ -1090,6 +1115,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
+    paddingBottom: 108,
     gap: Spacing.sm,
   },
   attendanceMapPlaceholderTitle: {
@@ -1112,14 +1138,15 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
   },
+  /** Bottom-aligned so map/placeholder text stays readable (centered FAB obscured “Could not load preview”). */
   mapActionOverlay: {
     position: 'absolute',
     left: 0,
     right: 0,
-    top: 0,
     bottom: 0,
+    paddingBottom: Spacing.md,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
   },
   detailsCard: {
     borderRadius: Cards.borderRadius,
@@ -1304,6 +1331,14 @@ const styles = StyleSheet.create({
     shadowColor: themeBlue,
     shadowOpacity: 0.4,
   },
+  /** Heavy FAB shadow was clipped by the map card, reading as a dark band + corner halos. */
+  roundCheckInButtonMap: {
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0,
+    shadowColor: 'transparent',
+  },
   roundCheckInButtonPressed: {
     opacity: 0.9,
     transform: [{ scale: 0.98 }],
@@ -1401,19 +1436,23 @@ const styles = StyleSheet.create({
     fontSize: Typography.bodySmall,
   },
   liveHoursCard: {
-    width: '100%',
+    alignSelf: 'stretch',
     borderWidth: 1,
     borderRadius: Cards.borderRadius,
-    padding: Spacing.md,
+    padding: Spacing.lg,
     marginBottom: Spacing.lg,
-  },
-  liveHoursTitle: {
-    fontSize: Typography.body,
-    fontWeight: '700',
-    marginBottom: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
   liveHoursValue: {
     fontSize: Typography.bodySmall,
     marginTop: 2,
+  },
+  liveHoursStatusLine: {
+    fontWeight: '600',
+    marginTop: Spacing.sm,
   },
 });
