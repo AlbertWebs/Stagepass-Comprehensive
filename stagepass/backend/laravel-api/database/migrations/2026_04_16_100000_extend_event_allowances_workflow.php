@@ -9,6 +9,8 @@ return new class extends Migration
 {
     public function up(): void
     {
+        $driver = Schema::getConnection()->getDriverName();
+
         // Must use the migration-defined index name — dropUnique([columns]) targets Laravel's
         // auto name (…_unique), but create_allowance_types… names it `event_allowances_dedupe_key`.
         Schema::table('event_allowances', function (Blueprint $table) {
