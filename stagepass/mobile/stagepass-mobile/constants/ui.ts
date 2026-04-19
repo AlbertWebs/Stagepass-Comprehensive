@@ -17,8 +17,8 @@ import { BorderRadius, Spacing } from './theme';
 
 export const Typography = {
   /** Page title (e.g. header bar, screen title) – same on every screen */
-  titleLarge: 20,
-  titleLargeLineHeight: 26,
+  titleLarge: 22,
+  titleLargeLineHeight: 28,
   titleLargeWeight: '700' as const,
 
   /** Hero / welcome title (e.g. login "Welcome Back", logo wordmark) */

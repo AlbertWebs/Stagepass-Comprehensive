@@ -467,15 +467,17 @@ const styles = StyleSheet.create({
   },
   titleCap: {
     width: 3,
-    height: 20,
+    height: 22,
     borderRadius: 1,
     marginRight: Spacing.sm,
   },
+  /** Must match type="titleLarge" — do not use titleCard here or the bar title shrinks. */
   title: {
     flex: 1,
-    fontSize: Typography.titleCard,
+    fontSize: Typography.titleLarge,
+    lineHeight: Typography.titleLargeLineHeight,
     fontWeight: Typography.titleLargeWeight,
-    letterSpacing: 0.25,
+    letterSpacing: 0.2,
   },
   rightRow: {
     flexDirection: 'row',

@@ -18,8 +18,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class EarnedAllowanceController extends Controller
 {
-    /** @var list<string> */
-    private const MANUAL_TYPE_NAMES = ['Taxi', 'Transport', 'Emergency', 'Other'];
+    /** Reserved for automatic meal credits — not offered for manual receipt requests. */
+    private const AUTOMATIC_MEAL_TYPE_NAMES = ['Breakfast', 'Lunch', 'Dinner'];
 
     private function canManage(Request $request): bool
     {
@@ -50,10 +50,10 @@ class EarnedAllowanceController extends Controller
     {
         $query = AllowanceType::query()->where('is_active', true)->orderBy('name');
         if (! $this->canManage($request)) {
-            // Match manual labels case-insensitively (DB may use different casing).
+            // Crew: show every active admin-defined type except automatic meal slots.
             $query->where(function ($q) {
-                foreach (self::MANUAL_TYPE_NAMES as $name) {
-                    $q->orWhereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)]);
+                foreach (self::AUTOMATIC_MEAL_TYPE_NAMES as $name) {
+                    $q->whereRaw('LOWER(TRIM(name)) != ?', [mb_strtolower($name)]);
                 }
             });
         }
@@ -229,10 +229,13 @@ class EarnedAllowanceController extends Controller
         }
 
         $type = AllowanceType::findOrFail((int) $validated['allowance_type_id']);
+        if (! $type->is_active) {
+            return response()->json(['message' => 'This allowance type is not available.'], 422);
+        }
         $typeNorm = mb_strtolower(trim((string) $type->name));
-        $allowed = array_map(fn (string $n) => mb_strtolower($n), self::MANUAL_TYPE_NAMES);
-        if (! in_array($typeNorm, $allowed, true)) {
-            return response()->json(['message' => 'Invalid allowance type for a manual request.'], 422);
+        $blocked = array_map(fn (string $n) => mb_strtolower($n), self::AUTOMATIC_MEAL_TYPE_NAMES);
+        if (in_array($typeNorm, $blocked, true)) {
+            return response()->json(['message' => 'This allowance type is reserved for automatic meal credits.'], 422);
         }
 
         $path = $request->file('attachment')->store('allowance-receipts', 'public');

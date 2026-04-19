@@ -19,7 +19,7 @@ import { BorderRadius, Spacing, StatusColors } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { api } from '~/services/api';
 
-const RING_SIZE = 100;
+const RING_SIZE = 92;
 const RING_STROKE = 10;
 const HALF = RING_SIZE / 2;
 const RADIUS = HALF - RING_STROKE / 2;
@@ -184,16 +184,16 @@ export function CrewAttendanceStatistic({ stats: statsProp, onStatsLoaded, refre
 
 const styles = StyleSheet.create({
   wrap: {
-    paddingVertical: Spacing.xl,
-    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
   },
   loading: {
     fontSize: Typography.buttonText,
@@ -202,12 +202,12 @@ const styles = StyleSheet.create({
   ringsRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: Spacing.xxl,
-    marginBottom: Spacing.lg,
+    gap: Spacing.lg,
+    marginBottom: Spacing.sm,
   },
   ringWrap: {
     width: RING_SIZE,
-    minHeight: RING_SIZE + 36,
+    minHeight: RING_SIZE + 30,
     alignItems: 'center',
   },
   svgRing: {
@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
   ringLabel: {
     fontSize: Typography.label,
     fontWeight: Typography.titleCardWeight,
-    marginTop: RING_SIZE + 4,
+    marginTop: RING_SIZE + 2,
     letterSpacing: 0.2,
   },
   ringSub: {

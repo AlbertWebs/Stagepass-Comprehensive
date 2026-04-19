@@ -9,6 +9,7 @@ import {
   Alert,
   Animated,
   Easing,
+  PixelRatio,
   Platform,
   Pressable,
   StyleSheet,
@@ -37,6 +38,11 @@ import { NAV_PRESSED_OPACITY } from '@/src/utils/navigationPress';
 type Props = {
   onRefresh?: () => Promise<void>;
 };
+
+/** Ripple rings + CTA share one center; cluster must fit scaled ring (~1.9×). */
+const RIPPLE_BASE = 96;
+const RIPPLE_CLUSTER = 200;
+const RIPPLE_RING_INSET = (RIPPLE_CLUSTER - RIPPLE_BASE) / 2;
 
 function parseOfficeCoord(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -105,8 +111,12 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
   );
   const mapUrls = useMemo(() => {
     if (!mapCenter) return [];
-    return buildVenueStaticMapPreviewUrls(mapCenter.latitude, mapCenter.longitude);
-  }, [mapCenter]);
+    const pr = PixelRatio.get();
+    return buildVenueStaticMapPreviewUrls(mapCenter.latitude, mapCenter.longitude, {
+      widthPx: Math.round(windowWidth * pr),
+      heightPx: Math.round(windowHeight * pr),
+    });
+  }, [mapCenter, windowWidth, windowHeight]);
   const mapUrl = mapUrls[mapSourceIndex] ?? null;
 
   const withinOffice = useMemo(() => {
@@ -161,19 +171,6 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
 
   const timeGreeting = getTimeGreeting();
 
-  /** Light mode: softer surfaces and depth without changing layout structure. */
-  const lightElevated = !isDark
-    ? Platform.select({
-        ios: {
-          shadowColor: '#0f172a',
-          shadowOffset: { width: 0, height: 10 },
-          shadowOpacity: 0.09,
-          shadowRadius: 20,
-        },
-        android: { elevation: 5 },
-        default: {},
-      })
-    : {};
 
   const mapCardBg = isDark ? '#121723' : '#F4F6FA';
   const mapOverlayTintBg = isDark ? 'rgba(2,6,23,0.26)' : 'rgba(255,255,255,0.08)';
@@ -182,7 +179,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
 
   useEffect(() => {
     setMapSourceIndex(0);
-  }, [mapCenter?.latitude, mapCenter?.longitude]);
+  }, [mapCenter?.latitude, mapCenter?.longitude, windowWidth, windowHeight]);
 
   const buttonLabel = useMemo(() => {
     if (loading) return canCheckout ? 'Checking out...' : 'Checking in...';
@@ -429,23 +426,6 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
     []
   );
 
-  /** Keeps welcome copy readable on variable map imagery without a solid card. */
-  const welcomeShadow = useMemo(
-    () =>
-      isDark
-        ? {
-            textShadowColor: 'rgba(0,0,0,0.78)',
-            textShadowOffset: { width: 0, height: 1 },
-            textShadowRadius: 12,
-          }
-        : {
-            textShadowColor: 'rgba(255,255,255,0.95)',
-            textShadowOffset: { width: 0, height: 0 },
-            textShadowRadius: 12,
-          },
-    [isDark]
-  );
-
   const welcomeMutedOnMap = isDark ? 'rgba(228, 228, 231, 0.96)' : colors.textSecondary;
   const welcomePrimaryOnMap = isDark ? '#FAFAFA' : colors.text;
 
@@ -483,7 +463,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
             ) : null}
             <View style={styles.centerActionWrap}>
               {!isOfficeCheckinOffDay ? (
-                <>
+                <View style={styles.pinRippleCluster} collapsable={false}>
                   <Animated.View
                     pointerEvents="none"
                     style={[
@@ -554,7 +534,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                       />
                     )}
                   </Pressable>
-                </>
+                </View>
               ) : (
                 <View
                   style={[
@@ -632,42 +612,42 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
               accessibilityRole="header"
               accessibilityLabel={`Welcome back. ${timeGreeting}${welcomeFirstName ? `, ${welcomeFirstName}` : ''}. ${todayCaption}`}
             >
-              <View style={styles.welcomeRow}>
-                <View style={[styles.welcomeAccent, { backgroundColor: themeYellow }]} accessibilityElementsHidden />
-                <View style={styles.welcomeColumn}>
-                  <View style={styles.welcomeEyebrowRow}>
-                    <Ionicons name="sparkles" size={13} color={themeYellow} style={styles.welcomeEyebrowIcon} />
-                    <Text
-                      style={[
-                        styles.welcomeEyebrow,
-                        { color: welcomeMutedOnMap },
-                        welcomeShadow,
-                      ]}
-                      maxFontSizeMultiplier={1.35}
-                    >
-                      Welcome back
+              <View
+                style={[
+                  styles.welcomeScrim,
+                  {
+                    backgroundColor: isDark ? 'rgba(2, 8, 20, 0.72)' : 'rgba(248, 250, 252, 0.92)',
+                    borderColor: isDark ? 'rgba(148, 163, 184, 0.18)' : 'rgba(15, 23, 42, 0.08)',
+                  },
+                ]}
+              >
+                <View style={styles.welcomeRow}>
+                  <View style={[styles.welcomeAccent, { backgroundColor: themeYellow }]} accessibilityElementsHidden />
+                  <View style={styles.welcomeColumn}>
+                    <View style={styles.welcomeEyebrowRow}>
+                      <Ionicons name="sparkles" size={13} color={themeYellow} style={styles.welcomeEyebrowIcon} />
+                      <Text
+                        style={[styles.welcomeEyebrow, { color: welcomeMutedOnMap }]}
+                        maxFontSizeMultiplier={1.35}
+                      >
+                        Welcome back
+                      </Text>
+                    </View>
+                    <Text style={[styles.welcomeGreetingLine, { color: welcomePrimaryOnMap }]} maxFontSizeMultiplier={1.35}>
+                      <Text style={styles.welcomeGreetingPhrase}>{timeGreeting}</Text>
+                      {welcomeFirstName ? (
+                        <Text style={[styles.welcomeGreetingSep, { color: welcomeMutedOnMap }]}> · </Text>
+                      ) : null}
+                      {welcomeFirstName ? (
+                        <Text style={[styles.welcomeName, { color: nameAccentColor }]}>{welcomeFirstName}</Text>
+                      ) : null}
                     </Text>
+                    <Reanimated.View entering={FadeIn.duration(380).delay(140)}>
+                      <Text style={[styles.welcomeDate, { color: welcomeMutedOnMap }]} maxFontSizeMultiplier={1.3}>
+                        {todayCaption}
+                      </Text>
+                    </Reanimated.View>
                   </View>
-                  <Text
-                    style={[styles.welcomeGreetingLine, { color: welcomePrimaryOnMap }, welcomeShadow]}
-                    maxFontSizeMultiplier={1.35}
-                  >
-                    <Text style={styles.welcomeGreetingPhrase}>{timeGreeting}</Text>
-                    {welcomeFirstName ? (
-                      <Text style={[styles.welcomeGreetingSep, { color: welcomeMutedOnMap }]}> · </Text>
-                    ) : null}
-                    {welcomeFirstName ? (
-                      <Text style={[styles.welcomeName, { color: nameAccentColor }]}>{welcomeFirstName}</Text>
-                    ) : null}
-                  </Text>
-                  <Reanimated.View entering={FadeIn.duration(380).delay(140)}>
-                    <Text
-                      style={[styles.welcomeDate, { color: welcomeMutedOnMap }, welcomeShadow]}
-                      maxFontSizeMultiplier={1.3}
-                    >
-                      {todayCaption}
-                    </Text>
-                  </Reanimated.View>
                 </View>
               </View>
             </Reanimated.View>
@@ -680,7 +660,6 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                 styles.panel,
                 isOfficeCheckinOffDay && styles.panelOffDay,
                 { backgroundColor: colors.surface, borderColor: isDark ? colors.border : themeBlue + '14' },
-                !isDark && lightElevated,
                 !isDark && styles.panelLight,
               ]}
             >
@@ -702,7 +681,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
               </ThemedText>
               {inExtraOfficeHours ? (
                 <View style={styles.extraHoursRow}>
-                  <Ionicons name="time-outline" size={14} color={themeYellow} />
+                  <Ionicons name="time-outline" size={13} color={themeYellow} />
                   <ThemedText style={[styles.extraHoursText, { color: themeYellow }]} maxFontSizeMultiplier={1.25}>
                     Extra hours
                   </ThemedText>
@@ -758,7 +737,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
 
           {geoHint ? (
             <View style={styles.geoHintRow} accessibilityLiveRegion="polite">
-              <Ionicons name={geoHint.icon} size={16} color={geoHintIconColor} />
+              <Ionicons name={geoHint.icon} size={13} color={geoHintIconColor} />
               <ThemedText
                 style={[styles.geoHintText, { color: geoHintIconColor }]}
                 maxFontSizeMultiplier={1.35}
@@ -842,7 +821,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                 ) : (
                   <Ionicons
                     name={officeCheckedOutToday ? 'checkmark-done-circle' : canCheckout ? 'exit-outline' : 'location'}
-                    size={18}
+                    size={16}
                     color={
                       officeCheckedOutToday && isDark
                         ? '#e2e8f0'
@@ -871,7 +850,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                   {buttonLabel}
                 </ThemedText>
                 {!mainCtaDisabled ? (
-                  <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                  <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
                 ) : null}
               </Pressable>
             </>
@@ -881,7 +860,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
             <View style={styles.statusRow}>
               <Ionicons
                 name={officeCheckedOutToday ? 'checkmark-done-circle' : 'checkmark-circle'}
-                size={16}
+                size={14}
                 color={themeBlue}
               />
               <ThemedText style={[styles.statusText, { color: colors.textSecondary }]}>
@@ -944,7 +923,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     backgroundColor: 'transparent',
   },
-  /** Welcome stack — still no card fill; accent bar + shadows only. */
   welcomeTextBlock: {
     width: '100%',
     maxWidth: '100%',
@@ -955,6 +933,13 @@ const styles = StyleSheet.create({
     elevation: 0,
     shadowOpacity: 0,
   },
+  welcomeScrim: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    overflow: 'hidden',
+  },
   welcomeRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
@@ -964,7 +949,7 @@ const styles = StyleSheet.create({
   welcomeAccent: {
     width: 3,
     borderRadius: 2,
-    minHeight: 56,
+    minHeight: 48,
     alignSelf: 'stretch',
   },
   welcomeColumn: {
@@ -1026,8 +1011,8 @@ const styles = StyleSheet.create({
   },
   overlayBottom: {
     paddingHorizontal: Spacing.lg,
-    marginTop: Spacing.md,
-    gap: Spacing.lg + 2,
+    marginTop: Spacing.xs,
+    gap: Spacing.sm,
   },
   mapImage: {
     ...StyleSheet.absoluteFillObject,
@@ -1057,8 +1042,8 @@ const styles = StyleSheet.create({
   extraHoursRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    marginTop: 4,
+    gap: 4,
+    marginTop: 2,
   },
   extraHoursText: {
     fontSize: 12,
@@ -1068,19 +1053,19 @@ const styles = StyleSheet.create({
   geoHintRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
-    paddingVertical: 2,
+    gap: 6,
+    paddingVertical: 0,
   },
   geoHintText: {
     flex: 1,
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 11,
+    lineHeight: 16,
     fontWeight: '500',
   },
   panelDivider: {
     height: StyleSheet.hairlineWidth,
     width: '100%',
-    marginTop: 2,
+    marginTop: 0,
     marginBottom: 0,
     opacity: 0.85,
   },
@@ -1089,17 +1074,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  /** Centers pin + ripples in the map; slight lift clears bottom sheet. */
   centerActionWrap: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingBottom: 28,
+  },
+  /**
+   * Fixed box so absolute ripples share the same center as the CTA.
+   * (Ripples were top-left aligned before — RN absolute defaults without left/top.)
+   */
+  pinRippleCluster: {
+    width: RIPPLE_CLUSTER,
+    height: RIPPLE_CLUSTER,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
   },
   rippleRing: {
     position: 'absolute',
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    borderWidth: 4,
+    width: RIPPLE_BASE,
+    height: RIPPLE_BASE,
+    borderRadius: RIPPLE_BASE / 2,
+    borderWidth: 3,
+    left: RIPPLE_RING_INSET,
+    top: RIPPLE_RING_INSET,
   },
   centerCta: {
     width: 76,
@@ -1136,24 +1136,24 @@ const styles = StyleSheet.create({
   },
   panelHandle: {
     alignSelf: 'center',
-    width: 40,
-    height: 4,
+    width: 32,
+    height: 2,
     borderRadius: 2,
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.xs,
   },
   panel: {
-    borderRadius: 18,
+    borderRadius: 14,
     borderWidth: 1,
-    padding: Spacing.lg,
-    paddingTop: Spacing.md,
-    gap: Spacing.md,
+    padding: Spacing.sm,
+    paddingTop: Spacing.sm + 2,
+    gap: Spacing.xs + 2,
   },
   panelOffDay: {
-    gap: Spacing.sm,
-    paddingBottom: Spacing.md,
+    gap: Spacing.xs + 2,
+    paddingBottom: Spacing.sm,
   },
   panelLight: {
-    paddingVertical: Spacing.lg + 2,
+    paddingVertical: Spacing.sm,
   },
   panelTopRow: {
     flexDirection: 'row',
@@ -1162,39 +1162,40 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   panelEyebrow: {
-    fontSize: 11,
-    letterSpacing: 0.9,
+    fontSize: 10,
+    letterSpacing: 0.75,
     fontWeight: '700',
   },
   panelTitle: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '700',
+    letterSpacing: -0.2,
   },
   stateChip: {
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    borderRadius: 9,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderWidth: 1,
-    minHeight: 32,
+    minHeight: 26,
     justifyContent: 'center',
   },
   stateChipText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.25,
   },
   panelSub: {
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 0,
   },
   offDayFoot: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginTop: 2,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    gap: 8,
+    marginTop: 0,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
   },
@@ -1205,29 +1206,29 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   primaryActionCard: {
-    marginTop: 2,
-    borderRadius: 14,
+    marginTop: 0,
+    borderRadius: 10,
     borderWidth: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    minHeight: 52,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    minHeight: 40,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 6,
     overflow: 'hidden',
   },
   primaryActionText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: -0.15,
   },
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 6,
+    gap: 6,
+    marginTop: 2,
   },
   statusText: {
-    fontSize: 13,
+    fontSize: 12,
   },
 });

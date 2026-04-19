@@ -986,6 +986,16 @@ export function HomeDashboardScreen({
               ]}
             />
           </View>
+          <LinearGradient
+            pointerEvents="none"
+            style={StyleSheet.absoluteFillObject}
+            colors={
+              isDark
+                ? ['rgba(0,0,0,0.2)', 'rgba(0,0,0,0.45)']
+                : ['rgba(15,23,42,0.04)', 'rgba(15,23,42,0.12)']
+            }
+            locations={[0, 1]}
+          />
           <ThemedText style={[styles.welcomeGreeting, { color: colors.text }]}>
             {getGreeting(dayPeriod)}{displayName ? `, ${displayName}` : ''}
           </ThemedText>
@@ -1500,7 +1510,7 @@ export function HomeDashboardScreen({
         {(role === 'crew' || role === 'team_leader') && sectionVisible.attendance_stats && (
           <>
             <AnimatedReanimated.View entering={FadeInDown.duration(360).delay(80)} style={[styles.section, styles.sectionLast]}>
-              <View style={styles.sectionTitleRow}>
+              <View style={[styles.sectionTitleRow, styles.activeStreakSectionTitleRow]}>
                 <View style={[styles.sectionTitleAccent, styles.sectionTitleAccentVibe, { backgroundColor: StatusColors.checkedIn }]} />
                 <View style={[styles.sectionTitleIconWrap, { backgroundColor: isDark ? 'rgba(249,250,251,0.12)' : StatusColors.checkedIn + '28' }]}>
                   <Ionicons name="trending-up" size={Icons.small} color={isDark ? '#F9FAFB' : StatusColors.checkedIn} />
@@ -1642,6 +1652,8 @@ const styles = StyleSheet.create({
   dailyCheckInSection: {
     alignItems: 'center',
     marginBottom: Spacing.lg,
+    /** Ripples scale past the 96px button; reserve space so the next card doesn’t sit under the rings. */
+    paddingBottom: Spacing.xl + Spacing.sm,
   },
   officeAfterEventCheckoutWrap: {
     marginTop: Spacing.md,
@@ -1949,6 +1961,9 @@ const styles = StyleSheet.create({
   },
   sectionLast: {
     marginBottom: Spacing.sm,
+  },
+  activeStreakSectionTitleRow: {
+    marginBottom: Spacing.md,
   },
   softSectionBreak: {
     height: 1,

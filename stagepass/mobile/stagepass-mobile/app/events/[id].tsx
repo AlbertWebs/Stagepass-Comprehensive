@@ -4,7 +4,17 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { HomeHeader } from '@/components/HomeHeader';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  PixelRatio,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import Animated, {
   Easing,
   SlideInRight,
@@ -36,6 +46,7 @@ import {
   canCheckOutEligibility,
   canLeaderManualCheckIn,
   eventTimeHasPassed,
+  getScheduledEndMs,
   isEndedEventStatus,
 } from '@/src/utils/eventEligibility';
 
@@ -78,6 +89,7 @@ export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const handleNav = useNavigationPress();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const { colors, isDark } = useStagePassTheme();
   const insets = useSafeAreaInsets();
   const token = useSelector((s: { auth: { token: string | null } }) => s.auth.token);
@@ -160,7 +172,13 @@ export default function EventDetailScreen() {
   const sessionStats = useMemo(() => {
     void clockTick;
     if (!checkinTime) {
-      return { totalHours: 0, standardHours: 0, extraHours: 0, dayType: 'normal' as const };
+      return {
+        totalHours: 0,
+        standardHours: 0,
+        extraHours: 0,
+        dayType: 'normal' as const,
+        withinScheduledShift: false,
+      };
     }
 
     const dayType = pivotData.is_holiday ? 'holiday' : (pivotData.is_sunday ? 'sunday' : 'normal');
@@ -170,6 +188,7 @@ export default function EventDetailScreen() {
         standardHours: Number((pivotData as { standard_hours?: number }).standard_hours ?? Math.min(8, Number(pivotData.total_hours ?? 0))),
         extraHours: Number(pivotData.extra_hours ?? 0),
         dayType,
+        withinScheduledShift: false,
       };
     }
 
@@ -178,12 +197,16 @@ export default function EventDetailScreen() {
     const minutes = Math.max(0, Math.floor((now - start) / 60000));
     const totalHours = minutes / 60;
     const standardHours = Math.min(8, totalHours);
-    const extraHours = Math.max(0, totalHours - 8);
-    return { totalHours, standardHours, extraHours, dayType };
+    /** Until the scheduled event end, do not treat time as “extra” — avoids overnight gigs (e.g. 5pm→next day) showing overtime mid-shift. */
+    const scheduledEndMs = event ? getScheduledEndMs(event) : 0;
+    const withinScheduledShift = scheduledEndMs > 0 && now <= scheduledEndMs;
+    const extraHours = withinScheduledShift ? 0 : Math.max(0, totalHours - 8);
+    return { totalHours, standardHours, extraHours, dayType, withinScheduledShift };
   }, [
     checkinTime,
     checkoutTime,
     clockTick,
+    event,
     pivotData.total_hours,
     pivotData.extra_hours,
     pivotData.is_holiday,
@@ -192,6 +215,7 @@ export default function EventDetailScreen() {
 
   useEffect(() => {
     if (extraNotified || checkoutTime || !checkinTime) return;
+    if (sessionStats.withinScheduledShift) return;
     if (sessionStats.extraHours > 0) {
       setExtraNotified(true);
       Alert.alert(
@@ -199,7 +223,7 @@ export default function EventDetailScreen() {
         'Extra hours are starting now. Your standard 8 working hours have been completed.'
       );
     }
-  }, [checkinTime, checkoutTime, sessionStats.extraHours, extraNotified]);
+  }, [checkinTime, checkoutTime, sessionStats.extraHours, sessionStats.withinScheduledShift, extraNotified]);
 
   const teamLeader = event?.team_leader ?? event?.teamLeader;
 
@@ -387,8 +411,12 @@ export default function EventDetailScreen() {
   }, [event?.latitude, event?.longitude]);
   const attendanceMapUrls = useMemo(() => {
     if (!attendanceMapCenter) return [];
-    return buildVenueStaticMapPreviewUrls(attendanceMapCenter.latitude, attendanceMapCenter.longitude);
-  }, [attendanceMapCenter]);
+    const pr = PixelRatio.get();
+    return buildVenueStaticMapPreviewUrls(attendanceMapCenter.latitude, attendanceMapCenter.longitude, {
+      widthPx: Math.round(windowWidth * pr),
+      heightPx: Math.round(windowHeight * pr),
+    });
+  }, [attendanceMapCenter, windowWidth, windowHeight]);
   const attendanceMapUrl =
     !mapPreviewExhausted && attendanceMapUrls.length > 0
       ? attendanceMapUrls[mapPreviewSourceIndex] ?? null
@@ -397,7 +425,7 @@ export default function EventDetailScreen() {
   useEffect(() => {
     setMapPreviewSourceIndex(0);
     setMapPreviewExhausted(false);
-  }, [attendanceMapCenter?.latitude, attendanceMapCenter?.longitude]);
+  }, [attendanceMapCenter?.latitude, attendanceMapCenter?.longitude, windowWidth, windowHeight]);
 
   if (loading || !event) {
     return (
@@ -427,14 +455,22 @@ export default function EventDetailScreen() {
       : null;
   const locationLabel = event.location_name ?? 'No location';
   const dateLabel = formatEventDate(event.date);
-  const timeRangeLabel = (() => {
-    const start = formatEventTime(event.start_time);
-    const end = formatEventTime(event.expected_end_time);
-    if (start && end) return `${start} – ${end}`;
-    if (start) return start;
-    if (end) return `Until ${end}`;
+  const endDateLabel = (() => {
+    const raw = event.end_date?.trim();
+    if (raw) return formatEventDate(raw);
+    const endMs = getScheduledEndMs(event);
+    if (endMs > 0) {
+      return new Date(endMs).toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    }
     return '—';
   })();
+  const startTimeLabel = formatEventTime(event.start_time) || '—';
+  const endTimeLabel = formatEventTime(event.expected_end_time) || '—';
 
   const accent = isDark ? '#f8fafc' : '#0f172a';
   const cardSurface = colors.surface;
@@ -565,13 +601,6 @@ export default function EventDetailScreen() {
                               borderColor: checkInRippleTheme.primaryBorder,
                               borderWidth: checkInRippleTheme.primaryW,
                             },
-                            !isDark && {
-                              shadowColor: '#713f12',
-                              shadowOffset: { width: 0, height: 0 },
-                              shadowOpacity: 0.35,
-                              shadowRadius: 6,
-                              elevation: 4,
-                            },
                             rippleStyle,
                           ]}
                           pointerEvents="none"
@@ -583,13 +612,6 @@ export default function EventDetailScreen() {
                             {
                               borderColor: checkInRippleTheme.secondaryBorder,
                               borderWidth: checkInRippleTheme.secondaryW,
-                            },
-                            !isDark && {
-                              shadowColor: '#92400e',
-                              shadowOffset: { width: 0, height: 0 },
-                              shadowOpacity: 0.28,
-                              shadowRadius: 5,
-                              elevation: 3,
                             },
                             rippleStyle2,
                           ]}
@@ -607,10 +629,9 @@ export default function EventDetailScreen() {
                       }
                       style={({ pressed }) => [
                         styles.roundCheckInButton,
-                        styles.roundCheckInButtonEvent,
-                        !checkinTime && canSelfCheckIn && { backgroundColor: themeYellow, shadowColor: themeYellow, shadowOpacity: 0.38 },
-                        checkinTime && !checkoutTime && canSelfCheckOut && { backgroundColor: themeBlue, shadowColor: themeBlue, shadowOpacity: 0.4 },
-                        checkoutTime && { backgroundColor: '#334155', shadowColor: '#334155', shadowOpacity: 0.2 },
+                        !checkinTime && canSelfCheckIn && { backgroundColor: themeYellow },
+                        checkinTime && !checkoutTime && canSelfCheckOut && { backgroundColor: themeBlue },
+                        checkoutTime && { backgroundColor: '#334155' },
                         (actionLoading ||
                           (!checkinTime && (!canSelfCheckIn || !userLocation)) ||
                           (!!checkinTime && !checkoutTime && !canSelfCheckOut) ||
@@ -620,7 +641,6 @@ export default function EventDetailScreen() {
                           (!checkinTime && (!canSelfCheckIn || !userLocation)) ||
                           (!!checkinTime && !checkoutTime && !canSelfCheckOut) ||
                           !!checkoutTime) && { backgroundColor: themeBlue + '22' },
-                        styles.roundCheckInButtonMap,
                         pressed && !actionLoading && styles.roundCheckInButtonPressed,
                       ]}
                     >
@@ -716,7 +736,11 @@ export default function EventDetailScreen() {
                     { color: sessionStats.extraHours > 0 ? '#f97316' : StatusColors.checkedIn },
                   ]}
                 >
-                  {sessionStats.extraHours > 0 ? 'Extra Hours Running' : 'Within Standard Hours'}
+                  {sessionStats.extraHours > 0
+                    ? 'Extra hours running'
+                    : sessionStats.withinScheduledShift
+                      ? 'Within scheduled event'
+                      : 'Within standard hours'}
                 </ThemedText>
               </View>
             </>
@@ -742,11 +766,20 @@ export default function EventDetailScreen() {
             </View>
             <View style={[styles.detailRow, { borderBottomColor: cardBorder }]}>
               <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                <Ionicons name="time-outline" size={Icons.small} color={themeYellow} />
+                <Ionicons name="play-outline" size={Icons.small} color={themeYellow} />
               </View>
               <View style={styles.detailTextWrap}>
-                <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Time</ThemedText>
-                <ThemedText style={[styles.detailValue, { color: colors.text }]}>{timeRangeLabel}</ThemedText>
+                <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Start time</ThemedText>
+                <ThemedText style={[styles.detailValue, { color: colors.text }]}>{startTimeLabel}</ThemedText>
+              </View>
+            </View>
+            <View style={[styles.detailRow, { borderBottomColor: cardBorder }]}>
+              <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
+                <Ionicons name="flag-outline" size={Icons.small} color={themeYellow} />
+              </View>
+              <View style={styles.detailTextWrap}>
+                <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>End time</ThemedText>
+                <ThemedText style={[styles.detailValue, { color: colors.text }]}>{endTimeLabel}</ThemedText>
               </View>
             </View>
               <View style={[styles.detailRow, { borderBottomColor: cardBorder }, teamLeader == null && myAssignment == null && styles.detailRowLast]}>
@@ -1073,7 +1106,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 0,
     marginBottom: Spacing.xl,
-    overflow: 'visible',
+    overflow: 'hidden',
   },
   statusBanner: {
     marginHorizontal: Spacing.md,
@@ -1100,6 +1133,10 @@ const styles = StyleSheet.create({
   },
   attendanceMapImage: {
     ...StyleSheet.absoluteFillObject,
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0,
   },
   attendanceMapTint: {
     ...StyleSheet.absoluteFillObject,
@@ -1313,6 +1350,7 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     zIndex: 1,
   },
+  /** No iOS/Android shadow — clipped by the map card it reads as a thick dark band at the bottom. */
   roundCheckInButton: {
     width: 96,
     height: 96,
@@ -1321,23 +1359,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
-    shadowColor: themeBlue,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  roundCheckInButtonEvent: {
-    shadowColor: themeBlue,
-    shadowOpacity: 0.4,
-  },
-  /** Heavy FAB shadow was clipped by the map card, reading as a dark band + corner halos. */
-  roundCheckInButtonMap: {
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 0,
-    shadowColor: 'transparent',
   },
   roundCheckInButtonPressed: {
     opacity: 0.9,
@@ -1345,7 +1366,6 @@ const styles = StyleSheet.create({
   },
   roundCheckInButtonDisabled: {
     backgroundColor: themeBlue + '22',
-    shadowOpacity: 0.08,
   },
   roundCheckInInner: {
     ...StyleSheet.absoluteFillObject,
@@ -1435,17 +1455,13 @@ const styles = StyleSheet.create({
   checkedOutText: {
     fontSize: Typography.bodySmall,
   },
+  /** No shadow — iOS shadow blur spreads upward and reads as a dark band under the map above. */
   liveHoursCard: {
     alignSelf: 'stretch',
     borderWidth: 1,
     borderRadius: Cards.borderRadius,
     padding: Spacing.lg,
     marginBottom: Spacing.lg,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
   },
   liveHoursValue: {
     fontSize: Typography.bodySmall,

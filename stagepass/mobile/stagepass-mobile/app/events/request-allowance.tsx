@@ -11,6 +11,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   View,
@@ -26,12 +27,12 @@ import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { api, type AllowanceTypeItem } from '~/services/api';
 import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 
-const MANUAL_LABELS = ['Taxi', 'Transport', 'Emergency', 'Other'] as const;
+/** Server reserves these for automatic meal allowances — hide from manual request picker. */
+const RESERVED_MEAL_NAMES = new Set(['breakfast', 'lunch', 'dinner']);
 
-function isManualTypeName(name: string | undefined | null): boolean {
+function isReservedMealType(name: string | undefined | null): boolean {
   if (name == null || name === '') return false;
-  const n = name.trim().toLowerCase();
-  return (MANUAL_LABELS as readonly string[]).some((m) => m.toLowerCase() === n);
+  return RESERVED_MEAL_NAMES.has(name.trim().toLowerCase());
 }
 
 export default function RequestAllowanceScreen() {
@@ -52,19 +53,13 @@ export default function RequestAllowanceScreen() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [typePickerOpen, setTypePickerOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const manualTypes = useMemo(() => {
-    const rows = types.filter((t) => isManualTypeName(t.name));
-    const byLabel = new Map<string, AllowanceTypeItem>();
-    for (const t of rows) {
-      const key = (t.name ?? '').trim().toLowerCase();
-      if (!byLabel.has(key)) byLabel.set(key, t);
-    }
-    return MANUAL_LABELS.map((label) => {
-      const found = byLabel.get(label.toLowerCase());
-      return found ?? null;
-    }).filter((x): x is AllowanceTypeItem => x != null);
-  }, [types]);
+  /** All active types from API except automatic meal slots (matches server rules for crew). */
+  const selectableTypes = useMemo(
+    () => types.filter((t) => t.is_active !== false && !isReservedMealType(t.name)),
+    [types]
+  );
 
   const selectedTypeLabel = useMemo(() => {
     if (selectedTypeId == null) return '';
@@ -73,30 +68,48 @@ export default function RequestAllowanceScreen() {
     return t?.name?.trim() ?? '';
   }, [selectedTypeId, types]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!eventId) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!opts?.silent) {
+      setLoading(true);
+    }
     try {
       const [ev, ty] = await Promise.all([api.events.get(eventId), api.payments.allowanceTypes()]);
       setEventName(ev?.name ?? 'Event');
       const list = Array.isArray(ty?.data) ? ty.data : [];
       setTypes(list);
-      const first = list.find((t) => isManualTypeName(t.name));
-      setSelectedTypeId(first != null ? Number(first.id) : null);
+      const pickable = list.filter((t) => t.is_active !== false && !isReservedMealType(t.name));
+      setSelectedTypeId((prev) => {
+        if (pickable.length === 0) return null;
+        const still = prev != null && pickable.some((p) => Number(p.id) === Number(prev));
+        if (still) return prev;
+        return Number(pickable[0].id);
+      });
     } catch {
       setEventName('');
       setTypes([]);
       setSelectedTypeId(null);
     } finally {
-      setLoading(false);
+      if (!opts?.silent) {
+        setLoading(false);
+      }
     }
   }, [eventId]);
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await load({ silent: true });
+    } finally {
+      setRefreshing(false);
+    }
   }, [load]);
 
   const pickImage = async () => {
@@ -173,6 +186,7 @@ export default function RequestAllowanceScreen() {
             paddingBottom: insets.bottom + Spacing.xl * 2,
           }}
           keyboardShouldPersistTaps="always"
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={themeBlue} />}
         >
           {loading ? (
             <ThemedText style={{ color: colors.textSecondary }}>Loading…</ThemedText>
@@ -184,10 +198,10 @@ export default function RequestAllowanceScreen() {
               </ThemedText>
 
               <ThemedText style={[styles.label, { color: colors.text }]}>Allowance type</ThemedText>
-              {manualTypes.length === 0 ? (
+              {selectableTypes.length === 0 ? (
                 <ThemedText style={[styles.hint, { color: colors.textSecondary }]}>
-                  No allowance types are available yet. Ask an administrator to configure Taxi, Transport, Emergency, and Other in
-                  the system, then pull to refresh this screen.
+                  No allowance types are available yet. In the admin panel go to Payments → Earned Allowances → Allowance types, add
+                  types, ensure they are active, then pull down to refresh.
                 </ThemedText>
               ) : (
                 <>
@@ -219,7 +233,7 @@ export default function RequestAllowanceScreen() {
                       <Pressable style={[styles.modalSheet, { backgroundColor: cardBg, borderColor: border }]} onPress={(e) => e.stopPropagation()}>
                         <ThemedText style={[styles.modalSheetTitle, { color: colors.text }]}>Allowance type</ThemedText>
                         <ScrollView style={styles.modalList} keyboardShouldPersistTaps="always">
-                          {manualTypes.map((t) => {
+                          {selectableTypes.map((t) => {
                             const tid = Number(t.id);
                             const sel = selectedTypeId != null && Number(selectedTypeId) === tid;
                             return (
