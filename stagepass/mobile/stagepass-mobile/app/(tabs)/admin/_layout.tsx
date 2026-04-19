@@ -2,7 +2,7 @@
  * Admin section: stack only (no tab bar). Uses main (tabs) bottom nav.
  * Non-admin redirects to home, except:
  * - crew can open time-off
- * - crew who are event team leaders (event detail "Event operations") can open per-event admin routes
+ * - crew who are event team leaders (event detail "Event operations") can open per-event admin routes (incl. pending allowances)
  *
  * Uses pathname for event sub-routes: nested layouts often omit `events` from useSegments(),
  * which incorrectly sent crew leaders and briefly-hydrated users to the home tab.
@@ -14,12 +14,13 @@ import { useAppRole } from '~/hooks/useAppRole';
 import type { User } from '~/services/api';
 
 /** Crew may open these under admin/events/[id]/… (tail match tolerates one-frame pathname lag). */
-const CREW_EVENT_TAIL = /\/(operations|crew|manage-checkin|edit|message|create-task|report)(\/|$|\?)/i;
+const CREW_EVENT_TAIL =
+  /\/(operations|crew|manage-checkin|edit|message|create-task|report|pending-allowances)(\/|$|\?)/i;
 
 function isCrewEventWorkflowPath(path: string, segmentsJoined: string): boolean {
   if (CREW_EVENT_TAIL.test(path) && path.includes('admin/events')) return true;
   const strict =
-    /admin\/events\/[^/]+\/(?:operations|crew|manage-checkin|edit|message|create-task|report)(?:\/|$|\?)/i;
+    /admin\/events\/[^/]+\/(?:operations|crew|manage-checkin|edit|message|create-task|report|pending-allowances)(?:\/|$|\?)/i;
   return strict.test(segmentsJoined);
 }
 

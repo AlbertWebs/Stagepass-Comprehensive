@@ -158,6 +158,51 @@ class EarnedAllowancesApiTest extends TestCase
         $this->assertTrue(collect($flat)->contains(fn ($row) => ($row['id'] ?? null) === $allowance->id && ($row['status'] ?? '') === 'approved'));
     }
 
+    public function test_event_assigned_leader_with_crew_role_sees_pending_for_event_in_index(): void
+    {
+        $crewRole = Role::firstOrCreate(['name' => 'crew'], ['label' => 'Crew']);
+        $leader = User::factory()->create();
+        $member = User::factory()->create();
+        $leader->roles()->syncWithoutDetaching([$crewRole->id]);
+
+        $event = Event::create([
+            'name' => 'Pivot TL Event',
+            'date' => now()->toDateString(),
+            'start_time' => '10:00',
+            'team_leader_id' => $leader->id,
+            'created_by_id' => $leader->id,
+            'status' => Event::STATUS_ACTIVE,
+        ]);
+        $event->crew()->attach($leader->id, ['role_in_event' => 'Team Leader']);
+        $event->crew()->attach($member->id, ['role_in_event' => 'Technician']);
+
+        $taxi = AllowanceType::firstOrCreate(['name' => 'Taxi B'], ['is_active' => true]);
+
+        $allowance = EventAllowance::create([
+            'event_id' => $event->id,
+            'crew_id' => $member->id,
+            'allowance_type_id' => $taxi->id,
+            'amount' => 150,
+            'description' => 'Fare',
+            'recorded_by' => $member->id,
+            'recorded_at' => now(),
+            'status' => EventAllowance::STATUS_PENDING,
+            'source' => EventAllowance::SOURCE_MANUAL,
+        ]);
+
+        $list = $this->withHeaders($this->auth($leader))
+            ->getJson('/api/payments/earned-allowances?'.http_build_query([
+                'event_id' => $event->id,
+                'status' => 'pending',
+                'per_page' => 50,
+            ]));
+
+        $list->assertOk();
+        $flat = $list->json('flat');
+        $this->assertIsArray($flat);
+        $this->assertTrue(collect($flat)->contains(fn ($row) => ($row['id'] ?? null) === $allowance->id));
+    }
+
     public function test_reject_requires_comment(): void
     {
         $leader = User::factory()->create();

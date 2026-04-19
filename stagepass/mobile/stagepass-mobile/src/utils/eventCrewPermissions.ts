@@ -44,8 +44,7 @@ export function canManageEventCrew(user: User | null, event: Event | null): bool
     return true;
   }
   const leaderId = event.team_leader_id ?? event.team_leader?.id ?? event.teamLeader?.id ?? null;
-  const hasAssignedLeader =
-    leaderId !== undefined && leaderId !== null && leaderId !== '' && Number(leaderId) !== 0;
+  const hasAssignedLeader = leaderId != null && Number(leaderId) !== 0;
   if (hasAssignedLeader && sameId(leaderId, user.id)) {
     return true;
   }
@@ -64,4 +63,32 @@ export function canManageEventCrew(user: User | null, event: Event | null): bool
     }
   }
   return false;
+}
+
+/**
+ * Mirrors EarnedAllowanceController::canAccessAllowance for approving/rejecting
+ * another crew member’s request: global payment managers OR event team leader (assigned id or pivot).
+ */
+export function canApproveEarnedAllowancesForEvent(user: User | null, event: Event | null): boolean {
+  if (!user || !event) return false;
+  const names = (user.roles ?? []).map((r) => String(r.name || '').toLowerCase());
+  if (
+    names.includes('super_admin') ||
+    names.includes('director') ||
+    names.includes('admin') ||
+    names.includes('team_leader') ||
+    names.includes('teamleader')
+  ) {
+    return true;
+  }
+
+  const leaderId = event.team_leader_id ?? event.team_leader?.id ?? event.teamLeader?.id ?? null;
+  const hasAssignedLeader = leaderId != null && Number(leaderId) !== 0;
+  if (hasAssignedLeader) {
+    return sameId(leaderId, user.id);
+  }
+
+  const myCrew = (event.crew ?? []).find((c) => sameId(c.id, user.id));
+  const pivotRole = (myCrew?.pivot as { role_in_event?: string | null } | undefined)?.role_in_event;
+  return pivotRoleLooksLikeTeamLeader(pivotRole);
 }

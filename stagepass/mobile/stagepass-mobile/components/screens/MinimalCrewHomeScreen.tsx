@@ -709,22 +709,36 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                 },
               ]}
             >
-              <ThemedText
-                style={[
-                  styles.stateChipText,
-                  {
-                    color: isOfficeCheckinOffDay
-                      ? themeYellow
-                      : officeCheckedOutToday
-                        ? themeBlue
-                        : canCheckout
-                          ? themeBlue
-                          : themeYellow,
-                  },
-                ]}
-              >
-                {isOfficeCheckinOffDay ? 'Paused' : officeCheckedOutToday ? 'Done' : canCheckout ? 'Checked in' : 'Pending'}
-              </ThemedText>
+              {isOfficeCheckinOffDay ? (
+                <ThemedText
+                  style={[styles.stateChipText, { color: themeYellow }]}
+                  maxFontSizeMultiplier={1.2}
+                >
+                  Paused
+                </ThemedText>
+              ) : officeCheckedOutToday ? (
+                <ThemedText
+                  style={[styles.stateChipText, { color: themeBlue }]}
+                  maxFontSizeMultiplier={1.2}
+                >
+                  Done
+                </ThemedText>
+              ) : canCheckout ? (
+                <ThemedText
+                  style={[styles.stateChipText, { color: themeBlue }]}
+                  maxFontSizeMultiplier={1.2}
+                >
+                  Checked in
+                </ThemedText>
+              ) : (
+                <View
+                  accessibilityRole="image"
+                  accessibilityLabel="Pending"
+                  style={styles.stateChipIconWrap}
+                >
+                  <Ionicons name="hourglass-outline" size={15} color={themeYellow} />
+                </View>
+              )}
             </View>
           </View>
 
@@ -1108,20 +1122,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: Platform.OS === 'android' ? 'hidden' : undefined,
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 5,
   },
   centerCtaLight: {
     borderWidth: 3,
     borderColor: 'rgba(255,255,255,0.92)',
-    shadowColor: themeBlue,
-    shadowOpacity: 0.22,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
   },
   beachStack: {
     alignItems: 'center',
@@ -1178,6 +1182,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     minHeight: 26,
     justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stateChipIconWrap: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   stateChipText: {
     fontSize: 10,

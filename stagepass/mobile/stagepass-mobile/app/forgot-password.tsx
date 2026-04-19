@@ -20,7 +20,6 @@ import { api } from '~/services/api';
 import { StagepassFaviconLogo } from '@/components/StagepassFaviconLogo';
 import { ThemedText } from '@/components/themed-text';
 import { useThemePreference } from '@/context/ThemePreferenceContext';
-import { BEVEL_PRIMARY, BUTTON_3D_PRESSED, BUTTON_3D_SHADOW } from '@/constants/button3d';
 import { themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 
@@ -129,10 +128,7 @@ export default function ForgotPasswordScreen() {
                 onPress={() => router.replace('/login')}
                 style={({ pressed }) => [
                   styles.loginBtn,
-                  BUTTON_3D_SHADOW,
-                  BEVEL_PRIMARY,
                   { backgroundColor: accentColor, opacity: pressed ? 0.9 : 1 },
-                  pressed && [BUTTON_3D_PRESSED, { transform: [{ scale: 0.985 }] }],
                 ]}
               >
                 <ThemedText style={styles.loginBtnText}>Back to login</ThemedText>
@@ -164,10 +160,7 @@ export default function ForgotPasswordScreen() {
                   disabled={loading}
                   style={({ pressed }) => [
                     styles.loginBtn,
-                    BUTTON_3D_SHADOW,
-                    BEVEL_PRIMARY,
                     { backgroundColor: accentColor, opacity: loading ? 0.7 : pressed ? 0.9 : 1 },
-                    !loading && pressed && [BUTTON_3D_PRESSED, { transform: [{ scale: 0.985 }] }],
                   ]}
                 >
                   <ThemedText style={styles.loginBtnText}>

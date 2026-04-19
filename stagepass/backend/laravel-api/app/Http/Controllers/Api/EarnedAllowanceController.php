@@ -32,6 +32,26 @@ class EarnedAllowanceController extends Controller
             || $u->hasRole('teamleader');
     }
 
+    /**
+     * Crew users normally only see their own earned-allowance rows on index.
+     * Event team leaders (assigned ID or roster pivot) must see all rows for that event when approving.
+     */
+    private function shouldRestrictEarnedAllowanceIndexToOwnCrew(Request $request): bool
+    {
+        if ($this->canManage($request)) {
+            return false;
+        }
+        if (! $request->filled('event_id')) {
+            return true;
+        }
+        $event = Event::query()->find((int) $request->event_id);
+        if (! $event) {
+            return true;
+        }
+
+        return ! EventTeamLeaderGate::userIsAssignedOrRosterTeamLeader($event, $request->user());
+    }
+
     private function canAccessAllowance(Request $request, EventAllowance $row): bool
     {
         $u = $request->user();
@@ -93,8 +113,6 @@ class EarnedAllowanceController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $canManage = $this->canManage($request);
-
         $query = EventAllowance::query()
             ->with([
                 'event:id,name,date,location_name,team_leader_id',
@@ -106,7 +124,7 @@ class EarnedAllowanceController extends Controller
                 'rejector:id,name',
             ]);
 
-        if (! $canManage) {
+        if ($this->shouldRestrictEarnedAllowanceIndexToOwnCrew($request)) {
             $query->where('crew_id', (int) $request->user()->id);
         }
 

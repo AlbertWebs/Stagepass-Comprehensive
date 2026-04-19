@@ -185,9 +185,7 @@ export function HomeDashboardScreen({
   const quickCardBg = isDark ? '#1E212A' : '#FFFFFF';
   const homeBorderColor = isDark ? colors.border : 'rgba(37, 99, 235, 0.16)';
   const welcomeCardBorder = isDark ? 'rgba(148, 163, 184, 0.2)' : 'rgba(37, 99, 235, 0.16)';
-  const quickCardShadow = isDark
-    ? { shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 4 }
-    : { shadowColor: '#1E3A8A', shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 3 };
+  const quickCardShadow = {};
   const eventCardShadow = isDark
     ? { shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 9, shadowOffset: { width: 0, height: 4 }, elevation: 3 }
     : { shadowColor: '#0F172A', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2 };
@@ -899,25 +897,6 @@ export function HomeDashboardScreen({
     };
   });
 
-  // Gentle pulse on the checkout button when it's the active CTA (idle, checked in).
-  const checkoutPulse = useSharedValue(0);
-  useEffect(() => {
-    if (showCheckoutCta && officeCheckoutStep === 'idle' && !checkInLoading) {
-      checkoutPulse.value = withRepeat(
-        withTiming(1, { duration: 1600, easing: Easing.inOut(Easing.ease) }),
-        -1,
-        true
-      );
-    } else {
-      checkoutPulse.value = withTiming(0, { duration: 200 });
-    }
-  }, [showCheckoutCta, officeCheckoutStep, checkInLoading, checkoutPulse]);
-
-  const checkoutButtonAnimatedStyle = useAnimatedStyle(() => {
-    const scale = 1 + 0.028 * checkoutPulse.value;
-    return { transform: [{ scale }] };
-  });
-
   return (
     <ThemedView style={styles.container}>
       <HomeHeader title="Home" notificationCount={notificationCount} />
@@ -1078,7 +1057,7 @@ export function HomeDashboardScreen({
                   ) : null}
                   {(role === 'crew' || role === 'team_leader' || role === 'admin') && !hasApprovedTimeOffToday && isCheckinRequiredDay && !officeCheckedOutToday ? (
                     <View style={[styles.roundCheckInWrap, styles.officeAfterEventCheckoutWrap]}>
-                      <AnimatedReanimated.View style={[styles.roundCheckInButtonWrap, showCheckoutCta ? checkoutButtonAnimatedStyle : undefined]}>
+                      <AnimatedReanimated.View style={styles.roundCheckInButtonWrap}>
                         <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle]} pointerEvents="none" />
                         <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle2]} pointerEvents="none" />
                         <Pressable
@@ -1100,7 +1079,7 @@ export function HomeDashboardScreen({
                             </View>
                           ) : (
                             <LinearGradient
-                              colors={showCheckoutCta ? [themeBlue, '#1e3a5f', '#0f1838'] : ['#facc15', themeYellow, '#b89107']}
+                              colors={showCheckoutCta ? [themeBlue, themeBlue] : [themeYellow, themeYellow]}
                               style={styles.roundCheckInGradient}
                             >
                               <Ionicons name={showCheckoutCta ? 'exit' : 'location'} size={Icons.standard} color={showCheckoutCta ? '#fff' : themeBlue} />
@@ -1128,7 +1107,7 @@ export function HomeDashboardScreen({
                         pressed && !checkInLoading && styles.roundCheckInButtonPressed,
                       ]}
                     >
-                      <LinearGradient colors={[themeBlue, '#1e3a5f', '#0f1838']} style={styles.roundCheckInGradient}>
+                      <LinearGradient colors={[themeBlue, themeBlue]} style={styles.roundCheckInGradient}>
                         <Ionicons name="exit-outline" size={Icons.standard} color="#fff" />
                         <ThemedText style={[styles.roundCheckInLabel, { color: '#fff' }]}>
                           {checkInLoading ? 'Checking out…' : 'Event checkout'}
@@ -1145,7 +1124,7 @@ export function HomeDashboardScreen({
                 <View style={styles.roundCheckInRow}>
                   {(role === 'crew' || role === 'team_leader' || role === 'admin') && !hasApprovedTimeOffToday && isCheckinRequiredDay && !officeCheckedOutToday ? (
                     <View style={styles.roundCheckInWrap}>
-                        <AnimatedReanimated.View style={[styles.roundCheckInButtonWrap, showCheckoutCta ? checkoutButtonAnimatedStyle : undefined]}>
+                        <AnimatedReanimated.View style={styles.roundCheckInButtonWrap}>
                           <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle]} pointerEvents="none" />
                           <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle2]} pointerEvents="none" />
                           <Pressable
@@ -1167,7 +1146,7 @@ export function HomeDashboardScreen({
                               </View>
                             ) : (
                               <LinearGradient
-                                colors={showCheckoutCta ? [themeBlue, '#1e3a5f', '#0f1838'] : ['#facc15', themeYellow, '#b89107']}
+                                colors={showCheckoutCta ? [themeBlue, themeBlue] : [themeYellow, themeYellow]}
                                 style={styles.roundCheckInGradient}
                               >
                                 <Ionicons name={showCheckoutCta ? 'exit' : 'location'} size={Icons.standard} color={showCheckoutCta ? '#fff' : themeBlue} />
@@ -1303,7 +1282,7 @@ export function HomeDashboardScreen({
                 </View>
               ) : (
                 <View style={styles.roundCheckInWrap}>
-                  <AnimatedReanimated.View style={[styles.roundCheckInButtonWrap, showCheckoutCta ? checkoutButtonAnimatedStyle : undefined]}>
+                  <AnimatedReanimated.View style={styles.roundCheckInButtonWrap}>
                     <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle]} pointerEvents="none" />
                     <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle2]} pointerEvents="none" />
                     <Pressable
@@ -1325,7 +1304,7 @@ export function HomeDashboardScreen({
                         </View>
                       ) : (
                         <LinearGradient
-                          colors={showCheckoutCta ? [themeBlue, '#1e3a5f', '#0f1838'] : ['#facc15', themeYellow, '#b89107']}
+                          colors={showCheckoutCta ? [themeBlue, themeBlue] : [themeYellow, themeYellow]}
                           style={styles.roundCheckInGradient}
                         >
                           <Ionicons name={showCheckoutCta ? 'exit' : 'location'} size={Icons.standard} color={showCheckoutCta ? '#fff' : themeBlue} />
@@ -1347,7 +1326,7 @@ export function HomeDashboardScreen({
             ) : (
               /* Temporary crew, no event today: show Daily check-in (backend may reject if not allowed) */
               <View style={styles.roundCheckInWrap}>
-                <AnimatedReanimated.View style={[styles.roundCheckInButtonWrap, showCheckoutCta ? checkoutButtonAnimatedStyle : undefined]}>
+                <AnimatedReanimated.View style={styles.roundCheckInButtonWrap}>
                   <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle]} pointerEvents="none" />
                   <AnimatedReanimated.View style={[styles.rippleRing, { borderColor: showCheckoutCta ? themeBlue : (isDark ? themeYellow : themeBlue) }, rippleStyle2]} pointerEvents="none" />
                   <Pressable
@@ -1369,7 +1348,7 @@ export function HomeDashboardScreen({
                       </View>
                     ) : (
                       <LinearGradient
-                        colors={showCheckoutCta ? [themeBlue, '#1e3a5f', '#0f1838'] : ['#facc15', themeYellow, '#b89107']}
+                        colors={showCheckoutCta ? [themeBlue, themeBlue] : [themeYellow, themeYellow]}
                         style={styles.roundCheckInGradient}
                       >
                         <Ionicons name={showCheckoutCta ? 'exit' : 'location'} size={Icons.standard} color={showCheckoutCta ? '#fff' : themeBlue} />
@@ -1426,7 +1405,6 @@ export function HomeDashboardScreen({
                               backgroundColor: quickCardBg,
                               borderColor: homeBorderColor,
                               opacity: pressed ? NAV_PRESSED_OPACITY : 1,
-                              transform: [{ scale: pressed ? 0.985 : 1 }],
                             },
                             quickCardShadow,
                           ]}
@@ -1696,25 +1674,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
-    shadowColor: themeYellow,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.42,
-    shadowRadius: 16,
-    elevation: 8,
   },
   roundCheckInButtonCheckOut: {
     backgroundColor: themeBlue,
-    shadowColor: themeBlue,
-    shadowOpacity: 0.4,
   },
-  roundCheckInButtonEvent: {
-    shadowColor: themeBlue,
-    shadowOpacity: 0.4,
-  },
-  roundCheckInButtonOffice: {
-    shadowColor: themeYellow,
-    shadowOpacity: 0.35,
-  },
+  roundCheckInButtonEvent: {},
+  roundCheckInButtonOffice: {},
   roundCheckInInner: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 48,
@@ -1742,11 +1707,9 @@ const styles = StyleSheet.create({
   },
   roundCheckInButtonPressed: {
     opacity: 0.9,
-    transform: [{ scale: 0.98 }],
   },
   roundCheckInButtonDisabled: {
     backgroundColor: themeBlue + '22',
-    shadowOpacity: 0.08,
   },
   roundCheckInLabel: {
     fontSize: 12,

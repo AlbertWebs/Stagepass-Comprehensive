@@ -28,7 +28,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
 import { api, type Event as EventType, type User } from '~/services/api';
 import { useAppRole } from '~/hooks/useAppRole';
-import { canManageEventCrew as computeCanManageEventCrew } from '~/utils/eventCrewPermissions';
+import {
+  canApproveEarnedAllowancesForEvent,
+  canManageEventCrew as computeCanManageEventCrew,
+} from '~/utils/eventCrewPermissions';
 import { buildVenueStaticMapPreviewUrls, mapPreviewImageSource } from '~/utils/staticMapPreview';
 import { useGeofence } from '~/hooks/useGeofence';
 import { useNavigationPress } from '@/src/utils/navigationPress';
@@ -229,6 +232,11 @@ export default function EventDetailScreen() {
 
   const canManageEventCrew = useMemo(
     () => computeCanManageEventCrew(currentUser, event),
+    [currentUser, event]
+  );
+
+  const canApprovePendingAllowances = useMemo(
+    () => canApproveEarnedAllowancesForEvent(currentUser, event),
     [currentUser, event]
   );
 
@@ -930,6 +938,36 @@ export default function EventDetailScreen() {
                 </View>
                 <Ionicons name="chevron-forward" size={22} color={colors.textSecondary} />
               </Pressable>
+
+              {canApprovePendingAllowances && !isEventEnded ? (
+                <Pressable
+                  onPress={() =>
+                    handleNav(() =>
+                      router.push({
+                        pathname: '/(tabs)/admin/events/[id]/pending-allowances',
+                        params: { id: String(event.id) },
+                      })
+                    )
+                  }
+                  style={({ pressed }) => [
+                    styles.leadOpsCard,
+                    { backgroundColor: cardSurface, borderColor: leadOpsCardBorder },
+                    pressed && { opacity: 0.92 },
+                    { marginTop: Spacing.md },
+                  ]}
+                >
+                  <View style={[styles.leadOpsIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
+                    <Ionicons name="cash-outline" size={Icons.standard} color={themeYellow} />
+                  </View>
+                  <View style={styles.leadOpsTextWrap}>
+                    <ThemedText style={[styles.leadOpsTitle, { color: colors.text }]}>Pending allowances</ThemedText>
+                    <ThemedText style={[styles.leadOpsSub, { color: colors.textSecondary }]}>
+                      Approve or reject crew allowance requests for this event
+                    </ThemedText>
+                  </View>
+                  <Ionicons name="chevron-forward" size={22} color={colors.textSecondary} />
+                </Pressable>
+              ) : null}
             </>
           ) : null}
 
@@ -1362,7 +1400,6 @@ const styles = StyleSheet.create({
   },
   roundCheckInButtonPressed: {
     opacity: 0.9,
-    transform: [{ scale: 0.98 }],
   },
   roundCheckInButtonDisabled: {
     backgroundColor: themeBlue + '22',
