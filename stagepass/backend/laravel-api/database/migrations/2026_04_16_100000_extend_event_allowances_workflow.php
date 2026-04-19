@@ -9,16 +9,11 @@ return new class extends Migration
 {
     public function up(): void
     {
-        $driver = Schema::getConnection()->getDriverName();
-        if ($driver === 'sqlite') {
-            Schema::table('event_allowances', function (Blueprint $table) {
-                $table->dropUnique('event_allowances_dedupe_key');
-            });
-        } else {
-            Schema::table('event_allowances', function (Blueprint $table) {
-                $table->dropUnique(['event_id', 'crew_id', 'allowance_type_id', 'recorded_at']);
-            });
-        }
+        // Must use the migration-defined index name — dropUnique([columns]) targets Laravel's
+        // auto name (…_unique), but create_allowance_types… names it `event_allowances_dedupe_key`.
+        Schema::table('event_allowances', function (Blueprint $table) {
+            $table->dropUnique('event_allowances_dedupe_key');
+        });
 
         Schema::table('event_allowances', function (Blueprint $table) {
             $table->string('source', 20)->default('manual');
