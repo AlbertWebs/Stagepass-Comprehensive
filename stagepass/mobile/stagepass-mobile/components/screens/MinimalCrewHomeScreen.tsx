@@ -9,6 +9,7 @@ import {
   Alert,
   Animated,
   Easing,
+  PixelRatio,
   Platform,
   Pressable,
   StyleSheet,
@@ -106,11 +107,16 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
     if (!mapCenter) return [];
     const lat = mapCenter.latitude.toFixed(6);
     const lon = mapCenter.longitude.toFixed(6);
+    /** Request ~2–3× logical pixels so cover scaling stays sharp on high-DPI phones (was 900×640). */
+    const pr = Math.min(Math.max(PixelRatio.get(), 2), 3);
+    const maxDim = 1536;
+    const w = Math.min(Math.ceil(windowWidth * pr), maxDim);
+    const h = Math.min(Math.ceil(windowHeight * pr), maxDim);
     return [
-      `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=15&size=900x640&markers=${lat},${lon},red-pushpin`,
-      `https://static-maps.yandex.ru/1.x/?lang=en-US&ll=${lon},${lat}&z=15&l=map&size=650,450&pt=${lon},${lat},pm2rdm`,
+      `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=15&size=${w}x${h}&markers=${lat},${lon},red-pushpin`,
+      `https://static-maps.yandex.ru/1.x/?lang=en-US&ll=${lon},${lat}&z=15&l=map&size=${w},${h}&pt=${lon},${lat},pm2rdm`,
     ];
-  }, [mapCenter]);
+  }, [mapCenter, windowWidth, windowHeight]);
   const mapUrl = mapUrls[mapSourceIndex] ?? null;
 
   const withinOffice = useMemo(() => {
@@ -180,30 +186,43 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
     : {};
 
   const mapCardBg = isDark ? '#121723' : '#F4F6FA';
-  const mapOverlayTintBg = isDark ? 'rgba(2,6,23,0.5)' : 'rgba(255,255,255,0.14)';
-  const mapGridBorder = isDark ? '#475569' : 'rgba(100, 116, 139, 0.35)';
-  const mapGridOpacity = isDark ? 0.24 : 0.12;
+  const mapOverlayTintBg = isDark ? 'rgba(2,6,23,0.26)' : 'rgba(255,255,255,0.08)';
+  const mapGridBorder = isDark ? '#64748B' : 'rgba(100, 116, 139, 0.28)';
+  const mapGridOpacity = isDark ? 0.08 : 0.06;
 
   useEffect(() => {
     setMapSourceIndex(0);
   }, [mapCenter?.latitude, mapCenter?.longitude]);
 
   const buttonLabel = useMemo(() => {
-    if (isWeekendOffDay) return 'Weekend';
-    if (isOfficeCheckinOffDay) return 'No check-in today';
     if (loading) return canCheckout ? 'Checking out...' : 'Checking in...';
     if (officeCheckedOutToday) return 'Done for today';
     if (canCheckout) return 'Office checkout';
     return 'Check in office';
-  }, [loading, canCheckout, officeCheckedOutToday, isOfficeCheckinOffDay, isWeekendOffDay]);
+  }, [loading, canCheckout, officeCheckedOutToday]);
 
   const subLabel = useMemo(() => {
-    if (isWeekendOffDay) return 'We’re off for the weekend — office check-in isn’t available.';
-    if (isOfficeCheckinOffDay) return 'Office check-in isn’t required today.';
+    if (isWeekendOffDay) return 'Pick up again on your next scheduled workday.';
+    if (isOfficeCheckinOffDay) return 'You don’t need to check in today.';
     if (officeCheckedOutToday) return 'See you tomorrow';
     if (canCheckout) return 'Tap to end office shift';
     return 'Tap to start shift';
   }, [officeCheckedOutToday, canCheckout, isOfficeCheckinOffDay, isWeekendOffDay]);
+
+  const panelEyebrowText = useMemo(() => {
+    if (!isOfficeCheckinOffDay) return 'OFFICE SHIFT';
+    return isWeekendOffDay ? 'Weekend' : 'Day off';
+  }, [isOfficeCheckinOffDay, isWeekendOffDay]);
+
+  const panelTitleText = useMemo(() => {
+    if (isOfficeCheckinOffDay) return 'No office check-in';
+    return 'Check-in status';
+  }, [isOfficeCheckinOffDay]);
+
+  const offDayFooterCaption = useMemo(() => {
+    if (isWeekendOffDay) return 'Check-in is paused Sat–Sun.';
+    return 'Not required on this day.';
+  }, [isWeekendOffDay]);
 
   const loadConfig = useCallback(async () => {
     try {
@@ -425,17 +444,20 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
     () =>
       isDark
         ? {
-            textShadowColor: 'rgba(0,0,0,0.55)',
+            textShadowColor: 'rgba(0,0,0,0.78)',
             textShadowOffset: { width: 0, height: 1 },
-            textShadowRadius: 8,
+            textShadowRadius: 12,
           }
         : {
-            textShadowColor: 'rgba(255,255,255,0.92)',
+            textShadowColor: 'rgba(255,255,255,0.95)',
             textShadowOffset: { width: 0, height: 0 },
-            textShadowRadius: 10,
+            textShadowRadius: 12,
           },
     [isDark]
   );
+
+  const welcomeMutedOnMap = isDark ? 'rgba(228, 228, 231, 0.96)' : colors.textSecondary;
+  const welcomePrimaryOnMap = isDark ? '#FAFAFA' : colors.text;
 
   const nameAccentColor = isDark ? themeYellow : themeBlue;
 
@@ -449,7 +471,10 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                 source={{ uri: mapUrl }}
                 style={[styles.mapImage, { minWidth: windowWidth, minHeight: windowHeight }]}
                 contentFit="cover"
-                transition={150}
+                transition={0}
+                cachePolicy="memory-disk"
+                priority="high"
+                allowDownscaling={false}
                 onError={() => {
                   setMapSourceIndex((idx) => (idx + 1 < mapUrls.length ? idx + 1 : idx));
                 }}
@@ -624,7 +649,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                     <Text
                       style={[
                         styles.welcomeEyebrow,
-                        { color: colors.textSecondary },
+                        { color: welcomeMutedOnMap },
                         welcomeShadow,
                       ]}
                       maxFontSizeMultiplier={1.35}
@@ -633,12 +658,12 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                     </Text>
                   </View>
                   <Text
-                    style={[styles.welcomeGreetingLine, { color: colors.text }, welcomeShadow]}
+                    style={[styles.welcomeGreetingLine, { color: welcomePrimaryOnMap }, welcomeShadow]}
                     maxFontSizeMultiplier={1.35}
                   >
                     <Text style={styles.welcomeGreetingPhrase}>{timeGreeting}</Text>
                     {welcomeFirstName ? (
-                      <Text style={[styles.welcomeGreetingSep, { color: colors.textSecondary }]}> · </Text>
+                      <Text style={[styles.welcomeGreetingSep, { color: welcomeMutedOnMap }]}> · </Text>
                     ) : null}
                     {welcomeFirstName ? (
                       <Text style={[styles.welcomeName, { color: nameAccentColor }]}>{welcomeFirstName}</Text>
@@ -646,7 +671,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                   </Text>
                   <Reanimated.View entering={FadeIn.duration(380).delay(140)}>
                     <Text
-                      style={[styles.welcomeDate, { color: colors.textSecondary }, welcomeShadow]}
+                      style={[styles.welcomeDate, { color: welcomeMutedOnMap }, welcomeShadow]}
                       maxFontSizeMultiplier={1.3}
                     >
                       {todayCaption}
@@ -662,6 +687,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
             <View
               style={[
                 styles.panel,
+                isOfficeCheckinOffDay && styles.panelOffDay,
                 { backgroundColor: colors.surface, borderColor: isDark ? colors.border : themeBlue + '14' },
                 !isDark && lightElevated,
                 !isDark && styles.panelLight,
@@ -678,10 +704,10 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
           <View style={styles.panelTopRow}>
             <View>
               <ThemedText style={[styles.panelEyebrow, { color: colors.textSecondary }]}>
-                {isOfficeCheckinOffDay ? (isWeekendOffDay ? 'WEEKEND' : 'DAY OFF') : 'OFFICE SHIFT'}
+                {panelEyebrowText.toUpperCase()}
               </ThemedText>
               <ThemedText style={[styles.panelTitle, { color: colors.text }]}>
-                {isWeekendOffDay ? 'Weekend' : isOfficeCheckinOffDay ? 'Off today' : 'Check-in status'}
+                {panelTitleText}
               </ThemedText>
               {inExtraOfficeHours ? (
                 <View style={styles.extraHoursRow}>
@@ -727,7 +753,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                   },
                 ]}
               >
-                {isOfficeCheckinOffDay ? 'Relax' : officeCheckedOutToday ? 'Done' : canCheckout ? 'Checked in' : 'Pending'}
+                {isOfficeCheckinOffDay ? 'Paused' : officeCheckedOutToday ? 'Done' : canCheckout ? 'Checked in' : 'Pending'}
               </ThemedText>
             </View>
           </View>
@@ -751,106 +777,114 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
             </View>
           ) : null}
 
-          <View style={[styles.panelDivider, { backgroundColor: colors.border }]} />
-
-          <Pressable
-            onPress={onMainCtaPress}
-            onPressIn={() => {
-              if (!isOfficeCheckinOffDay && !mainCtaDisabled) triggerActionHaptic();
-            }}
-            disabled={isOfficeCheckinOffDay || mainCtaDisabled}
-            android_ripple={
-              Platform.OS === 'android' && !isOfficeCheckinOffDay && !mainCtaDisabled
-                ? { color: isDark ? 'rgba(255,255,255,0.09)' : 'rgba(15,23,42,0.07)' }
-                : undefined
-            }
-            accessibilityRole="button"
-            accessibilityLabel={
-              isOfficeCheckinOffDay
-                ? 'Office check-in not required today'
-                : officeCheckedOutToday
-                  ? 'Finished for today'
-                  : canCheckout
-                    ? 'Check out of office'
-                    : 'Check in at office'
-            }
-            accessibilityState={{ disabled: isOfficeCheckinOffDay || mainCtaDisabled, busy: loading }}
-            style={({ pressed }) => [
-              styles.primaryActionCard,
-              {
-                backgroundColor: isOfficeCheckinOffDay
-                  ? isDark
-                    ? themeYellow + '14'
-                    : themeYellow + '16'
-                  : officeCheckedOutToday
-                    ? isDark
-                      ? '#334155'
-                      : '#F1F5F9'
-                    : canCheckout
-                      ? isDark
-                        ? themeBlue + '14'
-                        : themeBlue + '10'
-                      : isDark
-                        ? themeYellow + '16'
-                        : themeYellow + '22',
-                borderColor: isOfficeCheckinOffDay
-                  ? themeYellow + '44'
-                  : officeCheckedOutToday
-                    ? isDark
-                      ? '#475569'
-                      : '#CBD5E1'
-                    : canCheckout
-                      ? themeBlue + (isDark ? '55' : '40')
-                      : themeYellow + (isDark ? '66' : '55'),
-                opacity:
-                  pressed && !isOfficeCheckinOffDay && !mainCtaDisabled ? NAV_PRESSED_OPACITY : 1,
-              },
-            ]}
-          >
-            {loading && !isOfficeCheckinOffDay ? (
-              <ActivityIndicator
-                size="small"
-                color={canCheckout ? '#fff' : officeCheckedOutToday ? colors.textSecondary : themeBlue}
-              />
-            ) : (
-              <Ionicons
-                name={isOfficeCheckinOffDay ? 'cafe-outline' : officeCheckedOutToday ? 'checkmark-done-circle' : canCheckout ? 'exit-outline' : 'location'}
-                size={18}
-                color={
-                  isOfficeCheckinOffDay
-                    ? themeYellow
-                    : officeCheckedOutToday && isDark
-                      ? '#e2e8f0'
-                      : officeCheckedOutToday
-                        ? colors.textSecondary
-                        : canCheckout
-                          ? themeBlue
-                          : themeYellow
-                }
-              />
-            )}
-            <ThemedText
+          {isOfficeCheckinOffDay ? (
+            <View
               style={[
-                styles.primaryActionText,
+                styles.offDayFoot,
                 {
-                  flex: 1,
-                  color:
-                    isOfficeCheckinOffDay
-                      ? colors.text
-                      : officeCheckedOutToday && isDark
+                  backgroundColor: isDark ? 'rgba(234, 179, 8, 0.08)' : 'rgba(15, 24, 56, 0.04)',
+                  borderColor: isDark ? 'rgba(234, 179, 8, 0.22)' : 'rgba(15, 24, 56, 0.1)',
+                },
+              ]}
+              accessibilityRole="text"
+              accessibilityLabel={offDayFooterCaption}
+            >
+              <Ionicons name="information-circle-outline" size={18} color={themeYellow} />
+              <ThemedText style={[styles.offDayFootText, { color: colors.textSecondary }]}>
+                {offDayFooterCaption}
+              </ThemedText>
+            </View>
+          ) : (
+            <>
+              <View style={[styles.panelDivider, { backgroundColor: colors.border }]} />
+
+              <Pressable
+                onPress={onMainCtaPress}
+                onPressIn={() => {
+                  if (!mainCtaDisabled) triggerActionHaptic();
+                }}
+                disabled={mainCtaDisabled}
+                android_ripple={
+                  Platform.OS === 'android' && !mainCtaDisabled
+                    ? { color: isDark ? 'rgba(255,255,255,0.09)' : 'rgba(15,23,42,0.07)' }
+                    : undefined
+                }
+                accessibilityRole="button"
+                accessibilityLabel={
+                  officeCheckedOutToday
+                    ? 'Finished for today'
+                    : canCheckout
+                      ? 'Check out of office'
+                      : 'Check in at office'
+                }
+                accessibilityState={{ disabled: mainCtaDisabled, busy: loading }}
+                style={({ pressed }) => [
+                  styles.primaryActionCard,
+                  {
+                    backgroundColor: officeCheckedOutToday
+                      ? isDark
+                        ? '#334155'
+                        : '#F1F5F9'
+                      : canCheckout
+                        ? isDark
+                          ? themeBlue + '14'
+                          : themeBlue + '10'
+                        : isDark
+                          ? themeYellow + '16'
+                          : themeYellow + '22',
+                    borderColor: officeCheckedOutToday
+                      ? isDark
+                        ? '#475569'
+                        : '#CBD5E1'
+                      : canCheckout
+                        ? themeBlue + (isDark ? '55' : '40')
+                        : themeYellow + (isDark ? '66' : '55'),
+                    opacity: pressed && !mainCtaDisabled ? NAV_PRESSED_OPACITY : 1,
+                  },
+                ]}
+              >
+                {loading ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={canCheckout ? '#fff' : officeCheckedOutToday ? colors.textSecondary : themeBlue}
+                  />
+                ) : (
+                  <Ionicons
+                    name={officeCheckedOutToday ? 'checkmark-done-circle' : canCheckout ? 'exit-outline' : 'location'}
+                    size={18}
+                    color={
+                      officeCheckedOutToday && isDark
                         ? '#e2e8f0'
                         : officeCheckedOutToday
                           ? colors.textSecondary
-                          : colors.text,
-                },
-              ]}
-            >
-              {buttonLabel}
-            </ThemedText>
-            {!isOfficeCheckinOffDay && !mainCtaDisabled ? (
-              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-            ) : null}
-          </Pressable>
+                          : canCheckout
+                            ? themeBlue
+                            : themeYellow
+                    }
+                  />
+                )}
+                <ThemedText
+                  style={[
+                    styles.primaryActionText,
+                    {
+                      flex: 1,
+                      color:
+                        officeCheckedOutToday && isDark
+                          ? '#e2e8f0'
+                          : officeCheckedOutToday
+                            ? colors.textSecondary
+                            : colors.text,
+                    },
+                  ]}
+                >
+                  {buttonLabel}
+                </ThemedText>
+                {!mainCtaDisabled ? (
+                  <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                ) : null}
+              </Pressable>
+            </>
+          )}
 
           {(officeCheckedInToday || officeCheckedOutToday) ? (
             <View style={styles.statusRow}>
@@ -1123,6 +1157,10 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     gap: Spacing.md,
   },
+  panelOffDay: {
+    gap: Spacing.sm,
+    paddingBottom: Spacing.md,
+  },
   panelLight: {
     paddingVertical: Spacing.lg + 2,
   },
@@ -1143,9 +1181,11 @@ const styles = StyleSheet.create({
   },
   stateChip: {
     borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderWidth: 1,
+    minHeight: 32,
+    justifyContent: 'center',
   },
   stateChipText: {
     fontSize: 11,
@@ -1156,6 +1196,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
     marginTop: 0,
+  },
+  offDayFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 2,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  offDayFootText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
   },
   primaryActionCard: {
     marginTop: 2,
