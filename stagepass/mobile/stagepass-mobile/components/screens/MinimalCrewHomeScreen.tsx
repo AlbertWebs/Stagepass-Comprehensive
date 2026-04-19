@@ -9,7 +9,6 @@ import {
   Alert,
   Animated,
   Easing,
-  PixelRatio,
   Platform,
   Pressable,
   StyleSheet,
@@ -28,6 +27,7 @@ import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { api, type User as ApiUser } from '~/services/api';
 import { setUser } from '~/store/authSlice';
 import { haversineDistanceMeters, isWithinGeofence } from '~/utils/geofence';
+import { buildVenueStaticMapPreviewUrls } from '~/utils/staticMapPreview';
 import {
   DEFAULT_OFFICE_CHECKIN_REQUIRED_DAYS,
   parseOfficeCheckinRequiredDays,
@@ -105,18 +105,8 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
   );
   const mapUrls = useMemo(() => {
     if (!mapCenter) return [];
-    const lat = mapCenter.latitude.toFixed(6);
-    const lon = mapCenter.longitude.toFixed(6);
-    /** Request ~2–3× logical pixels so cover scaling stays sharp on high-DPI phones (was 900×640). */
-    const pr = Math.min(Math.max(PixelRatio.get(), 2), 3);
-    const maxDim = 1536;
-    const w = Math.min(Math.ceil(windowWidth * pr), maxDim);
-    const h = Math.min(Math.ceil(windowHeight * pr), maxDim);
-    return [
-      `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=15&size=${w}x${h}&markers=${lat},${lon},red-pushpin`,
-      `https://static-maps.yandex.ru/1.x/?lang=en-US&ll=${lon},${lat}&z=15&l=map&size=${w},${h}&pt=${lon},${lat},pm2rdm`,
-    ];
-  }, [mapCenter, windowWidth, windowHeight]);
+    return buildVenueStaticMapPreviewUrls(mapCenter.latitude, mapCenter.longitude);
+  }, [mapCenter]);
   const mapUrl = mapUrls[mapSourceIndex] ?? null;
 
   const withinOffice = useMemo(() => {

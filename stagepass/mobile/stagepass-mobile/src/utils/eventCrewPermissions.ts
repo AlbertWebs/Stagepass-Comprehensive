@@ -13,6 +13,15 @@ function crewHasUser(event: Event, userId: number): boolean {
   return (event.crew ?? []).some((c) => sameId(c.id, userId));
 }
 
+/** Spatie may store "Team Leader", "team_leader", etc. */
+function hasTeamLeaderSpatieRole(names: string[]): boolean {
+  return names.some((raw) => {
+    const n = raw.trim().toLowerCase();
+    if (n === 'team_leader' || n === 'teamleader') return true;
+    return n.replace(/\s+/g, '') === 'teamleader';
+  });
+}
+
 /** Mirrors backend EventCrewController::canManageCrew for client-side UI gating. */
 export function canManageEventCrew(user: User | null, event: Event | null): boolean {
   if (!user || !event) return false;
@@ -29,7 +38,7 @@ export function canManageEventCrew(user: User | null, event: Event | null): bool
   if (hasAssignedLeader && sameId(leaderId, user.id)) {
     return true;
   }
-  if (names.includes('team_leader') || names.includes('teamleader')) {
+  if (hasTeamLeaderSpatieRole(names)) {
     const noAssignedLeader = !hasAssignedLeader;
     if (noAssignedLeader) {
       if (sameId(event.created_by_id, user.id)) return true;

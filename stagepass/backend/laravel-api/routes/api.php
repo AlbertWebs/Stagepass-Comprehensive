@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\CheckinsController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\DangerZoneController;
+use App\Http\Controllers\Api\LocationCacheController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
@@ -39,6 +40,9 @@ Route::patch('/me', [AuthController::class, 'updateProfile'])->middleware('auth:
 Route::post('/me/photo', [AuthController::class, 'uploadPhoto'])->middleware('auth:sanctum');
 
 Route::middleware('auth:sanctum')->group(function () {
+    Route::get('location-cache', [LocationCacheController::class, 'show']);
+    Route::post('location-cache', [LocationCacheController::class, 'store']);
+
     Route::get('roles', [RoleController::class, 'index']);
     Route::get('users', [UserController::class, 'index']);
     Route::post('users', [UserController::class, 'store']);

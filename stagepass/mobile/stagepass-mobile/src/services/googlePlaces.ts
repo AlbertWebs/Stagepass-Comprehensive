@@ -20,6 +20,11 @@ function getApiKey(): string | null {
   return fromExtra || null;
 }
 
+/** Same key as Places; enable “Maps Static API” in Google Cloud for venue previews. */
+export function getGoogleMapsApiKey(): string | null {
+  return getApiKey();
+}
+
 export function hasGooglePlacesKey(): boolean {
   return !!getApiKey();
 }

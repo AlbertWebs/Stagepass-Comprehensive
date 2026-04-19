@@ -4,6 +4,7 @@
  * If VITE_GOOGLE_MAPS_API_KEY is not set, renders a plain text input.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { api } from '@/services/api';
 import { loadGoogleMaps, hasGoogleMapsKey } from '@/utils/loadGoogleMaps';
 
 export type LocationResult = {
@@ -28,6 +29,7 @@ interface GooglePlaceGeometry {
 interface GooglePlace {
   formatted_address?: string;
   name?: string;
+  place_id?: string;
   geometry?: GooglePlaceGeometry;
 }
 
@@ -53,21 +55,56 @@ export function LocationSearchInput({
       const Autocomplete = g.maps.places.Autocomplete;
       const autocomplete = new Autocomplete(inputRef.current, {
         types: ['establishment', 'geocode'],
-        fields: ['formatted_address', 'geometry', 'name'],
+        fields: ['formatted_address', 'geometry', 'name', 'place_id'],
       });
 
       autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
-        const loc = place.geometry?.location;
-        const address = place.formatted_address || place.name || '';
-        if (address) onChange(address);
-        if (loc && address && onSelect) {
-          onSelect({
-            location_name: address,
-            latitude: typeof loc.lat === 'function' ? loc.lat() : (loc as { lat: number }).lat,
-            longitude: typeof loc.lng === 'function' ? loc.lng() : (loc as { lng: number }).lng,
-          });
-        }
+        void (async () => {
+          const place = autocomplete.getPlace();
+          const address = place.formatted_address || place.name || '';
+          const placeId = place.place_id?.trim() || '';
+
+          let lat: number | undefined;
+          let lng: number | undefined;
+
+          try {
+            const cached = await api.locationCache.lookup({
+              place_id: placeId || undefined,
+              address: address || undefined,
+            });
+            if (cached) {
+              lat = cached.latitude;
+              lng = cached.longitude;
+            }
+          } catch {
+            /* fall back to Places geometry */
+          }
+
+          const loc = place.geometry?.location;
+          if ((lat === undefined || lng === undefined) && loc) {
+            lat = typeof loc.lat === 'function' ? loc.lat() : (loc as { lat: number }).lat;
+            lng = typeof loc.lng === 'function' ? loc.lng() : (loc as { lng: number }).lng;
+            if (address && lat != null && lng != null) {
+              void api.locationCache
+                .store({
+                  location_name: address,
+                  latitude: lat,
+                  longitude: lng,
+                  place_id: placeId || null,
+                })
+                .catch(() => {});
+            }
+          }
+
+          if (address) onChange(address);
+          if (lat != null && lng != null && address && onSelect) {
+            onSelect({
+              location_name: address,
+              latitude: lat,
+              longitude: lng,
+            });
+          }
+        })();
       });
 
       autocompleteRef.current = autocomplete;

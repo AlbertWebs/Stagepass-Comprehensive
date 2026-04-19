@@ -63,6 +63,40 @@ function buildParams(params: Record<string, string | number | undefined>): Recor
   return out;
 }
 
+export type LocationCacheHit = {
+  latitude: number;
+  longitude: number;
+  location_name: string;
+  cached: boolean;
+};
+
+async function requestLocationCacheLookup(params: {
+  place_id?: string;
+  address?: string;
+}): Promise<LocationCacheHit | null> {
+  if (!API_BASE) return null;
+  const clean = buildParams({
+    place_id: params.place_id,
+    address: params.address,
+  });
+  const qs = clean && Object.keys(clean).length > 0 ? `?${new URLSearchParams(clean)}` : '';
+  const url = `${API_BASE}/api/location-cache${qs}`;
+  const headers: HeadersInit = {
+    Accept: 'application/json',
+    'X-App-Source': 'web',
+  };
+  const token = getToken();
+  if (token) (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(url, { headers });
+  if (res.status === 404) return null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message = (data as { message?: string }).message || `Request failed (${res.status})`;
+    throw new Error(message);
+  }
+  return data as LocationCacheHit;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit & { params?: Record<string, string | number | undefined> } = {}
@@ -278,6 +312,19 @@ export interface EarnedAllowanceEventGroup {
 }
 
 export const api = {
+  locationCache: {
+    lookup: (params: { place_id?: string; address?: string }) => requestLocationCacheLookup(params),
+    store: (body: { location_name: string; latitude: number; longitude: number; place_id?: string | null }) =>
+      request<{ saved: boolean }>('/location-cache', {
+        method: 'POST',
+        body: JSON.stringify({
+          location_name: body.location_name,
+          latitude: body.latitude,
+          longitude: body.longitude,
+          place_id: body.place_id ?? undefined,
+        }),
+      }),
+  },
   auth: {
     login: (email: string, password: string) =>
       request<{ token: string; user: User }>('/login', {

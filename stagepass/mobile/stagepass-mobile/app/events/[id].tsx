@@ -17,8 +17,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
-import { api, type Event as EventType } from '~/services/api';
+import { api, type Event as EventType, type User } from '~/services/api';
 import { useAppRole } from '~/hooks/useAppRole';
+import { canManageEventCrew as computeCanManageEventCrew } from '~/utils/eventCrewPermissions';
+import { buildVenueStaticMapPreviewUrls } from '~/utils/staticMapPreview';
 import { useGeofence } from '~/hooks/useGeofence';
 import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 import { StagepassLoader } from '@/components/StagepassLoader';
@@ -92,7 +94,8 @@ export default function EventDetailScreen() {
   const { colors, isDark } = useStagePassTheme();
   const insets = useSafeAreaInsets();
   const token = useSelector((s: { auth: { token: string | null } }) => s.auth.token);
-  const currentUserId = useSelector((s: { auth: { user: { id?: number } | null } }) => s.auth.user?.id);
+  const currentUser = useSelector((s: { auth: { user: User | null } }) => s.auth.user);
+  const currentUserId = currentUser?.id;
   const role = useAppRole();
   const [event, setEvent] = useState<EventType | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,7 +104,8 @@ export default function EventDetailScreen() {
   const [extraNotified, setExtraNotified] = useState(false);
   const [leaderCheckInUserId, setLeaderCheckInUserId] = useState<number | null>(null);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [attendanceMapSourceIndex, setAttendanceMapSourceIndex] = useState(0);
+  const [mapPreviewSourceIndex, setMapPreviewSourceIndex] = useState(0);
+  const [mapPreviewExhausted, setMapPreviewExhausted] = useState(false);
   const { checkCanCheckIn } = useGeofence();
 
   const goBackToEvents = useCallback(() => {
@@ -213,20 +217,10 @@ export default function EventDetailScreen() {
 
   const teamLeader = event?.team_leader ?? event?.teamLeader;
 
-  const canManageEventCrew = useMemo(() => {
-    if (!event || currentUserId == null) return false;
-    if (role === 'admin') return true;
-    const assignedLeaderId = event.team_leader_id ?? teamLeader?.id;
-    if (assignedLeaderId != null && Number(assignedLeaderId) === currentUserId) {
-      return true;
-    }
-    if (role !== 'team_leader') return false;
-    if (event.team_leader_id != null && event.team_leader_id !== undefined) {
-      return false;
-    }
-    if (Number(event.created_by_id) === currentUserId) return true;
-    return Boolean(event.crew?.some((c) => c.id === currentUserId));
-  }, [event, currentUserId, role, teamLeader]);
+  const canManageEventCrew = useMemo(
+    () => computeCanManageEventCrew(currentUser, event),
+    [currentUser, event]
+  );
 
   const crewAttendanceRows = useMemo(() => {
     if (!event?.crew?.length) return [];
@@ -373,35 +367,50 @@ export default function EventDetailScreen() {
     );
   }, [checkinTime, event, myAssignment, currentUserId, eligibilityNowDetail, rippleProgress, rippleProgress2]);
 
+  /** Light mode: pale maps + yellow CTA make themeYellow ripples invisible; use darker amber + slightly higher peak opacity. */
+  const checkInRippleTheme = useMemo(
+    () =>
+      isDark
+        ? { opacityScale: 0.9, primaryBorder: themeYellow, secondaryBorder: `${themeYellow}bb`, primaryW: 5, secondaryW: 4 }
+        : {
+            opacityScale: 1,
+            primaryBorder: '#a16207',
+            secondaryBorder: 'rgba(202, 138, 4, 0.9)',
+            primaryW: 6,
+            secondaryW: 5,
+          },
+    [isDark]
+  );
+
   const rippleStyle = useAnimatedStyle(() => {
     const scale = 1 + 0.72 * rippleProgress.value;
-    const opacity = 0.9 * (1 - rippleProgress.value);
+    const opacity = checkInRippleTheme.opacityScale * (1 - rippleProgress.value);
     return { transform: [{ scale }], opacity };
-  });
+  }, [checkInRippleTheme.opacityScale]);
   const rippleStyle2 = useAnimatedStyle(() => {
     const scale = 1 + 0.72 * rippleProgress2.value;
-    const opacity = 0.9 * (1 - rippleProgress2.value);
+    const opacity = checkInRippleTheme.opacityScale * (1 - rippleProgress2.value);
     return { transform: [{ scale }], opacity };
-  });
+  }, [checkInRippleTheme.opacityScale]);
+  /** Venue map must use the event pin only — never the user’s GPS (that showed the wrong area). */
   const attendanceMapCenter = useMemo(() => {
     const lat = parseCoord(event?.latitude);
     const lon = parseCoord(event?.longitude);
     if (lat != null && lon != null) return { latitude: lat, longitude: lon };
-    return userLocation;
-  }, [event?.latitude, event?.longitude, userLocation]);
+    return null;
+  }, [event?.latitude, event?.longitude]);
   const attendanceMapUrls = useMemo(() => {
     if (!attendanceMapCenter) return [];
-    const lat = attendanceMapCenter.latitude.toFixed(6);
-    const lon = attendanceMapCenter.longitude.toFixed(6);
-    return [
-      `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=15&size=900x520&markers=${lat},${lon},red-pushpin`,
-      `https://static-maps.yandex.ru/1.x/?lang=en-US&ll=${lon},${lat}&z=15&l=map&size=650,360&pt=${lon},${lat},pm2rdm`,
-    ];
+    return buildVenueStaticMapPreviewUrls(attendanceMapCenter.latitude, attendanceMapCenter.longitude);
   }, [attendanceMapCenter]);
-  const attendanceMapUrl = attendanceMapUrls[attendanceMapSourceIndex] ?? null;
+  const attendanceMapUrl =
+    !mapPreviewExhausted && attendanceMapUrls.length > 0
+      ? attendanceMapUrls[mapPreviewSourceIndex] ?? null
+      : null;
 
   useEffect(() => {
-    setAttendanceMapSourceIndex(0);
+    setMapPreviewSourceIndex(0);
+    setMapPreviewExhausted(false);
   }, [attendanceMapCenter?.latitude, attendanceMapCenter?.longitude]);
 
   if (loading || !event) {
@@ -477,26 +486,122 @@ export default function EventDetailScreen() {
             >
             <View style={styles.attendanceMapCard}>
               {attendanceMapUrl ? (
-                <Image
-                  source={{ uri: attendanceMapUrl }}
-                  style={styles.attendanceMapImage}
-                  contentFit="cover"
-                  transition={150}
-                  onError={() => {
-                    setAttendanceMapSourceIndex((idx) => (idx + 1 < attendanceMapUrls.length ? idx + 1 : idx));
-                  }}
-                />
-              ) : null}
-              <View style={[styles.attendanceMapTint, { backgroundColor: isDark ? 'rgba(2,6,23,0.5)' : 'rgba(15,23,42,0.38)' }]} />
-              <View style={styles.attendanceMapGrid} />
+                <>
+                  <Image
+                    source={{ uri: attendanceMapUrl }}
+                    style={styles.attendanceMapImage}
+                    contentFit="cover"
+                    transition={100}
+                    cachePolicy="memory-disk"
+                    onError={() => {
+                      setMapPreviewSourceIndex((idx) => {
+                        if (idx + 1 < attendanceMapUrls.length) return idx + 1;
+                        setMapPreviewExhausted(true);
+                        return idx;
+                      });
+                    }}
+                  />
+                  <View
+                    style={[
+                      styles.attendanceMapTint,
+                      { backgroundColor: isDark ? 'rgba(2,6,23,0.28)' : 'rgba(15,23,42,0.14)' },
+                    ]}
+                  />
+                  <View style={styles.attendanceMapGrid} />
+                </>
+              ) : (
+                <View style={[styles.attendanceMapPlaceholder, { backgroundColor: isDark ? '#1e293b' : '#e2e8f0' }]}>
+                  <Ionicons name="map-outline" size={44} color={colors.textSecondary} />
+                  <ThemedText style={[styles.attendanceMapPlaceholderTitle, { color: colors.text }]}>
+                    {!attendanceMapCenter
+                      ? 'Map preview unavailable'
+                      : mapPreviewExhausted
+                        ? 'Could not load map preview'
+                        : 'Map preview unavailable'}
+                  </ThemedText>
+                  <ThemedText style={[styles.attendanceMapPlaceholderSub, { color: colors.textSecondary }]}>
+                    {!attendanceMapCenter
+                      ? 'This event has no venue coordinates yet. Ask an admin to set the location pin on the event so the map matches the venue.'
+                      : mapPreviewExhausted
+                        ? 'The static map service didn’t return an image. You can still open the venue pin in Google Maps.'
+                        : 'This event has no venue coordinates yet. Ask an admin to set the location pin on the event so the map matches the venue.'}
+                  </ThemedText>
+                  {attendanceMapCenter ? (
+                    <Pressable
+                      onPress={() => {
+                        const lat = attendanceMapCenter.latitude;
+                        const lon = attendanceMapCenter.longitude;
+                        Linking.openURL(
+                          `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`
+                        ).catch(() => {});
+                      }}
+                      style={({ pressed }) => [styles.attendanceMapOpenMaps, { opacity: pressed ? 0.85 : 1 }]}
+                    >
+                      <Ionicons name="open-outline" size={16} color={themeBlue} />
+                      <ThemedText style={{ color: themeBlue, fontWeight: '600', fontSize: 14 }}>
+                        Open pin in Google Maps
+                      </ThemedText>
+                    </Pressable>
+                  ) : event.location_name ? (
+                    <Pressable
+                      onPress={() => {
+                        const q = encodeURIComponent(event.location_name ?? '');
+                        Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${q}`).catch(() => {});
+                      }}
+                      style={({ pressed }) => [styles.attendanceMapOpenMaps, { opacity: pressed ? 0.85 : 1 }]}
+                    >
+                      <Ionicons name="open-outline" size={16} color={themeBlue} />
+                      <ThemedText style={{ color: themeBlue, fontWeight: '600', fontSize: 14 }}>
+                        Search “{event.location_name}” in Maps
+                      </ThemedText>
+                    </Pressable>
+                  ) : null}
+                </View>
+              )}
               {myAssignment != null ? (
               <View style={styles.mapActionOverlay}>
                 <View style={styles.roundCheckInWrap}>
                   <Animated.View style={styles.roundCheckInButtonWrap}>
                     {!checkinTime && canSelfCheckIn && userLocation ? (
                       <>
-                        <Animated.View style={[styles.rippleRing, styles.rippleRingPrimary, { borderColor: themeYellow }, rippleStyle]} pointerEvents="none" />
-                        <Animated.View style={[styles.rippleRing, styles.rippleRingSecondary, { borderColor: themeYellow + 'bb' }, rippleStyle2]} pointerEvents="none" />
+                        <Animated.View
+                          style={[
+                            styles.rippleRing,
+                            styles.rippleRingPrimary,
+                            {
+                              borderColor: checkInRippleTheme.primaryBorder,
+                              borderWidth: checkInRippleTheme.primaryW,
+                            },
+                            !isDark && {
+                              shadowColor: '#713f12',
+                              shadowOffset: { width: 0, height: 0 },
+                              shadowOpacity: 0.35,
+                              shadowRadius: 6,
+                              elevation: 4,
+                            },
+                            rippleStyle,
+                          ]}
+                          pointerEvents="none"
+                        />
+                        <Animated.View
+                          style={[
+                            styles.rippleRing,
+                            styles.rippleRingSecondary,
+                            {
+                              borderColor: checkInRippleTheme.secondaryBorder,
+                              borderWidth: checkInRippleTheme.secondaryW,
+                            },
+                            !isDark && {
+                              shadowColor: '#92400e',
+                              shadowOffset: { width: 0, height: 0 },
+                              shadowOpacity: 0.28,
+                              shadowRadius: 5,
+                              elevation: 3,
+                            },
+                            rippleStyle2,
+                          ]}
+                          pointerEvents="none"
+                        />
                       </>
                     ) : null}
                     <Pressable
@@ -978,6 +1083,33 @@ const styles = StyleSheet.create({
     opacity: 0.2,
     borderWidth: 1,
     borderColor: '#64748b',
+  },
+  attendanceMapPlaceholder: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  attendanceMapPlaceholderTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: Spacing.sm,
+  },
+  attendanceMapPlaceholderSub: {
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    maxWidth: 300,
+  },
+  attendanceMapOpenMaps: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: Spacing.md,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
   },
   mapActionOverlay: {
     position: 'absolute',

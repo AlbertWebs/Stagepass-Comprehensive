@@ -11,8 +11,9 @@ import {
 } from 'react-native';
 import Animated, { SlideInRight } from 'react-native-reanimated';
 import { useSelector } from 'react-redux';
-import { api, type Event, type RoleName } from '~/services/api';
+import { api, type Event, type User } from '~/services/api';
 import { useAppRole } from '~/hooks/useAppRole';
+import { canManageEventCrew } from '~/utils/eventCrewPermissions';
 import { HomeHeader } from '@/components/HomeHeader';
 import { EventCard, type EventDisplayStatus } from '@/components/EventCard';
 import { StagepassLoader } from '@/components/StagepassLoader';
@@ -170,23 +171,6 @@ function isUpcomingTabEvent(event: Event, todayStart: Date): boolean {
   return start.getTime() >= todayStart.getTime();
 }
 
-/** Same rules as event detail `canManageEventCrew` — team leader (or assigned leader id) may open operations. */
-function canManageEventOperations(event: Event, userId: number | undefined, role: RoleName): boolean {
-  if (userId == null) return false;
-  if (role === 'admin') return true;
-  const teamLeader = event.team_leader ?? event.teamLeader;
-  const assignedLeaderId = event.team_leader_id ?? teamLeader?.id;
-  if (assignedLeaderId != null && Number(assignedLeaderId) === userId) {
-    return true;
-  }
-  if (role !== 'team_leader') return false;
-  if (event.team_leader_id != null && event.team_leader_id !== undefined) {
-    return false;
-  }
-  if (Number(event.created_by_id) === userId) return true;
-  return Boolean(event.crew?.some((c) => c.id === userId));
-}
-
 /** My Events: show Created | Checked in | Checked out | Completed from event status + current user's crew pivot */
 function getEventDisplayStatus(event: Event, userId: number | undefined): EventDisplayStatus {
   if (isEventEndedStatus(event.status)) return 'completed';
@@ -212,6 +196,7 @@ export default function EventsTab() {
   const handleNav = useNavigationPress();
   const { colors, isDark } = useStagePassTheme();
   const userId = useSelector((s: { auth: { user: { id: number } | null } }) => s.auth.user?.id);
+  const currentUser = useSelector((s: { auth: { user: User | null } }) => s.auth.user);
   const role = useAppRole();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
@@ -581,7 +566,7 @@ export default function EventsTab() {
                 borderOnly={isTodaySelected}
                 onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(item.id) } }))}
                 extraActions={
-                  canManageEventOperations(item, userId, role)
+                  canManageEventCrew(currentUser, item)
                     ? [
                         {
                           label: 'Operations',
