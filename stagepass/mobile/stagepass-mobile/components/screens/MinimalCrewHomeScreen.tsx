@@ -176,7 +176,8 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
   const timeGreeting = getTimeGreeting();
 
 
-  const mapCardBg = isDark ? '#121723' : '#F4F6FA';
+  // Use a map-like neutral tone so letterboxed edges blend with the map image.
+  const mapCardBg = '#e6e3de';
   const mapOverlayTintBg = isDark ? 'rgba(2,6,23,0.14)' : 'rgba(255,255,255,0.03)';
   const mapGridBorder = isDark ? '#64748B' : 'rgba(100, 116, 139, 0.28)';
   const mapGridOpacity = isDark ? 0.04 : 0.02;
