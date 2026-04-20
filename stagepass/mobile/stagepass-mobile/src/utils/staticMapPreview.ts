@@ -23,6 +23,10 @@ export type StaticMapPreviewOptions = {
    */
   widthPx?: number;
   heightPx?: number;
+  /** Optional venue/geofence area radius in meters used to fit the map to area, not fixed zoom. */
+  areaRadiusMeters?: number;
+  /** Optional fixed city preset for a consistently zoomed-out map viewport. */
+  cityPreset?: 'nairobi';
 };
 
 /**
@@ -47,6 +51,31 @@ export function mapPreviewImageSource(uri: string): { uri: string } {
 
 function clampInt(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+function sanitizeAreaRadiusMeters(radius: number | undefined): number {
+  if (typeof radius !== 'number' || !Number.isFinite(radius) || radius <= 0) return 120;
+  return Math.min(50000, Math.max(40, radius));
+}
+
+function latitudeDeltaForMeters(radiusMeters: number): number {
+  const metersPerDegreeLat = 111_320;
+  return radiusMeters / metersPerDegreeLat;
+}
+
+function longitudeDeltaForMeters(radiusMeters: number, latitude: number): number {
+  const latRad = (latitude * Math.PI) / 180;
+  const metersPerDegreeLon = Math.max(1, 111_320 * Math.cos(latRad));
+  return radiusMeters / metersPerDegreeLon;
+}
+
+function fallbackZoomForArea(radiusMeters: number, imageWidthPx: number, latitude: number): number {
+  const latRad = (latitude * Math.PI) / 180;
+  const metersPerPixelAtZoom0 = 156543.03392 * Math.cos(latRad);
+  const targetDiameterMeters = radiusMeters * 2.4; // small breathing room around area
+  const targetMetersPerPixel = targetDiameterMeters / Math.max(1, imageWidthPx);
+  const rawZoom = Math.log2(metersPerPixelAtZoom0 / Math.max(0.01, targetMetersPerPixel));
+  return clampInt(rawZoom, 1, 20);
 }
 
 /** Normalize optional pixel size (guards 0×window, NaN, first-frame layout). */
@@ -98,22 +127,60 @@ export function buildVenueStaticMapPreviewUrls(
 
   const { w: tw, h: th } = sanitizeTargetPixels(options?.widthPx, options?.heightPx);
   const googleDims = googleStaticSize(tw, th);
+  const areaRadiusMeters = sanitizeAreaRadiusMeters(options?.areaRadiusMeters);
+  const areaLatDelta = latitudeDeltaForMeters(areaRadiusMeters);
+  const areaLonDelta = longitudeDeltaForMeters(areaRadiusMeters, latitude);
+  const cityPreset = options?.cityPreset;
+  const bounds =
+    cityPreset === 'nairobi'
+      ? {
+          north: -1.1635,
+          south: -1.4445,
+          east: 37.1067,
+          west: 36.6509,
+          centerLat: -1.286389,
+          centerLon: 36.817223,
+          fallbackZoom: 8,
+        }
+      : {
+          north: latitude + areaLatDelta,
+          south: latitude - areaLatDelta,
+          east: longitude + areaLonDelta,
+          west: longitude - areaLonDelta,
+          centerLat: latitude,
+          centerLon: longitude,
+          fallbackZoom: fallbackZoomForArea(areaRadiusMeters, FALLBACK_MAP_W, latitude),
+        };
+  const north = bounds.north.toFixed(6);
+  const south = bounds.south.toFixed(6);
+  const east = bounds.east.toFixed(6);
+  const west = bounds.west.toFixed(6);
+  const centerLat = bounds.centerLat.toFixed(6);
+  const centerLon = bounds.centerLon.toFixed(6);
+  const fallbackZoom = bounds.fallbackZoom;
 
   const urls: string[] = [];
 
   const key = getGoogleMapsApiKey()?.trim();
   if (key) {
     const marker = encodeURIComponent(`color:0xca8a04|${lat},${lon}`);
-    urls.push(
-      `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lon}&zoom=15&size=${googleDims.w}x${googleDims.h}&scale=2&maptype=roadmap&markers=${marker}&key=${encodeURIComponent(key)}`
-    );
+    if (cityPreset === 'nairobi') {
+      urls.push(
+        `https://maps.googleapis.com/maps/api/staticmap?center=${centerLat},${centerLon}&zoom=8&size=${googleDims.w}x${googleDims.h}&scale=2&maptype=roadmap&markers=${marker}&key=${encodeURIComponent(key)}`
+      );
+    } else {
+      const visibleArea = encodeURIComponent(`${north},${lon}|${south},${lon}|${lat},${east}|${lat},${west}`);
+      urls.push(
+        `https://maps.googleapis.com/maps/api/staticmap?size=${googleDims.w}x${googleDims.h}&scale=2&maptype=roadmap&visible=${visibleArea}&markers=${marker}&key=${encodeURIComponent(key)}`
+      );
+    }
   }
 
   urls.push(
-    `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=15&size=${FALLBACK_MAP_W}x${FALLBACK_MAP_H}&markers=${lat},${lon},red-pushpin`
+    `https://staticmap.openstreetmap.de/staticmap.php?center=${centerLat},${centerLon}&zoom=${fallbackZoom}&size=${FALLBACK_MAP_W}x${FALLBACK_MAP_H}&markers=${lat},${lon},red-pushpin`
   );
   urls.push(
-    `https://static-maps.yandex.ru/1.x/?lang=en-US&ll=${lon},${lat}&z=15&l=map&size=${FALLBACK_MAP_W},${FALLBACK_MAP_H}&pt=${lon},${lat},pm2rdm`
+    `https://static-maps.yandex.ru/1.x/?lang=en-US&ll=${centerLon},${centerLat}&z=${fallbackZoom}&l=map&size=${FALLBACK_MAP_W},${FALLBACK_MAP_H}&pt=${lon},${lat},pm2rdm`
   );
 
   return urls;

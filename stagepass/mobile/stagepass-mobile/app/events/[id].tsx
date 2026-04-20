@@ -44,6 +44,7 @@ import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import * as Location from 'expo-location';
 
 const TAB_BAR_HEIGHT = 58;
+const ATTENDANCE_MAP_HEIGHT = 320;
 import {
   canCheckInEligibility,
   canCheckOutEligibility,
@@ -422,9 +423,11 @@ export default function EventDetailScreen() {
     const pr = PixelRatio.get();
     return buildVenueStaticMapPreviewUrls(attendanceMapCenter.latitude, attendanceMapCenter.longitude, {
       widthPx: Math.round(windowWidth * pr),
-      heightPx: Math.round(windowHeight * pr),
+      // Match request aspect ratio to the rendered map card to avoid "cover" cropping that looks like extra zoom.
+      heightPx: Math.round(ATTENDANCE_MAP_HEIGHT * pr),
+      cityPreset: 'nairobi',
     });
-  }, [attendanceMapCenter, windowWidth, windowHeight]);
+  }, [attendanceMapCenter, windowWidth]);
   const attendanceMapUrl =
     !mapPreviewExhausted && attendanceMapUrls.length > 0
       ? attendanceMapUrls[mapPreviewSourceIndex] ?? null
@@ -1165,7 +1168,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   attendanceMapCard: {
-    height: 320,
+    height: ATTENDANCE_MAP_HEIGHT,
     overflow: 'hidden',
     position: 'relative',
   },

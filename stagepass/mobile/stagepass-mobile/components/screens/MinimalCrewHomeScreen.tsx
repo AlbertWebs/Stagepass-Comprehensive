@@ -25,7 +25,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
-import { api, type User as ApiUser } from '~/services/api';
+import { api, getApiBase, type User as ApiUser } from '~/services/api';
 import { setUser } from '~/store/authSlice';
 import { haversineDistanceMeters, isWithinGeofence } from '~/utils/geofence';
 import { buildVenueStaticMapPreviewUrls, mapPreviewImageSource } from '~/utils/staticMapPreview';
@@ -38,6 +38,8 @@ import { NAV_PRESSED_OPACITY } from '@/src/utils/navigationPress';
 type Props = {
   onRefresh?: () => Promise<void>;
 };
+
+const MINIMAL_HOME_BG_IMAGE_URI = `${getApiBase()}/minimal-home-bg.png`;
 
 /** Ripple rings + CTA share one center; cluster must fit scaled ring (~1.9×). */
 const RIPPLE_BASE = 96;
@@ -83,6 +85,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
   const [requiredCheckinDays, setRequiredCheckinDays] = useState<number[]>(DEFAULT_OFFICE_CHECKIN_REQUIRED_DAYS);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [mapSourceIndex, setMapSourceIndex] = useState(0);
+  const [customBackgroundFailed, setCustomBackgroundFailed] = useState(false);
   const rippleA = useRef(new Animated.Value(0)).current;
   const rippleB = useRef(new Animated.Value(0)).current;
   /** Weekend map pin: gentle sway + wave pulse (beach motif). */
@@ -118,6 +121,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
     });
   }, [mapCenter, windowWidth, windowHeight]);
   const mapUrl = mapUrls[mapSourceIndex] ?? null;
+  const heroBackgroundUri = customBackgroundFailed ? mapUrl : MINIMAL_HOME_BG_IMAGE_URI;
 
   const withinOffice = useMemo(() => {
     if (!officeConfig || !userLocation) return null;
@@ -436,10 +440,10 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
       <View style={styles.screenRoot}>
         <View style={styles.mapLayer} collapsable={false}>
           <View style={[styles.mapHeroInner, { backgroundColor: mapCardBg }]} collapsable={false}>
-            {mapUrl ? (
+            {heroBackgroundUri ? (
               <Image
-                key={mapUrl}
-                source={mapPreviewImageSource(mapUrl)}
+                key={heroBackgroundUri ?? 'no-background'}
+                source={heroBackgroundUri ? mapPreviewImageSource(heroBackgroundUri) : undefined}
                 style={[styles.mapImage, { minWidth: windowWidth, minHeight: windowHeight }]}
                 contentFit="cover"
                 transition={0}
@@ -447,13 +451,17 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                 priority="high"
                 allowDownscaling={false}
                 onError={() => {
+                  if (!customBackgroundFailed) {
+                    setCustomBackgroundFailed(true);
+                    return;
+                  }
                   setMapSourceIndex((idx) => (idx + 1 < mapUrls.length ? idx + 1 : idx));
                 }}
               />
             ) : null}
             <View style={[styles.mapOverlayTint, { backgroundColor: mapOverlayTintBg }]} />
             <View style={[styles.gridOverlay, { opacity: mapGridOpacity, borderColor: mapGridBorder }]} />
-            {!mapUrl ? (
+            {!heroBackgroundUri ? (
               <View style={styles.mapLoadingLayer} pointerEvents="none">
                 <ActivityIndicator size="small" color={isDark ? themeYellow : themeBlue} />
                 <ThemedText style={styles.mapLoadingCaption} maxFontSizeMultiplier={1.3}>
