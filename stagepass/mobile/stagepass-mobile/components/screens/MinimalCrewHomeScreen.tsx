@@ -177,9 +177,9 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
 
 
   const mapCardBg = isDark ? '#121723' : '#F4F6FA';
-  const mapOverlayTintBg = isDark ? 'rgba(2,6,23,0.26)' : 'rgba(255,255,255,0.08)';
+  const mapOverlayTintBg = isDark ? 'rgba(2,6,23,0.14)' : 'rgba(255,255,255,0.03)';
   const mapGridBorder = isDark ? '#64748B' : 'rgba(100, 116, 139, 0.28)';
-  const mapGridOpacity = isDark ? 0.08 : 0.06;
+  const mapGridOpacity = isDark ? 0.04 : 0.02;
 
   useEffect(() => {
     setMapSourceIndex(0);
@@ -445,7 +445,8 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                 key={heroBackgroundUri ?? 'no-background'}
                 source={heroBackgroundUri ? mapPreviewImageSource(heroBackgroundUri) : undefined}
                 style={[styles.mapImage, { minWidth: windowWidth, minHeight: windowHeight }]}
-                contentFit="cover"
+                contentFit="contain"
+                contentPosition="center"
                 transition={0}
                 cachePolicy="memory-disk"
                 priority="high"

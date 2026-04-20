@@ -168,7 +168,7 @@ class EventController extends Controller
     {
         $user = $request->user();
         $isTeamLeader = EventTeamLeaderGate::userIsAssignedOrRosterTeamLeader($event, $user);
-        $isAdmin = $user->hasRole('super_admin') || $user->hasRole('director');
+        $isAdmin = $user->hasRole('super_admin') || $user->hasRole('director') || $user->hasRole('admin');
         if (! $isTeamLeader && ! $isAdmin) {
             return response()->json(['message' => 'Only the team leader or an admin can end this event.'], 403);
         }
