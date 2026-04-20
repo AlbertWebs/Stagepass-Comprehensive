@@ -96,6 +96,7 @@ const styles = StyleSheet.create({
     fontSize: Typography.titleLarge,
     lineHeight: Typography.titleLargeLineHeight,
     fontWeight: Typography.titleLargeWeight,
+    letterSpacing: Typography.titleLargeLetterSpacing,
   },
   titleSection: {
     fontSize: Typography.titleSection,

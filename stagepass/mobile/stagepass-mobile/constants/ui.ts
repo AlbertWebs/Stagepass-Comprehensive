@@ -16,10 +16,15 @@ import { BorderRadius, Spacing } from './theme';
 // =============================================================================
 
 export const Typography = {
-  /** Page title (e.g. header bar, screen title) – same on every screen */
+  /**
+   * App header bar title — same size as Home tab “Home” (HomeHeader / AppHeader).
+   * Use `ThemedText type="titleLarge"` for any top bar title; do not use other sizes for headers.
+   */
   titleLarge: 22,
   titleLargeLineHeight: 28,
   titleLargeWeight: '700' as const,
+  /** Matches header title tracking (HomeHeader) */
+  titleLargeLetterSpacing: 0.2,
 
   /** Hero / welcome title (e.g. login "Welcome Back", logo wordmark) */
   titleHero: 22,

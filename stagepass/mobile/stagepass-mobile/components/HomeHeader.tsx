@@ -471,13 +471,10 @@ const styles = StyleSheet.create({
     borderRadius: 1,
     marginRight: Spacing.sm,
   },
-  /** Must match type="titleLarge" — do not use titleCard here or the bar title shrinks. */
+  /** Layout only — font metrics come from ThemedText type="titleLarge" (same as Home tab). */
   title: {
     flex: 1,
-    fontSize: Typography.titleLarge,
-    lineHeight: Typography.titleLargeLineHeight,
-    fontWeight: Typography.titleLargeWeight,
-    letterSpacing: 0.2,
+    minWidth: 0,
   },
   rightRow: {
     flexDirection: 'row',
