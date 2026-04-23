@@ -178,7 +178,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
 
   // Use a map-like neutral tone so letterboxed edges blend with the map image.
   const mapCardBg = '#e6e3de';
-  const mapOverlayTintBg = isDark ? 'rgba(2,6,23,0.14)' : 'rgba(255,255,255,0.03)';
+  const mapOverlayTintBg = isDark ? 'rgba(2,6,23,0.38)' : 'rgba(2,6,23,0.25)';
   const mapGridBorder = isDark ? '#64748B' : 'rgba(100, 116, 139, 0.28)';
   const mapGridOpacity = isDark ? 0.04 : 0.02;
 
@@ -446,7 +446,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                 key={heroBackgroundUri ?? 'no-background'}
                 source={heroBackgroundUri ? mapPreviewImageSource(heroBackgroundUri) : undefined}
                 style={[styles.mapImage, { minWidth: windowWidth, minHeight: windowHeight }]}
-                contentFit="contain"
+                contentFit="cover"
                 contentPosition="center"
                 transition={0}
                 cachePolicy="memory-disk"
@@ -1147,6 +1147,7 @@ const styles = StyleSheet.create({
   },
   panelOuter: {
     width: '100%',
+    marginTop: 26,
   },
   panelHandle: {
     alignSelf: 'center',

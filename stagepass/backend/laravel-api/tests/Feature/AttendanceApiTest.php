@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Event;
+use App\Models\EventAttendanceSession;
 use App\Models\EventUser;
 use App\Models\User;
 use Carbon\Carbon;
@@ -98,6 +99,55 @@ class AttendanceApiTest extends TestCase
             ->postJson('/api/attendance/office-checkin', ['latitude' => -1.286389, 'longitude' => 36.817223])
             ->assertStatus(422)
             ->assertJsonFragment(['message' => 'Office check-in is not required today.']);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_multi_day_event_allows_second_checkin_after_checkout(): void
+    {
+        $user = User::factory()->create();
+        Carbon::setTestNow(Carbon::parse('2026-05-10 12:00:00', 'Africa/Nairobi'));
+
+        $event = Event::create([
+            'name' => 'Multi-day fest',
+            'date' => '2026-05-10',
+            'end_date' => '2026-05-12',
+            'start_time' => '09:00',
+            'expected_end_time' => '18:00',
+            'latitude' => -1.2921,
+            'longitude' => 36.8219,
+            'geofence_radius' => 500,
+            'created_by_id' => $user->id,
+            'status' => Event::STATUS_ACTIVE,
+        ]);
+        $event->crew()->attach($user->id, ['role_in_event' => null]);
+
+        $this->withHeaders($this->auth($user))
+            ->postJson('/api/attendance/checkin', [
+                'event_id' => $event->id,
+                'latitude' => -1.2921,
+                'longitude' => 36.8219,
+            ])
+            ->assertStatus(200);
+
+        $this->withHeaders($this->auth($user))
+            ->postJson('/api/attendance/checkout', ['event_id' => $event->id])
+            ->assertStatus(200);
+
+        $assignment = EventUser::where('event_id', $event->id)->where('user_id', $user->id)->first();
+        $this->assertNull($assignment->checkin_time);
+        $this->assertNull($assignment->checkout_time);
+
+        $this->assertSame(1, EventAttendanceSession::where('event_id', $event->id)->where('user_id', $user->id)->count());
+
+        $this->withHeaders($this->auth($user))
+            ->postJson('/api/attendance/checkin', [
+                'event_id' => $event->id,
+                'latitude' => -1.2921,
+                'longitude' => 36.8219,
+            ])
+            ->assertStatus(200)
+            ->assertJsonFragment(['message' => 'Checked in successfully']);
 
         Carbon::setTestNow();
     }

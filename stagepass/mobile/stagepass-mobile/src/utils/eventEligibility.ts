@@ -15,6 +15,16 @@ function eventDateYmd(event: Event): string {
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
+/** True when `end_date` is set and is after the start date (multi-calendar-day event, not a single overnight shift). */
+export function isMultiDayEventRange(event: Event): boolean {
+  const start = eventDateYmd(event);
+  const raw = event.end_date;
+  if (!raw || typeof raw !== 'string') return false;
+  const end = raw.trim();
+  if (end.length < 10) return false;
+  return end.slice(0, 10) > start;
+}
+
 function hmToMins(hm: string | undefined): number | null {
   if (!hm || typeof hm !== 'string') return null;
   const part = hm.trim().slice(0, 5);
@@ -140,11 +150,14 @@ export function getMobileActivityBadge(event: Event, userId: number | undefined,
   if (s === 'completed') return { key: 'completed', label: LABEL.completed };
 
   const pivot = getAssignmentPivot(event, userId);
-  if (pivot?.checkout_time) {
+  if (pivot?.checkout_time && !isMultiDayEventRange(event)) {
     return { key: 'checked_out', label: LABEL.checked_out };
   }
-  if (pivot?.checkin_time) {
+  if (pivot?.checkin_time && !pivot?.checkout_time) {
     return { key: 'checked_in', label: LABEL.checked_in };
+  }
+  if (pivot?.checkout_time && isMultiDayEventRange(event) && !eventTimeHasPassed(event, now)) {
+    return { key: 'active', label: 'Between days' };
   }
 
   if (eventTimeHasPassed(event, now)) {
@@ -162,7 +175,11 @@ export function canCheckInEligibility(event: Event, userId: number | undefined, 
   if (!userAssignedToEvent(event, userId)) return false;
   if (isEndedEventStatus(event.status)) return false;
   const pivot = getAssignmentPivot(event, userId);
-  if (pivot?.checkin_time) return false;
+  if (pivot?.checkin_time && !pivot?.checkout_time) return false;
+  if (pivot?.checkin_time && pivot?.checkout_time) {
+    if (isMultiDayEventRange(event) && !eventTimeHasPassed(event, now)) return true;
+    return false;
+  }
   if (eventTimeHasPassed(event, now)) return false;
   return true;
 }

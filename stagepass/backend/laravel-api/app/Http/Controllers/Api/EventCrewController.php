@@ -8,6 +8,7 @@ use App\Models\EventUser;
 use App\Models\ReminderLog;
 use App\Models\User;
 use App\Services\AttendanceOvertimeService;
+use App\Services\EventCrewAttendanceService;
 use App\Support\EventAttendanceEligibility;
 use App\Support\EventTeamLeaderGate;
 use Carbon\Carbon;
@@ -18,7 +19,8 @@ use Illuminate\Http\Request;
 class EventCrewController extends Controller
 {
     public function __construct(
-        private AttendanceOvertimeService $overtime
+        private AttendanceOvertimeService $overtime,
+        private EventCrewAttendanceService $eventCrewAttendance
     ) {}
 
     private function canManageCrew(Request $request, Event $event): bool
@@ -244,12 +246,11 @@ class EventCrewController extends Controller
             ->where('user_id', $user->id)
             ->firstOrFail();
 
-        if ($assignment->checkin_time) {
-            return response()->json([
-                'message' => 'Already checked in',
-                'checkin_time' => $assignment->checkin_time->toIso8601String(),
-            ], 422);
+        $pre = $this->eventCrewAttendance->prepareForCheckin($event, $assignment);
+        if ($pre !== null) {
+            return $pre;
         }
+        $assignment->refresh();
 
         $now = now();
         $calc = $this->overtime->calculate($now, $now);

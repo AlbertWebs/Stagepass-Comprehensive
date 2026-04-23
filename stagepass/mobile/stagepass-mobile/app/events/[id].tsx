@@ -36,6 +36,7 @@ import { buildVenueStaticMapPreviewUrls, mapPreviewImageSource } from '~/utils/s
 import { useGeofence } from '~/hooks/useGeofence';
 import { useNavigationPress } from '@/src/utils/navigationPress';
 import { StagepassLoader } from '@/components/StagepassLoader';
+import { haversineDistanceMeters } from '~/utils/geofence';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Cards, Icons, Typography } from '@/constants/ui';
@@ -93,7 +94,7 @@ export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const handleNav = useNavigationPress();
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const { width: windowWidth } = useWindowDimensions();
   const { colors, isDark } = useStagePassTheme();
   const insets = useSafeAreaInsets();
   const token = useSelector((s: { auth: { token: string | null } }) => s.auth.token);
@@ -340,10 +341,22 @@ export default function EventDetailScreen() {
             {
               text: 'Done for the Day',
               onPress: () =>
-                router.push({
-                  pathname: '/(tabs)/admin/events/[id]/operations',
-                  params: { id: String(event.id) },
-                }),
+                Alert.alert(
+                  'Important',
+                  'If this event will continue tomorrow, do not confirm "Done for the Day". Use this only when the event should be closed for today.',
+                  [
+                    { text: 'Go Back', style: 'cancel' },
+                    {
+                      text: 'Continue',
+                      style: 'destructive',
+                      onPress: () =>
+                        router.push({
+                          pathname: '/(tabs)/admin/events/[id]/operations',
+                          params: { id: String(event.id) },
+                        }),
+                    },
+                  ]
+                ),
             },
           ]
         );
@@ -386,15 +399,15 @@ export default function EventDetailScreen() {
     );
   }, [checkinTime, event, myAssignment, currentUserId, eligibilityNowDetail, rippleProgress, rippleProgress2]);
 
-  /** Light mode: pale maps + yellow CTA make themeYellow ripples invisible; use darker amber + slightly higher peak opacity. */
+  /** Light mode uses blue accents; keep ripple visible on pale map cards. */
   const checkInRippleTheme = useMemo(
     () =>
       isDark
-        ? { opacityScale: 0.9, primaryBorder: themeYellow, secondaryBorder: `${themeYellow}bb`, primaryW: 5, secondaryW: 4 }
+        ? { opacityScale: 1.15, primaryBorder: themeBlue, secondaryBorder: `${themeBlue}dd`, primaryW: 7, secondaryW: 6 }
         : {
             opacityScale: 1,
-            primaryBorder: '#a16207',
-            secondaryBorder: 'rgba(202, 138, 4, 0.9)',
+            primaryBorder: themeBlue,
+            secondaryBorder: 'rgba(37, 99, 235, 0.85)',
             primaryW: 6,
             secondaryW: 5,
           },
@@ -418,25 +431,55 @@ export default function EventDetailScreen() {
     if (lat != null && lon != null) return { latitude: lat, longitude: lon };
     return null;
   }, [event?.latitude, event?.longitude]);
+  const attendanceMapRadiusMeters = useMemo(() => {
+    const raw = parseCoord(event?.geofence_radius);
+    if (raw == null) return 300;
+    return Math.max(100, Math.min(10000, raw));
+  }, [event?.geofence_radius]);
+  const distanceFromEventMeters = useMemo(() => {
+    if (!attendanceMapCenter || !userLocation) return null;
+    return haversineDistanceMeters(
+      userLocation.latitude,
+      userLocation.longitude,
+      attendanceMapCenter.latitude,
+      attendanceMapCenter.longitude
+    );
+  }, [attendanceMapCenter, userLocation]);
+  const distanceFromEventLabel = useMemo(() => {
+    if (distanceFromEventMeters == null) return null;
+    if (distanceFromEventMeters >= 1000) return `${(distanceFromEventMeters / 1000).toFixed(2)} km away`;
+    return `${Math.round(distanceFromEventMeters)} m away`;
+  }, [distanceFromEventMeters]);
   const attendanceMapUrls = useMemo(() => {
     if (!attendanceMapCenter) return [];
     const pr = PixelRatio.get();
     return buildVenueStaticMapPreviewUrls(attendanceMapCenter.latitude, attendanceMapCenter.longitude, {
       widthPx: Math.round(windowWidth * pr),
-      // Match request aspect ratio to the rendered map card to avoid "cover" cropping that looks like extra zoom.
       heightPx: Math.round(ATTENDANCE_MAP_HEIGHT * pr),
-      cityPreset: 'nairobi',
+      areaRadiusMeters: attendanceMapRadiusMeters,
     });
-  }, [attendanceMapCenter, windowWidth]);
+  }, [attendanceMapCenter, attendanceMapRadiusMeters, windowWidth]);
   const attendanceMapUrl =
     !mapPreviewExhausted && attendanceMapUrls.length > 0
       ? attendanceMapUrls[mapPreviewSourceIndex] ?? null
       : null;
-
+  const attendanceMapRegion = useMemo(() => {
+    if (!attendanceMapCenter) return null;
+    const lat = attendanceMapCenter.latitude;
+    const radiusMeters = attendanceMapRadiusMeters;
+    const latDelta = Math.max(0.01, Math.min(0.12, (radiusMeters * 4) / 111_320));
+    const lonDelta = latDelta / Math.max(0.35, Math.cos((lat * Math.PI) / 180));
+    return {
+      latitude: attendanceMapCenter.latitude,
+      longitude: attendanceMapCenter.longitude,
+      latitudeDelta: latDelta,
+      longitudeDelta: lonDelta,
+    };
+  }, [attendanceMapCenter, attendanceMapRadiusMeters]);
   useEffect(() => {
     setMapPreviewSourceIndex(0);
     setMapPreviewExhausted(false);
-  }, [attendanceMapCenter?.latitude, attendanceMapCenter?.longitude, windowWidth, windowHeight]);
+  }, [attendanceMapCenter?.latitude, attendanceMapCenter?.longitude, windowWidth]);
 
   if (loading || !event) {
     return (
@@ -484,15 +527,16 @@ export default function EventDetailScreen() {
   const endTimeLabel = formatEventTime(event.expected_end_time) || '—';
 
   const accent = isDark ? '#f8fafc' : '#0f172a';
-  const cardSurface = colors.surface;
-  const cardBorder = colors.border;
+  const accentBrand = isDark ? themeYellow : themeBlue;
+  const cardSurface = isDark ? colors.surface : '#f7fbff';
+  const cardBorder = isDark ? colors.border : themeBlue + '2e';
   /** Team leader “Event operations” entry: yellow frame in dark mode (brand blue reads as outline elsewhere). */
-  const leadOpsCardBorder = isDark ? themeYellow + '55' : cardBorder;
-  const iconWrapBg = isDark ? themeYellow + '2a' : themeYellow + '18';
-  const iconWrapBorder = isDark ? themeYellow + '56' : themeYellow + '38';
-  const sectionIconBg = isDark ? '#f8fafc1f' : themeYellow + '1f';
+  const leadOpsCardBorder = isDark ? themeBlue + '55' : cardBorder;
+  const iconWrapBg = isDark ? themeYellow + '2a' : themeBlue + '18';
+  const iconWrapBorder = isDark ? themeBlue + '56' : themeBlue + '38';
+  const sectionIconBg = isDark ? '#f8fafc1f' : themeBlue + '1f';
   /** Same as card surface so rounded map edges don’t show a different color at the curve. */
-  const mapWellColor = cardSurface;
+  const mapWellColor = isDark ? cardSurface : '#edf5ff';
 
   return (
     <ThemedView style={styles.container}>
@@ -511,9 +555,9 @@ export default function EventDetailScreen() {
         <Animated.View entering={SlideInRight.duration(320)}>
           {/* Map first: selected venue + check-in / check-out */}
           <View style={styles.sectionTitleRow}>
-            <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+            <View style={[styles.sectionTitleAccent, { backgroundColor: accentBrand }]} />
             <View style={[styles.sectionTitleIconWrap, { backgroundColor: sectionIconBg }]}>
-              <Ionicons name="location" size={Icons.small} color={themeYellow} />
+              <Ionicons name="location" size={Icons.small} color={accentBrand} />
             </View>
             <ThemedText style={[styles.sectionTitle, { color: accent }]}>Selected Venue</ThemedText>
           </View>
@@ -521,50 +565,31 @@ export default function EventDetailScreen() {
             <View style={[styles.attendanceMapOuter, { backgroundColor: mapWellColor }]}>
             <View style={[styles.attendanceMapCard, { backgroundColor: mapWellColor }]}>
               {attendanceMapUrl ? (
-                <>
-                  <Image
-                    key={attendanceMapUrl}
-                    source={mapPreviewImageSource(attendanceMapUrl)}
-                    style={styles.attendanceMapImage}
-                    contentFit="cover"
-                    transition={100}
-                    cachePolicy="memory-disk"
-                    onError={() => {
-                      if (__DEV__) {
-                        const u = attendanceMapUrls[mapPreviewSourceIndex];
-                        console.warn('[map preview] failed, trying next', mapPreviewSourceIndex, u?.slice(0, 120));
-                      }
-                      setMapPreviewSourceIndex((idx) => {
-                        if (idx + 1 < attendanceMapUrls.length) return idx + 1;
-                        setMapPreviewExhausted(true);
-                        return idx;
-                      });
-                    }}
-                  />
-                  <View
-                    style={[
-                      styles.attendanceMapTint,
-                      { backgroundColor: isDark ? 'rgba(2,6,23,0.28)' : 'rgba(15,23,42,0.14)' },
-                    ]}
-                  />
-                  <View style={styles.attendanceMapGrid} />
-                </>
+                <Image
+                  key={attendanceMapUrl}
+                  source={mapPreviewImageSource(attendanceMapUrl)}
+                  style={styles.attendanceMapImage}
+                  contentFit="cover"
+                  transition={100}
+                  cachePolicy="memory-disk"
+                  onError={() => {
+                    setMapPreviewSourceIndex((idx) => {
+                      if (idx + 1 < attendanceMapUrls.length) return idx + 1;
+                      setMapPreviewExhausted(true);
+                      return idx;
+                    });
+                  }}
+                />
               ) : (
                 <View style={[styles.attendanceMapPlaceholder, { backgroundColor: mapWellColor }]}>
                   <Ionicons name="map-outline" size={44} color={colors.textSecondary} />
                   <ThemedText style={[styles.attendanceMapPlaceholderTitle, { color: colors.text }]}>
-                    {!attendanceMapCenter
-                      ? 'Map preview unavailable'
-                      : mapPreviewExhausted
-                        ? 'Could not load map preview'
-                        : 'Map preview unavailable'}
+                    {!attendanceMapCenter ? 'Map unavailable' : 'Could not load map'}
                   </ThemedText>
                   <ThemedText style={[styles.attendanceMapPlaceholderSub, { color: colors.textSecondary }]}>
                     {!attendanceMapCenter
                       ? 'This event has no venue coordinates yet. Ask an admin to set the location pin on the event so the map matches the venue.'
-                      : mapPreviewExhausted
-                        ? 'The static map service didn’t return an image. You can still open the venue pin in Google Maps.'
-                        : 'This event has no venue coordinates yet. Ask an admin to set the location pin on the event so the map matches the venue.'}
+                      : 'Could not render the event map. You can still open the venue pin in Google Maps.'}
                   </ThemedText>
                   {attendanceMapCenter ? (
                     <Pressable
@@ -640,7 +665,7 @@ export default function EventDetailScreen() {
                       }
                       style={({ pressed }) => [
                         styles.roundCheckInButton,
-                        !checkinTime && canSelfCheckIn && { backgroundColor: themeYellow },
+                        !checkinTime && canSelfCheckIn && { backgroundColor: accentBrand },
                         checkinTime && !checkoutTime && canSelfCheckOut && { backgroundColor: themeBlue },
                         checkoutTime && { backgroundColor: '#334155' },
                         (actionLoading ||
@@ -679,9 +704,9 @@ export default function EventDetailScreen() {
                         </View>
                       ) : !checkinTime ? (
                         <View style={styles.roundCheckInInner}>
-                          <Ionicons name="location" size={Icons.standard} color={themeBlue} />
-                          <ThemedText style={[styles.roundCheckInLabel, { color: themeBlue }]} numberOfLines={1}>Check in</ThemedText>
-                          <ThemedText style={[styles.roundCheckInSub, { color: themeBlue }]} numberOfLines={1}>AT VENUE</ThemedText>
+                          <Ionicons name="location" size={Icons.standard} color={isDark ? themeBlue : themeYellow} />
+                          <ThemedText style={[styles.roundCheckInLabel, { color: isDark ? themeBlue : themeYellow }]} numberOfLines={1}>Check in</ThemedText>
+                          <ThemedText style={[styles.roundCheckInSub, { color: isDark ? themeBlue : themeYellow }]} numberOfLines={1}>AT VENUE</ThemedText>
                         </View>
                       ) : !checkoutTime ? (
                         <View style={styles.roundCheckInInner}>
@@ -704,23 +729,39 @@ export default function EventDetailScreen() {
             </View>
             </View>
             {checkInBlockedReason ? (
-              <View style={[styles.statusBanner, { borderColor: cardBorder, backgroundColor: isDark ? '#0f172a55' : '#f8fafc' }]}>
+              <View style={[styles.statusBanner, { borderColor: cardBorder, backgroundColor: isDark ? '#0f172a55' : themeBlue + '10' }]}>
                 <ThemedText style={[styles.statusBannerText, { color: colors.textSecondary }]}>{checkInBlockedReason}</ThemedText>
               </View>
             ) : null}
             {checkOutBlockedReason ? (
-              <View style={[styles.statusBanner, { borderColor: cardBorder, backgroundColor: isDark ? '#0f172a55' : '#f8fafc' }]}>
+              <View style={[styles.statusBanner, { borderColor: cardBorder, backgroundColor: isDark ? '#0f172a55' : themeBlue + '10' }]}>
                 <ThemedText style={[styles.statusBannerText, { color: colors.textSecondary }]}>{checkOutBlockedReason}</ThemedText>
               </View>
             ) : null}
           </View>
+          {attendanceMapCenter ? (
+            <View
+              style={[
+                styles.distanceBanner,
+                {
+                  borderColor: cardBorder,
+                  backgroundColor: isDark ? '#0f172a55' : themeBlue + '10',
+                },
+              ]}
+            >
+              <Ionicons name="navigate-outline" size={15} color={isDark ? themeYellow : themeBlue} />
+              <ThemedText style={[styles.distanceBannerText, { color: colors.textSecondary }]}>
+                {distanceFromEventLabel ?? 'Getting your location to measure distance…'}
+              </ThemedText>
+            </View>
+          ) : null}
 
           {checkinTime && !checkoutTime ? (
             <>
               <View style={styles.sectionTitleRow}>
-                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                <View style={[styles.sectionTitleAccent, { backgroundColor: accentBrand }]} />
                 <View style={[styles.sectionTitleIconWrap, { backgroundColor: sectionIconBg }]}>
-                  <Ionicons name="timer-outline" size={Icons.small} color={themeYellow} />
+                  <Ionicons name="timer-outline" size={Icons.small} color={accentBrand} />
                 </View>
                 <ThemedText style={[styles.sectionTitle, { color: accent }]}>Active session</ThemedText>
               </View>
@@ -759,16 +800,16 @@ export default function EventDetailScreen() {
 
           {/* Details section */}
           <View style={styles.sectionTitleRow}>
-            <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+            <View style={[styles.sectionTitleAccent, { backgroundColor: accentBrand }]} />
             <View style={[styles.sectionTitleIconWrap, { backgroundColor: sectionIconBg }]}>
-              <Ionicons name="information-circle-outline" size={Icons.small} color={themeYellow} />
+              <Ionicons name="information-circle-outline" size={Icons.small} color={accentBrand} />
             </View>
-            <ThemedText style={[styles.sectionTitle, { color: accent }]}>Event details</ThemedText>
+            <ThemedText style={[styles.sectionTitle, { color: isDark ? accent : themeBlue }]}>Event details</ThemedText>
           </View>
           <View style={[styles.detailsCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
             <View style={[styles.detailRow, { borderBottomColor: colors.border }]}>
               <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                <Ionicons name="calendar-outline" size={Icons.small} color={themeYellow} />
+                <Ionicons name="calendar-outline" size={Icons.small} color={accentBrand} />
               </View>
               <View style={styles.detailTextWrap}>
                 <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Date</ThemedText>
@@ -777,7 +818,7 @@ export default function EventDetailScreen() {
             </View>
             <View style={[styles.detailRow, { borderBottomColor: cardBorder }]}>
               <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                <Ionicons name="play-outline" size={Icons.small} color={themeYellow} />
+                <Ionicons name="play-outline" size={Icons.small} color={accentBrand} />
               </View>
               <View style={styles.detailTextWrap}>
                 <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Start time</ThemedText>
@@ -786,7 +827,7 @@ export default function EventDetailScreen() {
             </View>
             <View style={[styles.detailRow, { borderBottomColor: cardBorder }]}>
               <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                <Ionicons name="flag-outline" size={Icons.small} color={themeYellow} />
+                <Ionicons name="flag-outline" size={Icons.small} color={accentBrand} />
               </View>
               <View style={styles.detailTextWrap}>
                 <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>End time</ThemedText>
@@ -795,7 +836,7 @@ export default function EventDetailScreen() {
             </View>
               <View style={[styles.detailRow, { borderBottomColor: cardBorder }, teamLeader == null && myAssignment == null && styles.detailRowLast]}>
               <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                <Ionicons name="location-outline" size={Icons.small} color={themeYellow} />
+                <Ionicons name="location-outline" size={Icons.small} color={accentBrand} />
               </View>
               <View style={styles.detailTextWrap}>
                 <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Venue</ThemedText>
@@ -805,7 +846,7 @@ export default function EventDetailScreen() {
             {teamLeader ? (
               <View style={[styles.detailRow, { borderBottomColor: cardBorder }, myAssignment == null && styles.detailRowLast]}>
                 <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                  <Ionicons name="person-outline" size={Icons.small} color={themeYellow} />
+                  <Ionicons name="person-outline" size={Icons.small} color={accentBrand} />
                 </View>
                 <View style={styles.detailTextWrap}>
                   <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Team leader</ThemedText>
@@ -816,7 +857,7 @@ export default function EventDetailScreen() {
             {myAssignment != null ? (
               <View style={[styles.detailRow, styles.detailRowLast]}>
                 <View style={[styles.detailIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                  <Ionicons name="ribbon-outline" size={Icons.small} color={themeYellow} />
+                  <Ionicons name="ribbon-outline" size={Icons.small} color={accentBrand} />
                 </View>
                 <View style={styles.detailTextWrap}>
                   <ThemedText style={[styles.detailLabel, { color: colors.textSecondary }]}>Your role</ThemedText>
@@ -831,9 +872,9 @@ export default function EventDetailScreen() {
           {event.description ? (
             <>
               <View style={styles.sectionTitleRow}>
-                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                <View style={[styles.sectionTitleAccent, { backgroundColor: accentBrand }]} />
                 <View style={[styles.sectionTitleIconWrap, { backgroundColor: sectionIconBg }]}>
-                  <Ionicons name="document-text-outline" size={Icons.small} color={themeYellow} />
+                  <Ionicons name="document-text-outline" size={Icons.small} color={accentBrand} />
                 </View>
                 <ThemedText style={[styles.sectionTitle, { color: accent }]}>About</ThemedText>
               </View>
@@ -846,15 +887,15 @@ export default function EventDetailScreen() {
           {event.daily_allowance != null && event.daily_allowance > 0 ? (
             <>
               <View style={styles.sectionTitleRow}>
-                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                <View style={[styles.sectionTitleAccent, { backgroundColor: accentBrand }]} />
                 <View style={[styles.sectionTitleIconWrap, { backgroundColor: sectionIconBg }]}>
-                  <Ionicons name="wallet-outline" size={Icons.small} color={themeYellow} />
+                  <Ionicons name="wallet-outline" size={Icons.small} color={accentBrand} />
                 </View>
                 <ThemedText style={[styles.sectionTitle, { color: accent }]}>Allowance</ThemedText>
               </View>
               <View style={[styles.allowanceCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <View style={[styles.allowanceIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                  <Ionicons name="wallet-outline" size={Icons.standard} color={themeYellow} />
+                  <Ionicons name="wallet-outline" size={Icons.standard} color={accentBrand} />
                 </View>
                 <View style={styles.allowanceTextWrap}>
                   <ThemedText style={[styles.allowanceValue, { color: colors.text }]}>
@@ -871,9 +912,9 @@ export default function EventDetailScreen() {
           (role === 'crew' || role === 'team_leader') ? (
             <>
               <View style={styles.sectionTitleRow}>
-                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                <View style={[styles.sectionTitleAccent, { backgroundColor: accentBrand }]} />
                 <View style={[styles.sectionTitleIconWrap, { backgroundColor: sectionIconBg }]}>
-                  <Ionicons name="cash-outline" size={Icons.small} color={themeYellow} />
+                  <Ionicons name="cash-outline" size={Icons.small} color={accentBrand} />
                 </View>
                 <ThemedText style={[styles.sectionTitle, { color: accent }]}>Extra allowance</ThemedText>
               </View>
@@ -893,7 +934,7 @@ export default function EventDetailScreen() {
                 ]}
               >
                 <View style={[styles.leadOpsIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                  <Ionicons name="add-circle-outline" size={Icons.standard} color={themeYellow} />
+                  <Ionicons name="add-circle-outline" size={Icons.standard} color={accentBrand} />
                 </View>
                 <View style={styles.leadOpsTextWrap}>
                   <ThemedText style={[styles.leadOpsTitle, { color: colors.text }]}>Request allowance</ThemedText>
@@ -909,9 +950,9 @@ export default function EventDetailScreen() {
           {canManageEventCrew ? (
             <>
               <View style={styles.sectionTitleRow}>
-                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                <View style={[styles.sectionTitleAccent, { backgroundColor: accentBrand }]} />
                 <View style={[styles.sectionTitleIconWrap, { backgroundColor: sectionIconBg }]}>
-                  <Ionicons name="people-outline" size={Icons.small} color={themeYellow} />
+                  <Ionicons name="people-outline" size={Icons.small} color={accentBrand} />
                 </View>
                 <ThemedText style={[styles.sectionTitle, { color: accent }]}>Crew</ThemedText>
               </View>
@@ -931,7 +972,7 @@ export default function EventDetailScreen() {
                 ]}
               >
                 <View style={[styles.leadOpsIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                  <Ionicons name="briefcase-outline" size={Icons.standard} color={themeYellow} />
+                  <Ionicons name="briefcase-outline" size={Icons.standard} color={accentBrand} />
                 </View>
                 <View style={styles.leadOpsTextWrap}>
                   <ThemedText style={[styles.leadOpsTitle, { color: colors.text }]}>Event operations</ThemedText>
@@ -960,7 +1001,7 @@ export default function EventDetailScreen() {
                   ]}
                 >
                   <View style={[styles.leadOpsIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                    <Ionicons name="cash-outline" size={Icons.standard} color={themeYellow} />
+                    <Ionicons name="cash-outline" size={Icons.standard} color={accentBrand} />
                   </View>
                   <View style={styles.leadOpsTextWrap}>
                     <ThemedText style={[styles.leadOpsTitle, { color: colors.text }]}>Pending allowances</ThemedText>
@@ -977,9 +1018,9 @@ export default function EventDetailScreen() {
           {canManageEventCrew && !isEventEnded && crewAttendanceRows.length > 0 ? (
             <>
               <View style={styles.sectionTitleRow}>
-                <View style={[styles.sectionTitleAccent, { backgroundColor: themeYellow }]} />
+                <View style={[styles.sectionTitleAccent, { backgroundColor: accentBrand }]} />
                 <View style={[styles.sectionTitleIconWrap, { backgroundColor: iconWrapBg }]}>
-                  <Ionicons name="people" size={Icons.small} color={themeYellow} />
+                  <Ionicons name="people" size={Icons.small} color={accentBrand} />
                 </View>
                 <ThemedText style={[styles.sectionTitle, { color: accent }]}>Check in crew</ThemedText>
               </View>
@@ -1011,8 +1052,8 @@ export default function EventDetailScreen() {
                         style={({ pressed }) => [
                           styles.leaderCheckInBtn,
                           {
-                            backgroundColor: themeYellow + '22',
-                            borderColor: themeYellow,
+                            backgroundColor: accentBrand + '22',
+                            borderColor: accentBrand,
                             opacity:
                               leaderCheckInUserId === row.id || !canLeaderManualCheckIn(event, eligibilityNowDetail)
                                 ? 0.45
@@ -1022,18 +1063,18 @@ export default function EventDetailScreen() {
                         ]}
                       >
                         {leaderCheckInUserId === row.id ? (
-                          <ActivityIndicator size="small" color={themeYellow} />
+                          <ActivityIndicator size="small" color={accentBrand} />
                         ) : (
                           <>
-                            <Ionicons name="location" size={18} color={themeYellow} />
-                            <ThemedText style={[styles.leaderCheckInBtnText, { color: themeYellow }]}>Check in</ThemedText>
+                            <Ionicons name="location" size={18} color={accentBrand} />
+                            <ThemedText style={[styles.leaderCheckInBtnText, { color: accentBrand }]}>Check in</ThemedText>
                           </>
                         )}
                       </Pressable>
                     ) : row.status === 'checked_in' ? (
-                      <View style={[styles.leaderStatusBadge, { backgroundColor: themeYellow + '22' }]}>
-                        <Ionicons name="checkmark-circle" size={18} color={themeYellow} />
-                        <ThemedText style={[styles.leaderStatusBadgeText, { color: themeYellow }]}>In</ThemedText>
+                      <View style={[styles.leaderStatusBadge, { backgroundColor: accentBrand + '22' }]}>
+                        <Ionicons name="checkmark-circle" size={18} color={accentBrand} />
+                        <ThemedText style={[styles.leaderStatusBadgeText, { color: accentBrand }]}>In</ThemedText>
                       </View>
                     ) : (
                       <ThemedText style={[styles.leaderCrewMeta, { color: colors.textSecondary }]}>Checked out</ThemedText>
@@ -1161,11 +1202,28 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  distanceBanner: {
+    marginHorizontal: Spacing.md,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  distanceBannerText: {
+    fontSize: 13,
+    lineHeight: 18,
+    flex: 1,
+  },
   /** No drop shadow here — large shadowOffset/elevation read as a dark band under the map. */
   attendanceMapOuter: {
     borderRadius: 22,
     overflow: 'hidden',
-    marginBottom: Spacing.sm,
+    marginBottom: 0,
   },
   attendanceMapCard: {
     height: ATTENDANCE_MAP_HEIGHT,
@@ -1174,19 +1232,6 @@ const styles = StyleSheet.create({
   },
   attendanceMapImage: {
     ...StyleSheet.absoluteFillObject,
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 0,
-  },
-  attendanceMapTint: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  attendanceMapGrid: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.2,
-    borderWidth: 1,
-    borderColor: '#64748b',
   },
   attendanceMapPlaceholder: {
     ...StyleSheet.absoluteFillObject,
@@ -1221,10 +1266,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
+    top: 0,
     bottom: 0,
-    paddingBottom: Spacing.md,
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
   },
   detailsCard: {
     borderRadius: Cards.borderRadius,

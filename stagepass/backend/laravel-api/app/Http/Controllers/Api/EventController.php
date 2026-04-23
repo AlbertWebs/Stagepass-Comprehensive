@@ -8,6 +8,7 @@ use App\Models\EventUser;
 use App\Models\User;
 use App\Notifications\TeamLeaderAssignedNotification;
 use App\Services\AttendanceOvertimeService;
+use App\Services\EventCrewAttendanceService;
 use App\Support\EventTeamLeaderGate;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -16,7 +17,8 @@ use Illuminate\Http\Request;
 class EventController extends Controller
 {
     public function __construct(
-        private AttendanceOvertimeService $overtime
+        private AttendanceOvertimeService $overtime,
+        private EventCrewAttendanceService $eventCrewAttendance
     ) {}
     /**
      * Get the current user's event assigned for today (for crew/leader home).
@@ -211,7 +213,7 @@ class EventController extends Controller
             'closing_comment' => 'required|string|max:5000',
         ]);
 
-        // Auto check out closer if still checked in.
+        // Auto check out closer if still checked in (archives that day’s session for multi-day events).
         $assignment = $event->eventCrew()->where('user_id', $user->id)->first();
         if ($assignment && $assignment->checkin_time && ! $assignment->checkout_time) {
             $checkout = now();
@@ -220,14 +222,33 @@ class EventController extends Controller
                 $pausedMinutes += Carbon::parse($assignment->pause_start_time)->diffInMinutes($checkout);
             }
             $calc = $this->overtime->calculate(Carbon::parse($assignment->checkin_time), $checkout, null, $pausedMinutes);
-            $assignment->checkout_time = $checkout;
-            $assignment->total_hours = $calc['total_hours'];
-            $assignment->standard_hours = $calc['standard_hours'];
-            $assignment->extra_hours = $calc['extra_hours'];
-            $assignment->is_paused = false;
-            $assignment->pause_start_time = null;
-            $assignment->pause_duration = $pausedMinutes;
-            $assignment->save();
+            if ($this->eventCrewAttendance->isMultiDayEvent($event)) {
+                $this->eventCrewAttendance->finalizeCheckoutWithSession(
+                    $event,
+                    $assignment,
+                    $checkout,
+                    $calc,
+                    $pausedMinutes
+                );
+            } else {
+                $assignment->update([
+                    'checkout_time' => $checkout,
+                    'total_hours' => $calc['total_hours'],
+                    'standard_hours' => $calc['standard_hours'],
+                    'extra_hours' => $calc['extra_hours'],
+                    'is_paused' => false,
+                    'pause_start_time' => null,
+                    'pause_end_time' => $assignment->is_paused ? $checkout : $assignment->pause_end_time,
+                    'pause_duration' => $pausedMinutes,
+                ]);
+                $this->eventCrewAttendance->updateMealEligibility(
+                    $event,
+                    (int) $assignment->user_id,
+                    Carbon::parse($assignment->checkin_time),
+                    $checkout,
+                    $this->eventCrewAttendance->workDateForEventSession($assignment->checkin_time)
+                );
+            }
         }
 
         $event->update([

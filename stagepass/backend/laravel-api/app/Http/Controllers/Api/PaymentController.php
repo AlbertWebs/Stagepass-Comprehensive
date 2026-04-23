@@ -6,11 +6,16 @@ use App\Http\Controllers\Controller;
 use App\Models\Event;
 use App\Models\EventPayment;
 use App\Models\EventUser;
+use App\Services\EventCrewAttendanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class PaymentController extends Controller
 {
+    public function __construct(
+        private EventCrewAttendanceService $eventCrewAttendance
+    ) {}
+
     private function canManageEventPayments(Request $request, Event $event): bool
     {
         $user = $request->user();
@@ -116,18 +121,7 @@ class PaymentController extends Controller
             ->first();
 
         $response = $payment->load(['event', 'user'])->toArray();
-        $response['attendance_context'] = [
-            'total_hours' => (float) ($attendance?->total_hours ?? 0),
-            'extra_hours' => (float) ($attendance?->extra_hours ?? 0),
-            'pause_duration' => (int) ($attendance?->pause_duration ?? 0),
-            'active_hours' => round(max(0, (float) ($attendance?->total_hours ?? 0) - ((int) ($attendance?->pause_duration ?? 0) / 60)), 2),
-            'is_sunday' => (bool) ($attendance?->is_sunday ?? false),
-            'is_holiday' => (bool) ($attendance?->is_holiday ?? false),
-            'holiday_name' => $attendance?->holiday_name,
-            'day_type' => ($attendance?->is_holiday ?? false) ? 'holiday' : (($attendance?->is_sunday ?? false) ? 'sunday' : 'normal'),
-            'transport_type' => $attendance?->transport_type,
-            'transport_amount' => $attendance?->transport_amount !== null ? (float) $attendance->transport_amount : null,
-        ];
+        $response['attendance_context'] = $this->eventCrewAttendance->paymentAttendanceContext($event, $attendance);
 
         return response()->json($response, 201);
     }

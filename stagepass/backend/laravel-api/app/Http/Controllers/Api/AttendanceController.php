@@ -5,10 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\DailyOfficeCheckin;
 use App\Models\Event;
-use App\Models\EventMeal;
 use App\Models\EventUser;
 use App\Models\Setting;
 use App\Services\AttendanceOvertimeService;
+use App\Services\EventCrewAttendanceService;
 use App\Services\GeofenceService;
 use App\Support\EventAttendanceEligibility;
 use App\Support\OfficeCheckinRequiredDays;
@@ -22,7 +22,8 @@ class AttendanceController extends Controller
 {
     public function __construct(
         private GeofenceService $geofence,
-        private AttendanceOvertimeService $overtime
+        private AttendanceOvertimeService $overtime,
+        private EventCrewAttendanceService $eventCrewAttendance
     ) {}
 
     /**
@@ -224,12 +225,11 @@ class AttendanceController extends Controller
             ->where('user_id', $user->id)
             ->firstOrFail();
 
-        if ($assignment->checkin_time) {
-            return response()->json([
-                'message' => 'Already checked in',
-                'checkin_time' => $assignment->checkin_time,
-            ], 422);
+        $pre = $this->eventCrewAttendance->prepareForCheckin($event, $assignment);
+        if ($pre !== null) {
+            return $pre;
         }
+        $assignment->refresh();
 
         // Geofencing: event must have location; check-in only allowed within radius
         if (! $event->latitude || ! $event->longitude) {
@@ -398,6 +398,34 @@ class AttendanceController extends Controller
             $pausedMinutes += Carbon::parse($assignment->pause_start_time)->diffInMinutes($checkout);
         }
         $calc = $this->overtime->calculate(Carbon::parse($assignment->checkin_time), $checkout, null, $pausedMinutes);
+
+        if ($this->eventCrewAttendance->isMultiDayEvent($event)) {
+            $session = $this->eventCrewAttendance->finalizeCheckoutWithSession(
+                $event,
+                $assignment,
+                $checkout,
+                $calc,
+                $pausedMinutes
+            );
+            $assignment->refresh();
+
+            event(new \App\Events\CrewCheckedOut($assignment, $session));
+
+            return response()->json([
+                'message' => 'Checked out successfully',
+                'checkout_time' => $session->checkout_time->toIso8601String(),
+                'work_date' => $session->work_date?->format('Y-m-d') ?? (string) $session->work_date,
+                'total_hours' => $session->total_hours,
+                'standard_hours' => $session->standard_hours,
+                'extra_hours' => $session->extra_hours,
+                'is_sunday' => (bool) $session->is_sunday,
+                'is_holiday' => (bool) $session->is_holiday,
+                'holiday_name' => $session->holiday_name,
+                'day_type' => $session->is_holiday ? 'holiday' : ($session->is_sunday ? 'sunday' : 'normal'),
+                'pause_duration' => (int) ($session->pause_duration ?? 0),
+            ]);
+        }
+
         $assignment->update([
             'checkout_time' => $checkout,
             'total_hours' => $calc['total_hours'],
@@ -410,9 +438,15 @@ class AttendanceController extends Controller
         ]);
         $assignment->refresh();
 
-        $this->updateMealEligibility($assignment, $checkout);
+        $this->eventCrewAttendance->updateMealEligibility(
+            $event,
+            (int) $assignment->user_id,
+            Carbon::parse($assignment->checkin_time),
+            $checkout,
+            $this->eventCrewAttendance->workDateForEventSession($assignment->checkin_time)
+        );
 
-        event(new \App\Events\CrewCheckedOut($assignment));
+        event(new \App\Events\CrewCheckedOut($assignment, null));
 
         return response()->json([
             'message' => 'Checked out successfully',
@@ -426,26 +460,5 @@ class AttendanceController extends Controller
             'day_type' => $assignment->is_holiday ? 'holiday' : ($assignment->is_sunday ? 'sunday' : 'normal'),
             'pause_duration' => (int) ($assignment->pause_duration ?? 0),
         ]);
-    }
-
-    private function updateMealEligibility(EventUser $assignment, Carbon $checkout): void
-    {
-        $event = $assignment->event;
-        $breakfastCutoff = Carbon::parse($event->date->format('Y-m-d').' 07:00:00');
-        $dinnerStart = Carbon::parse($event->date->format('Y-m-d').' 19:30:00');
-
-        $meals = EventMeal::firstOrCreate(
-            ['event_id' => $event->id, 'user_id' => $assignment->user_id],
-            ['breakfast' => false, 'lunch' => false, 'dinner' => false]
-        );
-
-        if ($assignment->checkin_time && Carbon::parse($assignment->checkin_time)->lt($breakfastCutoff)) {
-            $meals->breakfast = true;
-        }
-        $meals->lunch = true;
-        if ($checkout->gte($dinnerStart)) {
-            $meals->dinner = true;
-        }
-        $meals->save();
     }
 }

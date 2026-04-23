@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EventMeal extends Model
 {
-    protected $fillable = ['user_id', 'event_id', 'breakfast', 'lunch', 'dinner'];
+    protected $fillable = ['user_id', 'event_id', 'work_date', 'breakfast', 'lunch', 'dinner'];
 
     protected function casts(): array
     {
