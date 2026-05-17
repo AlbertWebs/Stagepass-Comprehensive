@@ -46,15 +46,56 @@ export function isWithinEventCalendarRange(event: Event, now: Date = new Date())
   return today >= start && today <= last;
 }
 
+function pivotCheckoutCalendarYmd(pivot: { checkout_time?: string | null } | null): string | null {
+  const raw = pivot?.checkout_time;
+  if (!raw || typeof raw !== 'string') return null;
+  const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T');
+  const d = new Date(normalized);
+  if (Number.isNaN(d.getTime())) return null;
+  return localDateYmd(d);
+}
+
+/** True when the last checkout was on a previous calendar day (local device clock). */
+export function isNewCalendarDayAfterCheckout(
+  pivot: { checkout_time?: string | null } | null,
+  now: Date = new Date()
+): boolean {
+  const checkoutYmd = pivotCheckoutCalendarYmd(pivot);
+  if (!checkoutYmd) return false;
+  return localDateYmd(now) > checkoutYmd;
+}
+
 /**
  * After checkout, user may start another shift on a later day of the same event.
  * Aligns with backend session archiving for multi-calendar-day events.
  */
-export function allowsAnotherAttendanceDay(event: Event, now: Date = new Date()): boolean {
+export function allowsAnotherAttendanceDay(
+  event: Event,
+  userId: number | undefined,
+  now: Date = new Date()
+): boolean {
   if (isEndedEventStatus(event.status)) return false;
-  if (!eventSpansMultipleCalendarDays(event)) return false;
-  if (!isWithinEventCalendarRange(event, now)) return false;
   if (eventCalendarDateHasPassed(event, now)) return false;
+  if (!isWithinEventCalendarRange(event, now)) return false;
+
+  const pivot = getAssignmentPivot(event, userId);
+
+  if (eventSpansMultipleCalendarDays(event)) return true;
+
+  if (pivot?.checkout_time && isNewCalendarDayAfterCheckout(pivot, now)) return true;
+
+  return false;
+}
+
+/** Whether check-in should be blocked because the scheduled window has ended. */
+export function isCheckInBlockedBySchedule(event: Event, now: Date = new Date()): boolean {
+  if (eventCalendarDateHasPassed(event, now)) return true;
+  if (!eventTimeHasPassed(event, now)) return false;
+  if (eventSpansMultipleCalendarDays(event)) {
+    const today = localDateYmd(now);
+    const last = getEffectiveLastCalendarYmd(event);
+    return today >= last;
+  }
   return true;
 }
 
@@ -204,17 +245,17 @@ export function getMobileActivityBadge(event: Event, userId: number | undefined,
   if (s === 'completed') return { key: 'completed', label: LABEL.completed };
 
   const pivot = getAssignmentPivot(event, userId);
-  if (pivot?.checkout_time && !allowsAnotherAttendanceDay(event, now)) {
+  if (pivot?.checkout_time && !allowsAnotherAttendanceDay(event, userId, now)) {
     return { key: 'checked_out', label: LABEL.checked_out };
   }
   if (pivot?.checkin_time && !pivot?.checkout_time) {
     return { key: 'checked_in', label: LABEL.checked_in };
   }
-  if (pivot?.checkout_time && allowsAnotherAttendanceDay(event, now)) {
-    return { key: 'active', label: 'Between days' };
+  if (pivot?.checkout_time && allowsAnotherAttendanceDay(event, userId, now)) {
+    return { key: 'active', label: 'Check in again tomorrow' };
   }
 
-  if (eventCalendarDateHasPassed(event, now) || eventTimeHasPassed(event, now)) {
+  if (isCheckInBlockedBySchedule(event, now)) {
     return { key: 'event_passed', label: LABEL.event_passed };
   }
 
@@ -242,10 +283,9 @@ export function canCheckInEligibility(event: Event, userId: number | undefined, 
   const pivot = getAssignmentPivot(event, userId);
   if (pivot?.checkin_time && !pivot?.checkout_time) return false;
   if (pivot?.checkin_time && pivot?.checkout_time) {
-    return allowsAnotherAttendanceDay(event, now);
+    return allowsAnotherAttendanceDay(event, userId, now);
   }
-  if (eventCalendarDateHasPassed(event, now)) return false;
-  if (eventTimeHasPassed(event, now)) return false;
+  if (isCheckInBlockedBySchedule(event, now)) return false;
   return true;
 }
 
@@ -260,7 +300,7 @@ export function getEventCheckInBlockedMessage(
   if (eventCalendarDateHasPassed(event, now)) {
     return "This event's date has passed. Check-in is no longer available.";
   }
-  if (eventTimeHasPassed(event, now)) {
+  if (isCheckInBlockedBySchedule(event, now)) {
     return "This event's scheduled time has already passed.";
   }
   if (userId != null && !userAssignedToEvent(event, userId)) {
@@ -270,7 +310,10 @@ export function getEventCheckInBlockedMessage(
   if (pivot?.checkin_time && !pivot?.checkout_time) {
     return 'You are already checked in.';
   }
-  if (pivot?.checkin_time && pivot?.checkout_time && !allowsAnotherAttendanceDay(event, now)) {
+  if (pivot?.checkin_time && pivot?.checkout_time && !allowsAnotherAttendanceDay(event, userId, now)) {
+    if (eventSpansMultipleCalendarDays(event) || event.end_date) {
+      return 'You checked out for today. You can check in again on the next day this event runs.';
+    }
     return 'You have already completed attendance for this event.';
   }
   return null;
@@ -283,7 +326,7 @@ export function getLeaderManualCheckInBlockedMessage(event: Event, now: Date = n
   if (eventCalendarDateHasPassed(event, now)) {
     return "This event's date has passed. Check-in is no longer available.";
   }
-  if (eventTimeHasPassed(event, now)) {
+  if (isCheckInBlockedBySchedule(event, now)) {
     return "This event's scheduled time has already passed.";
   }
   return null;
@@ -300,7 +343,6 @@ export function canCheckOutEligibility(event: Event, userId: number | undefined,
 /** Team leader manual check-in: same time/status gates as self check-in, without assignment to the leader. */
 export function canLeaderManualCheckIn(event: Event, now: Date = new Date()): boolean {
   if (isEndedEventStatus(event.status)) return false;
-  if (eventCalendarDateHasPassed(event, now)) return false;
-  if (eventTimeHasPassed(event, now)) return false;
+  if (isCheckInBlockedBySchedule(event, now)) return false;
   return true;
 }

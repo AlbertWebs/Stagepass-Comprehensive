@@ -52,7 +52,10 @@ import {
   canLeaderManualCheckIn,
   canRecheckInAfterCheckout,
   eventCalendarDateHasPassed,
+  eventSpansMultipleCalendarDays,
   eventTimeHasPassed,
+  isNewCalendarDayAfterCheckout,
+  isWithinEventCalendarRange,
   getEventCheckInBlockedMessage,
   getLeaderManualCheckInBlockedMessage,
   getScheduledEndMs,
@@ -527,6 +530,20 @@ export default function EventDetailScreen() {
     checkinTime && !checkoutTime && myAssignment != null && !canSelfCheckOut && isEventEnded
       ? 'Check-out is disabled because the event has ended.'
       : null;
+  const pivotForEligibility = myAssignment?.pivot as { checkout_time?: string | null } | undefined;
+  const checkedOutSubline = (() => {
+    if (!checkoutTime) return 'CHECKED OUT';
+    if (eventSpansMultipleCalendarDays(event) && isWithinEventCalendarRange(event, eligibilityNowDetail)) {
+      if (isNewCalendarDayAfterCheckout(pivotForEligibility ?? null, eligibilityNowDetail)) {
+        return 'TAP CHECK IN AGAIN';
+      }
+      return 'CHECK IN AGAIN TOMORROW';
+    }
+    if (!event.end_date) {
+      return 'ASK ADMIN TO SET END DATE';
+    }
+    return 'CHECKED OUT';
+  })();
   const locationLabel = event.location_name ?? 'No location';
   const dateLabel = formatEventDate(event.date);
   const endDateLabel = (() => {
@@ -734,7 +751,9 @@ export default function EventDetailScreen() {
                         <View style={styles.roundCheckInInner}>
                           <Ionicons name="checkmark-done-circle" size={Icons.standard} color={StatusColors.checkedIn} />
                           <ThemedText style={[styles.roundCheckInLabel, { color: StatusColors.checkedIn }]} numberOfLines={1}>Done</ThemedText>
-                          <ThemedText style={[styles.roundCheckInSub, { color: StatusColors.checkedIn }]} numberOfLines={1}>CHECKED OUT</ThemedText>
+                          <ThemedText style={[styles.roundCheckInSub, { color: StatusColors.checkedIn }]} numberOfLines={1}>
+                            {checkedOutSubline}
+                          </ThemedText>
                         </View>
                       )}
                     </Pressable>
