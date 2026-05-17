@@ -45,6 +45,7 @@ import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationP
 import { useGeofence } from '~/hooks/useGeofence';
 import { api, type User as ApiUser, type Payment } from '~/services/api';
 import type { Event as EventType } from '~/services/api';
+import { canCheckInEligibility, getEventCheckInBlockedMessage } from '@/src/utils/eventEligibility';
 import {
   DEFAULT_HOMEPAGE_PREFERENCES,
   HOMEPAGE_SECTION_KEYS,
@@ -719,6 +720,14 @@ export function HomeDashboardScreen({
     if (!location) return;
 
     if (eventToday && !hasEventCheckedIn) {
+      if (currentUserId != null && !canCheckInEligibility(eventToday, currentUserId, new Date())) {
+        Alert.alert(
+          'Cannot check in',
+          getEventCheckInBlockedMessage(eventToday, currentUserId) ??
+            'You cannot check in to this event.'
+        );
+        return;
+      }
       const eventLat = eventToday.latitude ?? null;
       const eventLon = eventToday.longitude ?? null;
       const radius = eventToday.geofence_radius ?? 100;
@@ -775,7 +784,7 @@ export function HomeDashboardScreen({
     }
 
     handleNav(() => router.push('/(tabs)/events'));
-  }, [eventToday, hasEventCheckedIn, userLocation, checkInLoading, checkCanCheckIn, onRefresh, officeConfig, router, handleNav]);
+  }, [eventToday, hasEventCheckedIn, currentUserId, userLocation, checkInLoading, checkCanCheckIn, onRefresh, officeConfig, router, handleNav]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -832,12 +841,16 @@ export function HomeDashboardScreen({
     });
   })();
 
+  const canEventCheckIn =
+    Boolean(eventToday && currentUserId != null) &&
+    canCheckInEligibility(eventToday!, currentUserId!, new Date());
+
   const visibleQuickActions = QUICK_ACTIONS.filter((a) => {
     if (a.id === 'everything') return false;
     if (!sectionVisible.my_events && a.id === 'events') return false;
     if (!sectionVisible.assigned_tasks && a.id === 'tasks') return false;
     if (!a.roles) return true;
-    if (a.id === 'checkin' && eventToday && !hasEventCheckedIn) return a.roles.includes(role);
+    if (a.id === 'checkin' && canEventCheckIn) return a.roles.includes(role);
     return a.roles.includes(role);
   });
 
@@ -846,7 +859,7 @@ export function HomeDashboardScreen({
   const rippleEasing = Easing.out(Easing.cubic);
   const RIPPLE_DURATION = 4800;
 
-  const showEventCheckInRipple = Boolean(eventToday && !hasEventCheckedIn);
+  const showEventCheckInRipple = canEventCheckIn;
   const showEventCheckOutRipple = Boolean(eventToday && hasEventCheckedIn && !hasEventCheckedOut);
   // Keep ripple for office CTA in all states where office CTA may be visible.
   const showOfficeRipple = Boolean(

@@ -20,6 +20,11 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import {
+  canLeaderManualCheckIn,
+  getLeaderManualCheckInBlockedMessage,
+  isEndedEventStatus,
+} from '@/src/utils/eventEligibility';
 
 export default function ManageCheckInScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -77,7 +82,14 @@ export default function ManageCheckInScreen() {
   }, [loadData]);
 
   const handleCheckInOnBehalf = async (userId: number) => {
-    if (!eventId) return;
+    if (!eventId || !event) return;
+    if (!canLeaderManualCheckIn(event)) {
+      Alert.alert(
+        'Cannot check in',
+        getLeaderManualCheckInBlockedMessage(event) ?? 'This event is no longer open for check-in.'
+      );
+      return;
+    }
     setCheckingInId(userId);
     let lat: number | undefined;
     let lon: number | undefined;
@@ -162,7 +174,7 @@ export default function ManageCheckInScreen() {
     }
   };
 
-  const isEnded = event?.status === 'completed' || event?.status === 'closed';
+  const isEnded = event ? isEndedEventStatus(event.status) || !canLeaderManualCheckIn(event) : true;
   const pending = crewStatus.filter((c) => c.status !== 'checked_in' && c.status !== 'checked_out');
   const checkedIn = crewStatus.filter((c) => c.status === 'checked_in');
 

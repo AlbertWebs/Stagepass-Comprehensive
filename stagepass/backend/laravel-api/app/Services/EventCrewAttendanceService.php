@@ -24,13 +24,45 @@ class EventCrewAttendanceService
         return (string) config('app.timezone', 'Africa/Nairobi');
     }
 
+    /**
+     * Event spans more than one calendar day (explicit end_date, or overnight into the next day).
+     */
     public function isMultiDayEvent(Event $event): bool
     {
-        if (! $event->end_date) {
-            return false;
+        $start = $event->date->format('Y-m-d');
+
+        return $this->effectiveLastCalendarDate($event) > $start;
+    }
+
+    public function effectiveLastCalendarDate(Event $event): string
+    {
+        $startDate = $event->date->format('Y-m-d');
+        if ($event->end_date) {
+            return $event->end_date->format('Y-m-d');
         }
 
-        return $event->end_date->format('Y-m-d') > $event->date->format('Y-m-d');
+        $startHm = substr((string) ($event->start_time ?? '00:00'), 0, 5);
+        $endRaw = $event->expected_end_time;
+        $endHm = $endRaw ? substr((string) $endRaw, 0, 5) : '23:59';
+        $sm = $this->hmToMins($startHm);
+        $em = $this->hmToMins($endHm);
+        if ($sm !== null && $em !== null && $em < $sm) {
+            return Carbon::parse($startDate, self::appTimezone())->addDay()->format('Y-m-d');
+        }
+
+        return $startDate;
+    }
+
+    private function hmToMins(?string $hm): ?int
+    {
+        if ($hm === null || $hm === '') {
+            return null;
+        }
+        $p = explode(':', $hm);
+        $h = (int) ($p[0] ?? 0);
+        $m = (int) ($p[1] ?? 0);
+
+        return $h * 60 + $m;
     }
 
     /**

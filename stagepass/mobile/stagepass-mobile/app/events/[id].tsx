@@ -50,7 +50,11 @@ import {
   canCheckInEligibility,
   canCheckOutEligibility,
   canLeaderManualCheckIn,
+  canRecheckInAfterCheckout,
+  eventCalendarDateHasPassed,
   eventTimeHasPassed,
+  getEventCheckInBlockedMessage,
+  getLeaderManualCheckInBlockedMessage,
   getScheduledEndMs,
   isEndedEventStatus,
 } from '@/src/utils/eventEligibility';
@@ -261,7 +265,11 @@ export default function EventDetailScreen() {
   const handleLeaderCheckInMember = async (userId: number) => {
     if (!event?.id) return;
     if (!canLeaderManualCheckIn(event, eligibilityNowDetail)) {
-      Alert.alert('Cannot check in', 'This event is no longer open for check-in.');
+      Alert.alert(
+        'Cannot check in',
+        getLeaderManualCheckInBlockedMessage(event, eligibilityNowDetail) ??
+          'This event is no longer open for check-in.'
+      );
       return;
     }
     setLeaderCheckInUserId(userId);
@@ -289,11 +297,8 @@ export default function EventDetailScreen() {
     if (currentUserId != null && !canCheckInEligibility(event, currentUserId, new Date())) {
       Alert.alert(
         'Cannot check in',
-        isEndedEventStatus(event.status)
-          ? 'This event is no longer open for check-in.'
-          : eventTimeHasPassed(event)
-            ? 'This event’s scheduled time has already passed.'
-            : 'You are not eligible to check in for this event.'
+        getEventCheckInBlockedMessage(event, currentUserId) ??
+          'You are not eligible to check in for this event.'
       );
       return;
     }
@@ -321,12 +326,8 @@ export default function EventDetailScreen() {
     }
   };
 
-  const handleCheckOut = async () => {
+  const performCheckOut = async () => {
     if (!event?.id || actionLoading || checkoutTime) return;
-    if (currentUserId != null && !canCheckOutEligibility(event, currentUserId, new Date())) {
-      Alert.alert('Cannot check out', 'This event is no longer open for check-out.');
-      return;
-    }
     setActionLoading(true);
     try {
       await api.attendance.checkout(event.id);
@@ -368,18 +369,42 @@ export default function EventDetailScreen() {
     }
   };
 
+  const handleCheckOut = () => {
+    if (!event?.id || actionLoading || checkoutTime) return;
+    if (currentUserId != null && !canCheckOutEligibility(event, currentUserId, new Date())) {
+      Alert.alert('Cannot check out', 'This event is no longer open for check-out.');
+      return;
+    }
+    Alert.alert('Check out', 'Are you sure you want to check out from this event?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Check out', onPress: () => void performCheckOut() },
+    ]);
+  };
+
   const rippleProgress = useSharedValue(0);
   const rippleProgress2 = useSharedValue(0);
   const rippleEasing = Easing.out(Easing.cubic);
   const RIPPLE_DURATION = 4800;
+  const canSelfCheckIn =
+    event != null &&
+    myAssignment != null &&
+    currentUserId != null &&
+    canCheckInEligibility(event, currentUserId, eligibilityNowDetail);
+  const canSelfCheckOut =
+    event != null &&
+    myAssignment != null &&
+    currentUserId != null &&
+    canCheckOutEligibility(event, currentUserId, eligibilityNowDetail);
+  const showCheckInAction = Boolean(canSelfCheckIn && (!checkinTime || checkoutTime));
+  const showCheckOutAction = Boolean(checkinTime && !checkoutTime && canSelfCheckOut);
+  const isRecheckIn = Boolean(
+    event != null &&
+      checkoutTime &&
+      canRecheckInAfterCheckout(event, currentUserId, eligibilityNowDetail)
+  );
+
   useEffect(() => {
-    if (
-      checkinTime ||
-      !event ||
-      myAssignment == null ||
-      currentUserId == null ||
-      !canCheckInEligibility(event, currentUserId, eligibilityNowDetail)
-    ) {
+    if (!event || myAssignment == null || currentUserId == null || !showCheckInAction) {
       rippleProgress.value = withTiming(0);
       rippleProgress2.value = withTiming(0);
       return;
@@ -397,7 +422,7 @@ export default function EventDetailScreen() {
         false
       )
     );
-  }, [checkinTime, event, myAssignment, currentUserId, eligibilityNowDetail, rippleProgress, rippleProgress2]);
+  }, [checkinTime, checkoutTime, event, myAssignment, currentUserId, showCheckInAction, eligibilityNowDetail, rippleProgress, rippleProgress2]);
 
   /** Light mode uses blue accents; keep ripple visible on pale map cards. */
   const checkInRippleTheme = useMemo(
@@ -493,15 +518,10 @@ export default function EventDetailScreen() {
   }
 
   const isEventEnded = event.status === 'completed' || event.status === 'closed' || event.status === 'done_for_the_day';
-  const canSelfCheckIn =
-    myAssignment != null && currentUserId != null && canCheckInEligibility(event, currentUserId, eligibilityNowDetail);
-  const canSelfCheckOut =
-    myAssignment != null && currentUserId != null && canCheckOutEligibility(event, currentUserId, eligibilityNowDetail);
   const checkInBlockedReason = (() => {
-    if (myAssignment == null || checkinTime) return null;
-    if (isEventEnded) return 'This event is closed for check-in.';
-    if (eventTimeHasPassed(event, eligibilityNowDetail)) return 'Status: Event has already passed';
-    return null;
+    if (myAssignment == null || showCheckInAction) return null;
+    if (checkinTime && !checkoutTime) return null;
+    return getEventCheckInBlockedMessage(event, currentUserId, eligibilityNowDetail);
   })();
   const checkOutBlockedReason =
     checkinTime && !checkoutTime && myAssignment != null && !canSelfCheckOut && isEventEnded
@@ -627,7 +647,7 @@ export default function EventDetailScreen() {
               <View style={styles.mapActionOverlay}>
                 <View style={styles.roundCheckInWrap}>
                   <Animated.View style={styles.roundCheckInButtonWrap}>
-                    {!checkinTime && canSelfCheckIn && userLocation ? (
+                    {showCheckInAction && userLocation ? (
                       <>
                         <Animated.View
                           style={[
@@ -656,27 +676,25 @@ export default function EventDetailScreen() {
                       </>
                     ) : null}
                     <Pressable
-                      onPress={!checkinTime ? handleCheckIn : !checkoutTime ? handleCheckOut : undefined}
+                      onPress={showCheckInAction ? handleCheckIn : showCheckOutAction ? handleCheckOut : undefined}
                       disabled={
                         actionLoading ||
-                        (!checkinTime && (!canSelfCheckIn || !userLocation)) ||
-                        (!!checkinTime && !checkoutTime && !canSelfCheckOut) ||
-                        !!checkoutTime
+                        (showCheckInAction && !userLocation) ||
+                        (showCheckOutAction && !canSelfCheckOut) ||
+                        (!showCheckInAction && !showCheckOutAction)
                       }
                       style={({ pressed }) => [
                         styles.roundCheckInButton,
-                        !checkinTime && canSelfCheckIn && { backgroundColor: accentBrand },
-                        checkinTime && !checkoutTime && canSelfCheckOut && { backgroundColor: themeBlue },
-                        checkoutTime && { backgroundColor: '#334155' },
+                        showCheckInAction && { backgroundColor: accentBrand },
+                        showCheckOutAction && { backgroundColor: themeBlue },
+                        !showCheckInAction && !showCheckOutAction && { backgroundColor: '#334155' },
                         (actionLoading ||
-                          (!checkinTime && (!canSelfCheckIn || !userLocation)) ||
-                          (!!checkinTime && !checkoutTime && !canSelfCheckOut) ||
-                          !!checkoutTime) &&
+                          (showCheckInAction && !userLocation) ||
+                          (!showCheckInAction && !showCheckOutAction)) &&
                           styles.roundCheckInButtonDisabled,
                         (actionLoading ||
-                          (!checkinTime && (!canSelfCheckIn || !userLocation)) ||
-                          (!!checkinTime && !checkoutTime && !canSelfCheckOut) ||
-                          !!checkoutTime) && { backgroundColor: themeBlue + '22' },
+                          (showCheckInAction && !userLocation) ||
+                          (!showCheckInAction && !showCheckOutAction)) && { backgroundColor: themeBlue + '22' },
                         pressed && !actionLoading && styles.roundCheckInButtonPressed,
                       ]}
                     >
@@ -684,11 +702,11 @@ export default function EventDetailScreen() {
                         <View style={styles.roundCheckInInner}>
                           <Ionicons name="location" size={Icons.standard} color={colors.textSecondary} />
                           <ThemedText style={[styles.roundCheckInLabel, { color: colors.textSecondary }]} numberOfLines={1}>
-                            {!checkinTime ? 'Checking in…' : 'Checking out…'}
+                            {showCheckOutAction ? 'Checking out…' : 'Checking in…'}
                           </ThemedText>
                           <ThemedText style={[styles.roundCheckInSub, { color: colors.textSecondary }]} numberOfLines={1}>AT VENUE</ThemedText>
                         </View>
-                      ) : !checkinTime && canSelfCheckIn && !userLocation ? (
+                      ) : showCheckInAction && !userLocation ? (
                         <View style={styles.roundCheckInInner}>
                           <Ionicons name="location" size={Icons.standard} color={colors.textSecondary} />
                           <ThemedText style={[styles.roundCheckInLabel, { color: colors.textSecondary }]} numberOfLines={1}>
@@ -696,19 +714,17 @@ export default function EventDetailScreen() {
                           </ThemedText>
                           <ThemedText style={[styles.roundCheckInSub, { color: colors.textSecondary }]} numberOfLines={1}>AT VENUE</ThemedText>
                         </View>
-                      ) : !checkinTime && !canSelfCheckIn ? (
-                        <View style={styles.roundCheckInInner}>
-                          <Ionicons name="lock-closed-outline" size={Icons.standard} color={colors.textSecondary} />
-                          <ThemedText style={[styles.roundCheckInLabel, { color: colors.textSecondary }]} numberOfLines={1}>Check in</ThemedText>
-                          <ThemedText style={[styles.roundCheckInSub, { color: colors.textSecondary }]} numberOfLines={1} />
-                        </View>
-                      ) : !checkinTime ? (
+                      ) : showCheckInAction ? (
                         <View style={styles.roundCheckInInner}>
                           <Ionicons name="location" size={Icons.standard} color={isDark ? themeBlue : themeYellow} />
-                          <ThemedText style={[styles.roundCheckInLabel, { color: isDark ? themeBlue : themeYellow }]} numberOfLines={1}>Check in</ThemedText>
-                          <ThemedText style={[styles.roundCheckInSub, { color: isDark ? themeBlue : themeYellow }]} numberOfLines={1}>AT VENUE</ThemedText>
+                          <ThemedText style={[styles.roundCheckInLabel, { color: isDark ? themeBlue : themeYellow }]} numberOfLines={1}>
+                            {isRecheckIn ? 'Check in again' : 'Check in'}
+                          </ThemedText>
+                          <ThemedText style={[styles.roundCheckInSub, { color: isDark ? themeBlue : themeYellow }]} numberOfLines={1}>
+                            {isRecheckIn ? 'NEW DAY' : 'AT VENUE'}
+                          </ThemedText>
                         </View>
-                      ) : !checkoutTime ? (
+                      ) : showCheckOutAction ? (
                         <View style={styles.roundCheckInInner}>
                           <Ionicons name="exit-outline" size={Icons.standard} color="#fff" />
                           <ThemedText style={[styles.roundCheckInLabel, { color: '#fff' }]} numberOfLines={1}>Check out</ThemedText>

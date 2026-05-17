@@ -3,6 +3,12 @@ import { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { useSelector } from 'react-redux';
 import { api, type Event as EventType } from '~/services/api';
+import {
+  canCheckInEligibility,
+  canCheckOutEligibility,
+  canRecheckInAfterCheckout,
+  getEventCheckInBlockedMessage,
+} from '@/src/utils/eventEligibility';
 import { useGeofence } from '~/hooks/useGeofence';
 import { CheckInButton } from '@/components/CheckInButton';
 import { LocationGuard } from '@/components/LocationGuard';
@@ -51,8 +57,21 @@ export function CrewHomeScreen({ event, onRefresh }: Props) {
     radiusMeters
   );
 
+  const canCheckInBySchedule = userId != null && canCheckInEligibility(event, userId, new Date());
+  const canCheckOutBySchedule = userId != null && canCheckOutEligibility(event, userId, new Date());
+  const isRecheckIn = userId != null && canRecheckInAfterCheckout(event, userId, new Date());
+  const showCheckIn = canCheckInBySchedule && (!checkinTime || !!checkoutTime);
+  const showCheckOut = !!checkinTime && !checkoutTime && canCheckOutBySchedule;
+
   const handleCheckIn = async () => {
     if (!event?.id || actionLoading) return;
+    if (!canCheckInBySchedule) {
+      Alert.alert(
+        'Cannot check in',
+        getEventCheckInBlockedMessage(event, userId) ?? 'You cannot check in to this event.'
+      );
+      return;
+    }
     if (!canCheckIn) {
       Alert.alert('Cannot check in', locationMessage);
       return;
@@ -72,22 +91,30 @@ export function CrewHomeScreen({ event, onRefresh }: Props) {
     }
   };
 
-  const handleCheckOut = async () => {
+  const handleCheckOut = () => {
     if (!event?.id || actionLoading) return;
-    setActionLoading(true);
-    try {
-      await api.attendance.checkout(event.id);
-      await onRefresh();
-    } catch (e: unknown) {
-      Alert.alert('Check-out failed', e instanceof Error ? e.message : 'Try again.');
-    } finally {
-      setActionLoading(false);
-    }
+    Alert.alert('Check out', 'Are you sure you want to check out from this event?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Check out',
+        onPress: async () => {
+          setActionLoading(true);
+          try {
+            await api.attendance.checkout(event.id);
+            await onRefresh();
+          } catch (e: unknown) {
+            Alert.alert('Check-out failed', e instanceof Error ? e.message : 'Try again.');
+          } finally {
+            setActionLoading(false);
+          }
+        },
+      },
+    ]);
   };
 
-  const canPressCheckIn = !checkinTime && userLocation && !actionLoading;
-  const canPressCheckOut = checkinTime && !checkoutTime && !actionLoading;
-  const showOutsideMessage = !checkinTime && userLocation && !canCheckIn && eventLat != null && eventLon != null;
+  const canPressCheckIn = showCheckIn && userLocation && !actionLoading;
+  const canPressCheckOut = showCheckOut && !actionLoading;
+  const showOutsideMessage = showCheckIn && userLocation && !canCheckIn && eventLat != null && eventLon != null;
 
   return (
     <ThemedView style={styles.container}>
@@ -105,14 +132,20 @@ export function CrewHomeScreen({ event, onRefresh }: Props) {
       <LocationGuard message={locationMessage} visible={showOutsideMessage} />
 
       <View style={styles.buttonWrap}>
-        {!checkinTime ? (
+        {showCheckIn ? (
           <CheckInButton
             onPress={handleCheckIn}
             disabled={!canPressCheckIn}
             loading={actionLoading}
-            label={userLocation ? 'CHECK IN' : 'Getting location…'}
+            label={
+              !userLocation
+                ? 'Getting location…'
+                : isRecheckIn
+                  ? 'CHECK IN AGAIN'
+                  : 'CHECK IN'
+            }
           />
-        ) : !checkoutTime ? (
+        ) : showCheckOut ? (
           <Pressable
             onPress={handleCheckOut}
             disabled={!canPressCheckOut}

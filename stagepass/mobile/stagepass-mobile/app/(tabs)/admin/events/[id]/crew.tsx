@@ -17,6 +17,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
 import { api, type Event as EventType, type User } from '~/services/api';
 import { canManageEventCrew } from '~/utils/eventCrewPermissions';
+import {
+  canLeaderManualCheckIn,
+  getLeaderManualCheckInBlockedMessage,
+} from '@/src/utils/eventEligibility';
 import { AppHeader } from '@/components/AppHeader';
 import { TransferCrewModal } from '@/components/TransferCrewModal';
 import { StagePassButton } from '@/components/StagePassButton';
@@ -97,7 +101,14 @@ export default function AdminEventCrewScreen() {
   };
 
   const handleCheckInOnBehalf = async (userId: number) => {
-    if (!eventId) return;
+    if (!eventId || !event) return;
+    if (!canLeaderManualCheckIn(event)) {
+      Alert.alert(
+        'Cannot check in',
+        getLeaderManualCheckInBlockedMessage(event) ?? 'This event is no longer open for check-in.'
+      );
+      return;
+    }
     setCheckingInId(userId);
     try {
       await api.attendance.checkinOnBehalf(eventId, userId);
@@ -143,6 +154,7 @@ export default function AdminEventCrewScreen() {
   const alreadyAssignedIds = crew.map((c) => c.id);
   const availableUsers = users.filter((u) => !alreadyAssignedIds.includes(u.id));
   const isEnded = event?.status === 'completed' || event?.status === 'closed' || event?.status === 'done_for_the_day';
+  const canManualCheckIn = event != null && canLeaderManualCheckIn(event);
 
   if (loading || !event) {
     return (
@@ -209,7 +221,7 @@ export default function AdminEventCrewScreen() {
                 </View>
                 {!isEnded && canManage && (
                   <View style={styles.crewActions}>
-                    {!member.pivot?.checkin_time && (
+                    {canManualCheckIn && !member.pivot?.checkin_time && (
                       <Pressable
                         onPress={() => handleCheckInOnBehalf(member.id)}
                         disabled={checkingInId === member.id}
