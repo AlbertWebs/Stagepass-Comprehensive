@@ -13,8 +13,11 @@
     "test:watch": "jest --watch",
     "doctor": "npx expo-doctor",
     "build:android": "node node_modules/eas-cli/bin/run build --platform android --profile production",
-    "build:ios": "node node_modules/eas-cli/bin/run build --platform ios --profile production",
-    "build:preview": "node node_modules/eas-cli/bin/run build --profile preview"
+    "build:android:apk": "node node_modules/eas-cli/bin/run build --platform android --profile release",
+    "build:ios": "node node_modules/eas-cli/bin/run build --platform ios --profile release",
+    "build:all": "node node_modules/eas-cli/bin/run build --platform all --profile release",
+    "build:preview": "node node_modules/eas-cli/bin/run build --profile preview",
+    "build:preview:android": "node node_modules/eas-cli/bin/run build --platform android --profile preview"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

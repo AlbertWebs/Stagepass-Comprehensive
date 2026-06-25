@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Notifications\TeamLeaderAssignedNotification;
 use App\Services\AttendanceOvertimeService;
 use App\Services\EventCrewAttendanceService;
+use App\Support\ApiDateTime;
 use App\Support\EventTeamLeaderGate;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -47,7 +48,11 @@ class EventController extends Controller
         }
 
         $event->load(['teamLeader', 'crew']);
-        return response()->json(['event' => $event]);
+        $assignments = EventUser::where('event_id', $event->id)->get()->keyBy('user_id');
+        $data = $event->toArray();
+        ApiDateTime::normalizeEventCrewPivotTimes($data, $assignments);
+
+        return response()->json(['event' => $data]);
     }
 
     public function index(Request $request): JsonResponse
@@ -162,6 +167,7 @@ class EventController extends Controller
             }
             unset($member);
         }
+        ApiDateTime::normalizeEventCrewPivotTimes($data, $assignments);
 
         return response()->json($data);
     }

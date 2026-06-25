@@ -4,6 +4,7 @@
 import { useMemo } from 'react';
 import type { User } from '~/services/api';
 import type { Event as EventType } from '~/services/api';
+import { formatApiTime, parseApiDateTime } from '@/src/utils/formatApiDateTime';
 
 export type ActivityType = 'office_checkin' | 'office_checkout' | 'event_checkin' | 'event_checkout';
 
@@ -19,24 +20,20 @@ export type RecentActivityItem = {
 };
 
 function formatRelativeTime(timeIso: string): string {
-  try {
-    const then = new Date(timeIso);
-    if (Number.isNaN(then.getTime())) return '—';
-    const now = new Date();
-    const diffMs = now.getTime() - then.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24 && then.getDate() === now.getDate()) return `${diffHours}h ago`;
-    if (diffDays === 0) return then.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return then.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  } catch {
-    return '—';
-  }
+  const then = parseApiDateTime(timeIso);
+  if (!then) return '—';
+  const now = new Date();
+  const diffMs = now.getTime() - then.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24 && then.getDate() === now.getDate()) return `${diffHours}h ago`;
+  if (diffDays === 0) return formatApiTime(timeIso);
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return then.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export function useRecentCheckinActivities(
@@ -49,40 +46,30 @@ export function useRecentCheckinActivities(
     const officeCheckinTime = user?.office_checkin_time ?? optimisticOfficeCheckinTime;
 
     if (officeCheckinTime) {
-      try {
-        const t = new Date(officeCheckinTime);
-        const timeStr = Number.isNaN(t.getTime()) ? '—' : t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-        items.push({
-          key: 'office-checkin',
-          title: 'Office check-in',
-          sub: 'Daily shift started',
-          time: timeStr,
-          timeIso: officeCheckinTime,
-          icon: 'location',
-          type: 'office_checkin',
-          relativeTime: formatRelativeTime(officeCheckinTime),
-        });
-      } catch {
-        items.push({ key: 'office-checkin', title: 'Office check-in', sub: 'Daily shift started', time: '—', timeIso: officeCheckinTime, icon: 'location', type: 'office_checkin', relativeTime: '—' });
-      }
+      const timeStr = formatApiTime(officeCheckinTime);
+      items.push({
+        key: 'office-checkin',
+        title: 'Office check-in',
+        sub: 'Daily shift started',
+        time: timeStr,
+        timeIso: officeCheckinTime,
+        icon: 'location',
+        type: 'office_checkin',
+        relativeTime: formatRelativeTime(officeCheckinTime),
+      });
     }
 
     if (user?.office_checkout_time) {
-      try {
-        const t = new Date(user.office_checkout_time);
-        items.push({
-          key: 'office-checkout',
-          title: 'Office checkout',
-          sub: 'Shift ended',
-          time: t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-          timeIso: user.office_checkout_time,
-          icon: 'exit',
-          type: 'office_checkout',
-          relativeTime: formatRelativeTime(user.office_checkout_time),
-        });
-      } catch {
-        items.push({ key: 'office-checkout', title: 'Office checkout', sub: 'Shift ended', time: '—', timeIso: user.office_checkout_time, icon: 'exit', type: 'office_checkout', relativeTime: '—' });
-      }
+      items.push({
+        key: 'office-checkout',
+        title: 'Office checkout',
+        sub: 'Shift ended',
+        time: formatApiTime(user.office_checkout_time),
+        timeIso: user.office_checkout_time,
+        icon: 'exit',
+        type: 'office_checkout',
+        relativeTime: formatRelativeTime(user.office_checkout_time),
+      });
     }
 
     const myAssignment = eventToday?.crew?.find((c: { pivot?: unknown }) => c.pivot);
@@ -91,42 +78,35 @@ export function useRecentCheckinActivities(
       : undefined;
 
     if (pivotData?.checkin_time && eventToday?.name) {
-      try {
-        const t = new Date(pivotData.checkin_time);
-        items.push({
-          key: 'event-checkin',
-          title: `Checked in: ${eventToday.name}`,
-          sub: 'Event',
-          time: t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-          timeIso: pivotData.checkin_time,
-          icon: 'checkmark-circle',
-          type: 'event_checkin',
-          relativeTime: formatRelativeTime(pivotData.checkin_time),
-        });
-      } catch {
-        items.push({ key: 'event-checkin', title: `Checked in: ${eventToday.name}`, sub: 'Event', time: '—', timeIso: pivotData.checkin_time, icon: 'checkmark-circle', type: 'event_checkin', relativeTime: '—' });
-      }
+      items.push({
+        key: 'event-checkin',
+        title: `Checked in: ${eventToday.name}`,
+        sub: 'Event',
+        time: formatApiTime(pivotData.checkin_time),
+        timeIso: pivotData.checkin_time,
+        icon: 'checkmark-circle',
+        type: 'event_checkin',
+        relativeTime: formatRelativeTime(pivotData.checkin_time),
+      });
     }
 
     if (pivotData?.checkout_time && eventToday?.name) {
-      try {
-        const t = new Date(pivotData.checkout_time);
-        items.push({
-          key: 'event-checkout',
-          title: `Checked out: ${eventToday.name}`,
-          sub: 'Event',
-          time: t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-          timeIso: pivotData.checkout_time,
-          icon: 'exit',
-          type: 'event_checkout',
-          relativeTime: formatRelativeTime(pivotData.checkout_time),
-        });
-      } catch {
-        items.push({ key: 'event-checkout', title: `Checked out: ${eventToday.name}`, sub: 'Event', time: '—', timeIso: pivotData.checkout_time, icon: 'exit', type: 'event_checkout', relativeTime: '—' });
-      }
+      items.push({
+        key: 'event-checkout',
+        title: `Checked out: ${eventToday.name}`,
+        sub: 'Event',
+        time: formatApiTime(pivotData.checkout_time),
+        timeIso: pivotData.checkout_time,
+        icon: 'exit',
+        type: 'event_checkout',
+        relativeTime: formatRelativeTime(pivotData.checkout_time),
+      });
     }
 
-    items.sort((a, b) => new Date(b.timeIso).getTime() - new Date(a.timeIso).getTime());
+    items.sort(
+      (a, b) =>
+        (parseApiDateTime(b.timeIso)?.getTime() ?? 0) - (parseApiDateTime(a.timeIso)?.getTime() ?? 0),
+    );
     return items;
   }, [user?.office_checkin_time, user?.office_checkout_time, optimisticOfficeCheckinTime, eventToday?.name, eventToday?.crew]);
 }

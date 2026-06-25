@@ -46,6 +46,7 @@ import { useGeofence } from '~/hooks/useGeofence';
 import { api, type User as ApiUser, type Payment } from '~/services/api';
 import type { Event as EventType } from '~/services/api';
 import { canCheckInEligibility, getEventCheckInBlockedMessage } from '@/src/utils/eventEligibility';
+import { formatApiTime, parseApiDateTime } from '@/src/utils/formatApiDateTime';
 import {
   DEFAULT_HOMEPAGE_PREFERENCES,
   HOMEPAGE_SECTION_KEYS,
@@ -402,7 +403,7 @@ export function HomeDashboardScreen({
   const showEventCheckedOutCard = (() => {
     if (!hasEventCheckedOut || !pivotData?.checkout_time) return false;
     try {
-      return isSameLocalDay(new Date(pivotData.checkout_time), new Date());
+      return isSameLocalDay(parseApiDateTime(pivotData.checkout_time) ?? new Date(0), new Date());
     } catch {
       return false;
     }
@@ -410,51 +411,24 @@ export function HomeDashboardScreen({
   const hasCheckedIn = hasEventCheckedIn || officeCheckedInToday;
   const checkinTimeStr = (() => {
     if (pivotData?.checkin_time) {
-      try {
-        const t = new Date(pivotData.checkin_time);
-        return t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-      } catch {
-        return pivotData.checkin_time;
-      }
+      return formatApiTime(pivotData.checkin_time);
     }
     if (user?.office_checkin_time) {
-      try {
-        const t = new Date(user.office_checkin_time);
-        return t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-      } catch {
-        return user.office_checkin_time;
-      }
+      return formatApiTime(user.office_checkin_time);
     }
     return '';
   })();
   const checkoutTimeStr = (() => {
     if (pivotData?.checkout_time) {
-      try {
-        const t = new Date(pivotData.checkout_time);
-        return t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-      } catch {
-        return pivotData.checkout_time;
-      }
+      return formatApiTime(pivotData.checkout_time);
     }
     return '';
   })();
   const officeCheckinTimeStr = user?.office_checkin_time
-    ? (() => {
-        try {
-          return new Date(user.office_checkin_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-        } catch {
-          return user.office_checkin_time;
-        }
-      })()
+    ? formatApiTime(user.office_checkin_time)
     : '';
   const officeCheckoutTimeStr = user?.office_checkout_time
-    ? (() => {
-        try {
-          return new Date(user.office_checkout_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-        } catch {
-          return user.office_checkout_time;
-        }
-      })()
+    ? formatApiTime(user.office_checkout_time)
     : '';
   const officeExtraHours = Number(user?.office_extra_hours ?? 0);
   const officeTotalHours = Number(user?.office_total_hours ?? 0);

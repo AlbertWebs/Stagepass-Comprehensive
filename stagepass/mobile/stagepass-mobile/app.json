@@ -12,7 +12,8 @@
       "bundleIdentifier": "co.ke.stagepass.mobile",
       "supportsTablet": true,
       "infoPlist": {
-        "NSFaceIDUsageDescription": "StagePass uses Face ID so you can sign in quickly and securely."
+        "NSFaceIDUsageDescription": "StagePass uses Face ID so you can sign in quickly and securely.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -24,7 +25,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "softwareKeyboardLayoutMode": "resize",
-      "versionCode": 3
+      "versionCode": 4
     },
     "web": {
       "output": "static",

@@ -27,6 +27,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
 import { api, type Event as EventType, type User } from '~/services/api';
+import { formatApiTime, parseApiDateTime } from '@/src/utils/formatApiDateTime';
 import { useAppRole } from '~/hooks/useAppRole';
 import {
   canApproveEarnedAllowancesForEvent,
@@ -204,7 +205,7 @@ export default function EventDetailScreen() {
       };
     }
 
-    const start = new Date(checkinTime).getTime();
+    const start = parseApiDateTime(checkinTime)?.getTime() ?? NaN;
     const now = Date.now();
     const minutes = Math.max(0, Math.floor((now - start) / 60000));
     const totalHours = minutes / 60;
@@ -803,9 +804,7 @@ export default function EventDetailScreen() {
               <View style={[styles.liveHoursCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
                 <ThemedText style={[styles.liveHoursValue, { color: colors.textSecondary }]}>
                   Check-in:{' '}
-                  {checkinTime
-                    ? new Date(checkinTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-                    : '—'}
+                  {checkinTime ? formatApiTime(checkinTime) : '—'}
                 </ThemedText>
                 <ThemedText style={[styles.liveHoursValue, { color: colors.textSecondary }]}>
                   Duration: {formatHoursLabel(sessionStats.totalHours)}

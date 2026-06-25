@@ -19,6 +19,16 @@
       "ios": {
         "resourceClass": "m-medium"
       }
+    },
+    "release": {
+      "channel": "production",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "resourceClass": "m-medium"
+      }
     }
   }
 }

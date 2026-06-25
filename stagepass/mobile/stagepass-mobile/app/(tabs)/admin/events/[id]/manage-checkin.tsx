@@ -20,6 +20,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { formatApiTime } from '@/src/utils/formatApiDateTime';
 import {
   canLeaderManualCheckIn,
   getLeaderManualCheckInBlockedMessage,
@@ -46,7 +47,13 @@ export default function ManageCheckInScreen() {
       setEvent(eventRes);
       try {
         const statusRes = await api.events.eventCrewStatus(eventId);
-        setCrewStatus(Array.isArray(statusRes?.data) ? statusRes.data : []);
+        const rows = Array.isArray(statusRes?.data) ? statusRes.data : [];
+        setCrewStatus(
+          rows.map((member) => ({
+            ...member,
+            checkin_time: member.checkin_time ? formatApiTime(member.checkin_time) : undefined,
+          })),
+        );
       } catch {
         // Backend may not have crew-status endpoint yet: build from event.crew
         const crew = eventRes?.crew ?? [];
@@ -59,12 +66,7 @@ export default function ManageCheckInScreen() {
           else if (hasCheckin) status = 'checked_in';
           let checkinTime: string | undefined;
           if (pivot?.checkin_time) {
-            try {
-              const d = new Date(pivot.checkin_time);
-              checkinTime = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-            } catch {
-              checkinTime = pivot.checkin_time;
-            }
+            checkinTime = formatApiTime(pivot.checkin_time);
           }
           return { user_id: c.id, name: c.name, status, checkin_time: checkinTime };
         });

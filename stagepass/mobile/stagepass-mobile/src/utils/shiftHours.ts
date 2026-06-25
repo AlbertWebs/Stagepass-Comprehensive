@@ -1,4 +1,6 @@
 /** Wall-clock shift hours from check-in (matches server AttendanceOvertimeService: 8h standard cap, rest extra). */
+import { parseApiDateTime } from '@/src/utils/formatApiDateTime';
+
 export const STANDARD_WORK_MINUTES = 480;
 
 export type ShiftHoursStatus = 'within_standard' | 'in_extra_hours';
@@ -12,7 +14,7 @@ export function computeWallClockShiftHours(checkinIso: string | undefined, nowMs
   if (!checkinIso) {
     return { totalHours: 0, standardHours: 0, extraHours: 0, status: 'within_standard' };
   }
-  const start = new Date(checkinIso).getTime();
+  const start = parseApiDateTime(checkinIso)?.getTime() ?? NaN;
   if (!Number.isFinite(start)) {
     return { totalHours: 0, standardHours: 0, extraHours: 0, status: 'within_standard' };
   }

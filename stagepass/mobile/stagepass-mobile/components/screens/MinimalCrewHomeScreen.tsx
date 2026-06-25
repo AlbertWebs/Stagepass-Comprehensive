@@ -65,13 +65,12 @@ function getTimeGreeting(): 'Good morning' | 'Good afternoon' | 'Good evening' {
   return 'Good evening';
 }
 
-/** Backend may return ISO or `Y-m-d H:i:s`. */
+import { formatApiTime } from '@/src/utils/formatApiDateTime';
+
 function formatShortTime(value?: string | null): string | null {
-  if (!value || typeof value !== 'string') return null;
-  const normalized = value.includes('T') ? value : value.replace(' ', 'T');
-  const d = new Date(normalized);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (!value) return null;
+  const formatted = formatApiTime(value);
+  return formatted === '—' ? null : formatted;
 }
 
 export function MinimalCrewHomeScreen({ onRefresh }: Props) {

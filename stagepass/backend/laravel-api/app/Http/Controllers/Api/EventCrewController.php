@@ -9,6 +9,7 @@ use App\Models\ReminderLog;
 use App\Models\User;
 use App\Services\AttendanceOvertimeService;
 use App\Services\EventCrewAttendanceService;
+use App\Support\ApiDateTime;
 use App\Support\EventAttendanceEligibility;
 use App\Support\EventTeamLeaderGate;
 use Carbon\Carbon;
@@ -186,9 +187,10 @@ class EventCrewController extends Controller
             }
             $checkinFormatted = null;
             if ($checkinTime) {
-                $checkinFormatted = $checkinTime instanceof Carbon
-                    ? $checkinTime->format('g:i A')
-                    : Carbon::parse($checkinTime)->format('g:i A');
+                $carbon = $checkinTime instanceof Carbon
+                    ? $checkinTime->copy()
+                    : Carbon::parse($checkinTime);
+                $checkinFormatted = ApiDateTime::toIso($carbon);
             }
             $pausedForMinutes = (int) ($pivot->pause_duration ?? 0);
             if ($pivot->is_paused && $pivot->pause_start_time) {
