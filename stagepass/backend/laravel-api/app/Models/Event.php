@@ -80,6 +80,17 @@ class Event extends Model
         return $this->date->format('Y-m-d') <= $otherEnd && $other->date->format('Y-m-d') <= $thisEnd;
     }
 
+    /** Human-readable date or date range for messages and UI. */
+    public function dateRangeLabel(): string
+    {
+        $start = $this->date->format('M j, Y');
+        if ($this->end_date && $this->end_date->format('Y-m-d') !== $this->date->format('Y-m-d')) {
+            return $start.' – '.$this->end_date->format('M j, Y');
+        }
+
+        return $start;
+    }
+
     public function teamLeader(): BelongsTo
     {
         return $this->belongsTo(User::class, 'team_leader_id');

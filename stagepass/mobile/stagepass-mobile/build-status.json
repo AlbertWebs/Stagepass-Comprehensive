@@ -1,0 +1,57 @@
+﻿node : Γÿà eas-cli@20.3.0 is now available.
+At C:\Users\Juliet\AppData\Local\Temp\ps-script-c634529c-fd50-459f-93a3-c9c911c04476.ps1:80 char:77
++ ... ss-mobile"; node node_modules/eas-cli/bin/run build:view d8b5617b-1f2 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Γÿà eas-cli@20.3.0 is now available.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+To upgrade, run:
+npm install -g eas-cli
+Proceeding with outdated version.
+
+Found eas-cli in your project dependencies.
+It's recommended to use the "cli.version" field in eas.json to enforce the eas-cli version for your project.
+Learn more: https://github.com/expo/eas-cli#enforcing-eas-cli-version-for-your-project
+
+- Fetching the buildΓÇª
+ΓêÜ Found a matching build for the project @albertmuhatia/stagepass-mobile
+{
+  "id": "d8b5617b-1f25-47bd-be33-3699146bf3b2",
+  "status": "IN_PROGRESS",
+  "platform": "ANDROID",
+  "artifacts": {},
+  "fingerprint": {
+    "id": "019efe61-cfc9-7186-bdfa-88484c5894d9",
+    "hash": "e2f440856cc75682a359470ed900439a53ece6fb"
+  },
+  "initiatingActor": {
+    "id": "3e3d7c32-3739-418a-8783-bbbf966021a5",
+    "displayName": "albertmuhatia"
+  },
+  "logFiles": [
+    "https://storage.googleapis.com/eas-workflows-production/logs/9c5ebab6-be53-4719-b5ef-704d71b23691/d8b5617b-1f25-47bd-be33-3699146bf3b2/2026-06-25T10%3A48%3A19Z-7cf0497a-bb97-4bc5-bf88-9f1e7b39b459.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260625%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260625T104845Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=033fcf56dd2e342604cecedea6e82dd16a04662a064deef03ef2b74fbea2baa8c456766f27de80f13d9521abfa6288298061a0b8fc618c6d1f0239604c5643249f2eac94b79d6d6e84ff6b42b30e23a013a8878f855b14cffaf7804f462ba599bacbeaa5315c92e0225171118b5f30a4caa10bc6fe96536c2f296ae6157e80811d84bb40a788fcd8cba7b1c2880d7945dfc77f39d4b28616ce9a1440c6438ec2e4df71beb057ce5c2658973f71dec85050b5b2854b2ea022200391a32c66b2747634b4c23e7146f098cefa7390fd4ee343c498a87707fc909322b3ad9ba6275794266ae7a0044a3019024715d4055f1a31125b6473dbd669188f9c108aa8dfa7"
+  ],
+  "project": {
+    "id": "9c5ebab6-be53-4719-b5ef-704d71b23691",
+    "name": "stagepass-mobile",
+    "slug": "stagepass-mobile",
+    "ownerAccount": {
+      "id": "eb715355-6d54-471b-895c-3a067e3d6b9f",
+      "name": "albertmuhatia"
+    }
+  },
+  "channel": "preview",
+  "distribution": "INTERNAL",
+  "buildProfile": "preview",
+  "sdkVersion": "54.0.0",
+  "appVersion": "1.0.1",
+  "appBuildVersion": "4",
+  "runtimeVersion": "1.0.1",
+  "gitCommitHash": "adf8cfde02d20d6a5f28047cac909582d96d5c05",
+  "gitCommitMessage": "..",
+  "priority": "NORMAL",
+  "createdAt": "2026-06-25T10:44:43.557Z",
+  "updatedAt": "2026-06-25T10:48:28.359Z",
+  "expirationDate": "2026-07-09T10:44:43.583Z",
+  "isForIosSimulator": false
+}

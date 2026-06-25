@@ -77,12 +77,36 @@ class EventCrewController extends Controller
             ->where('event_id', '!=', $event->id)
             ->with('event')
             ->get();
-        foreach ($otherAssignments as $assignment) {
-            if ($event->overlapsWith($assignment->event)) {
-                return response()->json([
-                    'message' => 'This person is already assigned to an event that overlaps these dates. They are not available for a new assignment but can be transferred from that event if needed.',
-                ], 422);
-            }
+
+        $conflictingEvents = $otherAssignments
+            ->filter(fn (EventUser $assignment) => $assignment->event && $event->overlapsWith($assignment->event))
+            ->map(fn (EventUser $assignment) => $assignment->event)
+            ->unique('id')
+            ->values();
+
+        if ($conflictingEvents->isNotEmpty()) {
+            $eventLabels = $conflictingEvents->map(
+                fn (Event $other) => sprintf('%s (%s)', $other->name, $other->dateRangeLabel())
+            )->all();
+
+            $eventList = count($eventLabels) === 1
+                ? $eventLabels[0]
+                : implode('; ', $eventLabels);
+
+            $message = count($eventLabels) === 1
+                ? "This person is already assigned to {$eventList}, which overlaps this event's dates. They are not available for a new assignment but can be transferred from that event if needed."
+                : "This person is already assigned to overlapping events: {$eventList}. They are not available for a new assignment but can be transferred from those events if needed.";
+
+            return response()->json([
+                'message' => $message,
+                'conflicting_events' => $conflictingEvents->map(fn (Event $other) => [
+                    'id' => $other->id,
+                    'name' => $other->name,
+                    'date' => $other->date->format('Y-m-d'),
+                    'end_date' => $other->end_date?->format('Y-m-d'),
+                    'date_range_label' => $other->dateRangeLabel(),
+                ])->values(),
+            ], 422);
         }
 
         $event->crew()->attach($request->user_id, [
