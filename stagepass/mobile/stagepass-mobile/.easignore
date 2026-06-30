@@ -9,5 +9,6 @@
 coverage
 .expo/web
 .expo/types
+.expo-export-check
 *.log
 .DS_Store

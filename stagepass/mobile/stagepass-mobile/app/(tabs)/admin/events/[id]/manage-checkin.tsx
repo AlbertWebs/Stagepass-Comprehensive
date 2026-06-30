@@ -24,7 +24,7 @@ import { formatApiTime } from '@/src/utils/formatApiDateTime';
 import {
   canLeaderManualCheckIn,
   getLeaderManualCheckInBlockedMessage,
-  isEndedEventStatus,
+  isPermanentlyEndedEventStatus,
 } from '@/src/utils/eventEligibility';
 
 export default function ManageCheckInScreen() {
@@ -176,7 +176,7 @@ export default function ManageCheckInScreen() {
     }
   };
 
-  const isEnded = event ? isEndedEventStatus(event.status) || !canLeaderManualCheckIn(event) : true;
+  const isEnded = event ? isPermanentlyEndedEventStatus(event.status) || !canLeaderManualCheckIn(event) : true;
   const pending = crewStatus.filter((c) => c.status !== 'checked_in' && c.status !== 'checked_out');
   const checkedIn = crewStatus.filter((c) => c.status === 'checked_in');
 

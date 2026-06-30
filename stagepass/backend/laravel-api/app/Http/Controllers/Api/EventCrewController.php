@@ -26,31 +26,7 @@ class EventCrewController extends Controller
 
     private function canManageCrew(Request $request, Event $event): bool
     {
-        $user = $request->user();
-        if ($user->hasRole('super_admin') || $user->hasRole('director') || $user->hasRole('admin')) {
-            return true;
-        }
-        // Event creators should always be able to manage crew for events they created.
-        if ((int) $event->created_by_id === (int) $user->id) {
-            return true;
-        }
-        if ((int) $event->team_leader_id === (int) $user->id) {
-            return true;
-        }
-        // Event not yet assigned a team leader: allow onboarded team_leader role users who created the event or are on crew.
-        if ($user->hasRole('team_leader') && blank($event->team_leader_id)) {
-            return (int) $event->created_by_id === (int) $user->id
-                || $event->crew()->whereKey($user->id)->exists();
-        }
-        // Crew pivot "Team Leader" when no official events.team_leader_id (admin often sets role text only).
-        if (blank($event->team_leader_id)) {
-            $assignment = $event->eventCrew()->where('user_id', $user->id)->first();
-            if ($assignment && EventTeamLeaderGate::pivotRoleLooksLikeTeamLeader($assignment->role_in_event)) {
-                return true;
-            }
-        }
-
-        return false;
+        return EventTeamLeaderGate::userCanManageEvent($event, $request->user());
     }
 
     public function assignUser(Request $request, Event $event): JsonResponse
@@ -59,7 +35,7 @@ class EventCrewController extends Controller
             return response()->json(['message' => 'You cannot add crew to this event.'], 403);
         }
 
-        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED, Event::STATUS_DONE_FOR_DAY], true)) {
+        if (EventAttendanceEligibility::isPermanentlyEnded($event)) {
             return response()->json(['message' => 'Cannot add crew to an event that is already ended.'], 422);
         }
 
@@ -145,7 +121,7 @@ class EventCrewController extends Controller
             return response()->json(['message' => 'You cannot transfer crew for this event.'], 403);
         }
 
-        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED, Event::STATUS_DONE_FOR_DAY], true)) {
+        if (EventAttendanceEligibility::isPermanentlyEnded($event)) {
             return response()->json(['message' => 'Cannot transfer crew from an event that is already ended.'], 422);
         }
 
@@ -158,7 +134,7 @@ class EventCrewController extends Controller
         if ($targetEvent->id === $event->id) {
             return response()->json(['message' => 'Source and target event must be different.'], 422);
         }
-        if (in_array($targetEvent->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED, Event::STATUS_DONE_FOR_DAY], true)) {
+        if (EventAttendanceEligibility::isPermanentlyEnded($targetEvent)) {
             return response()->json(['message' => 'Cannot transfer crew to an event that is already ended.'], 422);
         }
 
@@ -260,9 +236,12 @@ class EventCrewController extends Controller
             return response()->json(['message' => 'You cannot manage attendance for this event.'], 403);
         }
 
-        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED, Event::STATUS_DONE_FOR_DAY], true)) {
+        if (EventAttendanceEligibility::attendanceBlocked($event)) {
             return response()->json(['message' => 'Cannot record attendance for an event that is already ended.'], 422);
         }
+
+        EventAttendanceEligibility::reopenIfNewAttendanceDay($event);
+        $event->refresh();
 
         if (! EventAttendanceEligibility::canCheckIn($event)) {
             return response()->json(['message' => 'This event’s scheduled time has already passed. Check-in is no longer available.'], 422);

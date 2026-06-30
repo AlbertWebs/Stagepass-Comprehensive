@@ -9,6 +9,7 @@ use App\Models\EventUser;
 use App\Models\Setting;
 use App\Services\AttendanceOvertimeService;
 use App\Services\EventCrewAttendanceService;
+use App\Services\MealAllowanceService;
 use App\Services\GeofenceService;
 use App\Support\EventAttendanceEligibility;
 use App\Support\OfficeCheckinRequiredDays;
@@ -23,7 +24,8 @@ class AttendanceController extends Controller
     public function __construct(
         private GeofenceService $geofence,
         private AttendanceOvertimeService $overtime,
-        private EventCrewAttendanceService $eventCrewAttendance
+        private EventCrewAttendanceService $eventCrewAttendance,
+        private MealAllowanceService $mealAllowances
     ) {}
 
     /**
@@ -213,9 +215,12 @@ class AttendanceController extends Controller
         $event = Event::findOrFail($request->event_id);
         $user = $request->user();
 
-        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED, Event::STATUS_DONE_FOR_DAY], true)) {
+        if (EventAttendanceEligibility::attendanceBlocked($event)) {
             return response()->json(['message' => 'Cannot check in to an event that is already ended.'], 422);
         }
+
+        EventAttendanceEligibility::reopenIfNewAttendanceDay($event);
+        $event->refresh();
 
         if (! EventAttendanceEligibility::canCheckIn($event)) {
             return response()->json(['message' => 'This event’s scheduled time has already passed. Check-in is no longer available.'], 422);
@@ -377,9 +382,12 @@ class AttendanceController extends Controller
             ->firstOrFail();
 
         $event = $assignment->event;
-        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED, Event::STATUS_DONE_FOR_DAY], true)) {
+        if (EventAttendanceEligibility::attendanceBlocked($event)) {
             return response()->json(['message' => 'Cannot check out from an event that is already ended.'], 422);
         }
+
+        EventAttendanceEligibility::reopenIfNewAttendanceDay($event);
+        $event->refresh();
 
         if (! $assignment->checkin_time) {
             return response()->json(['message' => 'You have not checked in yet'], 422);
@@ -408,6 +416,15 @@ class AttendanceController extends Controller
                 $pausedMinutes
             );
             $assignment->refresh();
+
+            $this->eventCrewAttendance->updateMealEligibility(
+                $event,
+                (int) $assignment->user_id,
+                Carbon::parse($assignment->checkin_time),
+                Carbon::parse($session->checkout_time),
+                $session->work_date?->format('Y-m-d') ?? $this->eventCrewAttendance->workDateForEventSession($assignment->checkin_time)
+            );
+            $this->mealAllowances->tryGrantDinnerOnCheckout($event, $assignment, Carbon::parse($session->checkout_time));
 
             event(new \App\Events\CrewCheckedOut($assignment, $session));
 
@@ -445,6 +462,7 @@ class AttendanceController extends Controller
             $checkout,
             $this->eventCrewAttendance->workDateForEventSession($assignment->checkin_time)
         );
+        $this->mealAllowances->tryGrantDinnerOnCheckout($event, $assignment, $checkout);
 
         event(new \App\Events\CrewCheckedOut($assignment, null));
 

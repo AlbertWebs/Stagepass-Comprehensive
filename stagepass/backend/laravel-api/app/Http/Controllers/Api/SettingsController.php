@@ -50,6 +50,8 @@ class SettingsController extends Controller
         'meal_allowance_breakfast_amount',
         'meal_allowance_lunch_amount',
         'meal_allowance_dinner_amount',
+        'meal_allowance_leader_amount',
+        'meal_allowance_crew_amount',
     ];
     /**
      * Minimal app policy for unauthenticated clients (e.g. login screen before token).

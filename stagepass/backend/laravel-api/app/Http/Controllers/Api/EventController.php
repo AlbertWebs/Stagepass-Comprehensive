@@ -10,6 +10,7 @@ use App\Notifications\TeamLeaderAssignedNotification;
 use App\Services\AttendanceOvertimeService;
 use App\Services\EventCrewAttendanceService;
 use App\Support\ApiDateTime;
+use App\Support\EventAttendanceEligibility;
 use App\Support\EventTeamLeaderGate;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -208,10 +209,18 @@ class EventController extends Controller
             return response()->json(['message' => 'Only the team leader or an admin can close this event for the day.'], 403);
         }
 
-        if ($event->status === Event::STATUS_DONE_FOR_DAY) {
-            return response()->json(['message' => 'This event is already marked done for the day.'], 422);
+        if (EventAttendanceEligibility::isPermanentlyEnded($event)) {
+            return response()->json(['message' => 'This event is already ended.'], 422);
         }
-        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED], true)) {
+
+        if ($event->status === Event::STATUS_DONE_FOR_DAY) {
+            $tz = EventAttendanceEligibility::tz();
+            $today = Carbon::now($tz)->toDateString();
+            $closedDay = $event->closed_at?->timezone($tz)->toDateString();
+            if ($closedDay === $today) {
+                return response()->json(['message' => 'This event is already marked done for the day.'], 422);
+            }
+        } elseif (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED], true)) {
             return response()->json(['message' => 'This event is already ended.'], 422);
         }
 
@@ -273,6 +282,10 @@ class EventController extends Controller
 
     public function update(Request $request, Event $event): JsonResponse
     {
+        if (! EventTeamLeaderGate::userCanManageEvent($event, $request->user())) {
+            return response()->json(['message' => 'You cannot update this event.'], 403);
+        }
+
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
             'description' => 'nullable|string',
@@ -313,9 +326,14 @@ class EventController extends Controller
         return response()->json($event->fresh()->load(['teamLeader', 'client']));
     }
 
-    public function destroy(Event $event): JsonResponse
+    public function destroy(Request $request, Event $event): JsonResponse
     {
+        if (! EventTeamLeaderGate::userCanManageEvent($event, $request->user())) {
+            return response()->json(['message' => 'You cannot delete this event.'], 403);
+        }
+
         $event->delete();
+
         return response()->json(null, 204);
     }
 }

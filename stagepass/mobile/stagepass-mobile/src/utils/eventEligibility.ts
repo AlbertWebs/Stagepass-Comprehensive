@@ -3,6 +3,7 @@
  * Used for UI: badges, disabling check-in/out, status copy.
  */
 import type { Event } from '~/services/api';
+import { parseApiDateTime } from '@/src/utils/formatApiDateTime';
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
@@ -74,7 +75,7 @@ export function allowsAnotherAttendanceDay(
   userId: number | undefined,
   now: Date = new Date()
 ): boolean {
-  if (isEndedEventStatus(event.status)) return false;
+  if (eventAttendanceBlocked(event, now)) return false;
   if (eventCalendarDateHasPassed(event, now)) return false;
   if (!isWithinEventCalendarRange(event, now)) return false;
 
@@ -177,11 +178,40 @@ export function getScheduledStartMs(event: Event): number {
   return new Date(yy, mm - 1, dd, h || 0, m || 0, 0, 0).getTime();
 }
 
+export function isPermanentlyEndedEventStatus(status: string | undefined): boolean {
+  const s = String(status || '')
+    .trim()
+    .toLowerCase();
+  return s === 'completed' || s === 'closed';
+}
+
+/** Includes completed/closed and same-calendar-day "done for the day". */
 export function isEndedEventStatus(status: string | undefined): boolean {
   const s = String(status || '')
     .trim()
     .toLowerCase();
-  return s === 'completed' || s === 'closed' || s === 'done_for_the_day';
+  return isPermanentlyEndedEventStatus(s) || s === 'done_for_the_day';
+}
+
+/** True when check-in/out should be blocked (matches backend attendanceBlocked). */
+export function doneForDayBlocksAttendance(event: Event, now: Date = new Date()): boolean {
+  const s = String(event.status || '')
+    .trim()
+    .toLowerCase();
+  if (s !== 'done_for_the_day') return false;
+  const closedAt = event.closed_at;
+  if (!closedAt) return true;
+  const closed = parseApiDateTime(closedAt);
+  if (!closed) return true;
+  const closedYmd = localDateYmd(closed);
+  const today = localDateYmd(now);
+  if (today === closedYmd) return true;
+  return !isWithinEventCalendarRange(event, now);
+}
+
+export function eventAttendanceBlocked(event: Event, now: Date = new Date()): boolean {
+  if (isPermanentlyEndedEventStatus(event.status)) return true;
+  return doneForDayBlocksAttendance(event, now);
 }
 
 export function eventTimeHasPassed(event: Event, now: Date = new Date()): boolean {
@@ -205,7 +235,7 @@ export function getAssignmentPivot(event: Event, userId: number | undefined) {
 }
 
 export function isActiveNow(event: Event, now: Date = new Date()): boolean {
-  if (isEndedEventStatus(event.status)) return false;
+  if (eventAttendanceBlocked(event, now)) return false;
   const t = now.getTime();
   const start = getScheduledStartMs(event);
   const end = getScheduledEndMs(event);
@@ -240,7 +270,9 @@ export function getMobileActivityBadge(event: Event, userId: number | undefined,
   const s = String(event.status || '')
     .trim()
     .toLowerCase();
-  if (s === 'done_for_the_day') return { key: 'done_for_the_day', label: LABEL.done_for_the_day };
+  if (s === 'done_for_the_day' && doneForDayBlocksAttendance(event, now)) {
+    return { key: 'done_for_the_day', label: LABEL.done_for_the_day };
+  }
   if (s === 'closed') return { key: 'closed', label: LABEL.closed };
   if (s === 'completed') return { key: 'completed', label: LABEL.completed };
 
@@ -279,7 +311,7 @@ export function canRecheckInAfterCheckout(
 
 export function canCheckInEligibility(event: Event, userId: number | undefined, now: Date = new Date()): boolean {
   if (!userAssignedToEvent(event, userId)) return false;
-  if (isEndedEventStatus(event.status)) return false;
+  if (eventAttendanceBlocked(event, now)) return false;
   const pivot = getAssignmentPivot(event, userId);
   if (pivot?.checkin_time && !pivot?.checkout_time) return false;
   if (pivot?.checkin_time && pivot?.checkout_time) {
@@ -294,7 +326,10 @@ export function getEventCheckInBlockedMessage(
   userId: number | undefined,
   now: Date = new Date()
 ): string | null {
-  if (isEndedEventStatus(event.status)) {
+  if (eventAttendanceBlocked(event, now)) {
+    if (doneForDayBlocksAttendance(event, now)) {
+      return 'This event is closed for today. Check-in will be available again on the next day of the event.';
+    }
     return 'This event is no longer open for check-in.';
   }
   if (eventCalendarDateHasPassed(event, now)) {
@@ -320,7 +355,10 @@ export function getEventCheckInBlockedMessage(
 }
 
 export function getLeaderManualCheckInBlockedMessage(event: Event, now: Date = new Date()): string | null {
-  if (isEndedEventStatus(event.status)) {
+  if (eventAttendanceBlocked(event, now)) {
+    if (doneForDayBlocksAttendance(event, now)) {
+      return 'This event is closed for today. Check-in will be available again on the next day of the event.';
+    }
     return 'This event is no longer open for check-in.';
   }
   if (eventCalendarDateHasPassed(event, now)) {
@@ -334,7 +372,7 @@ export function getLeaderManualCheckInBlockedMessage(event: Event, now: Date = n
 
 export function canCheckOutEligibility(event: Event, userId: number | undefined, now: Date = new Date()): boolean {
   if (!userAssignedToEvent(event, userId)) return false;
-  if (isEndedEventStatus(event.status)) return false;
+  if (eventAttendanceBlocked(event, now)) return false;
   const pivot = getAssignmentPivot(event, userId);
   if (!pivot?.checkin_time || pivot?.checkout_time) return false;
   return true;
@@ -342,7 +380,7 @@ export function canCheckOutEligibility(event: Event, userId: number | undefined,
 
 /** Team leader manual check-in: same time/status gates as self check-in, without assignment to the leader. */
 export function canLeaderManualCheckIn(event: Event, now: Date = new Date()): boolean {
-  if (isEndedEventStatus(event.status)) return false;
+  if (eventAttendanceBlocked(event, now)) return false;
   if (isCheckInBlockedBySchedule(event, now)) return false;
   return true;
 }

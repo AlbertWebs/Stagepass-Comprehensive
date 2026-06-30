@@ -273,7 +273,7 @@ async function request<T>(
       try {
         const res = await fetch(urlStr, { ...init, headers, signal: controller.signal });
         clearTimeout(timeout);
-        const data = await res.json().catch(() => ({}));
+        const data = res.status === 204 ? {} : await res.json().catch(() => ({}));
         if (LOG) {
           console.warn('[Stagepass API]', res.status, path, res.ok ? 'OK' : 'FAIL', data?.message ?? '');
         }

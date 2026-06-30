@@ -15,7 +15,8 @@ import { ThemedView } from '@/components/themed-view';
 import { themeBlue, themeYellow, StatusColors } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { useAppRole } from '~/hooks/useAppRole';
-import { api, type EarnedAllowanceDetail, type Event as EventType, type Payment } from '~/services/api';
+import { api, type EarnedAllowanceDetail, type Event as EventType, type Payment, type User } from '~/services/api';
+import { canManageEventCrew } from '@/src/utils/eventCrewPermissions';
 
 const U = { sm: 8, md: 12, lg: 16, xl: 20, section: 24 };
 const CARD_RADIUS = 16;
@@ -34,7 +35,8 @@ function isEventToday(event: EventType, today: string): boolean {
 export default function AllowancesScreen() {
   const router = useRouter();
   const role = useAppRole();
-  const currentUserId = useSelector((s: { auth: { user: { id?: number } | null } }) => s.auth.user?.id ?? null);
+  const currentUser = useSelector((s: { auth: { user: User | null } }) => s.auth.user);
+  const currentUserId = currentUser?.id ?? null;
   const { colors, isDark } = useStagePassTheme();
   const [animateKey, setAnimateKey] = useState(0);
   const [approvedAllowances, setApprovedAllowances] = useState<Payment[]>([]);
@@ -67,12 +69,7 @@ export default function AllowancesScreen() {
       setApprovedAllowances(list);
 
       const events = Array.isArray(eventsRes?.data) ? eventsRes.data : [];
-      const leaderEvents = events.filter(
-        (e) =>
-          (currentUserId != null && e.team_leader_id === currentUserId) ||
-          e.team_leader?.id === currentUserId ||
-          e.teamLeader?.id === currentUserId
-      );
+      const leaderEvents = events.filter((e) => canManageEventCrew(currentUser, e));
       setEventsForAllocation(leaderEvents);
       const todayEvent = events.find((e) => isEventToday(e, today));
       if (todayEvent?.daily_allowance != null) {
@@ -100,9 +97,11 @@ export default function AllowancesScreen() {
           return bt - at;
         });
       setAllocatedAllowances(mine);
-      if (role === 'team_leader') {
+      if (leaderEvents.length > 0) {
         const typesRes = await api.payments.allowanceTypes();
         setAllowanceTypes(Array.isArray(typesRes?.data) ? typesRes.data.map((t) => ({ id: t.id, name: t.name })) : []);
+      } else {
+        setAllowanceTypes([]);
       }
     } catch {
       setApprovedAllowances([]);
@@ -114,10 +113,12 @@ export default function AllowancesScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [currentUserId, role]);
+  }, [currentUser, currentUserId]);
+
+  const canAllocateAllowances = eventsForAllocation.length > 0;
 
   useEffect(() => {
-    if (!selectedEventId || role !== 'team_leader') {
+    if (!selectedEventId || !canAllocateAllowances) {
       setEventCrew([]);
       return;
     }
@@ -128,7 +129,7 @@ export default function AllowancesScreen() {
         setEventCrew(crew);
       })
       .catch(() => setEventCrew([]));
-  }, [selectedEventId, role]);
+  }, [selectedEventId, canAllocateAllowances]);
 
   const resetAllocationForm = () => {
     setSelectedEventId(null);
@@ -233,7 +234,7 @@ export default function AllowancesScreen() {
             </View>
             <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>My allowances</ThemedText>
           </View>
-          {role === 'team_leader' ? (
+          {canAllocateAllowances ? (
             <StagePassButton
               title="Allocate allowance to crew"
               onPress={() => setAllocationModalVisible(true)}

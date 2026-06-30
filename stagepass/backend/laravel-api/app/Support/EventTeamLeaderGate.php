@@ -34,4 +34,33 @@ final class EventTeamLeaderGate
 
         return self::pivotRoleLooksLikeTeamLeader($role);
     }
+
+    /**
+     * Mirrors EventCrewController::canManageCrew — crew management, delete event, operations.
+     */
+    public static function userCanManageEvent(Event $event, User $user): bool
+    {
+        if ($user->hasRole('super_admin') || $user->hasRole('director') || $user->hasRole('admin')) {
+            return true;
+        }
+        if ((int) $event->created_by_id === (int) $user->id) {
+            return true;
+        }
+        if (filled($event->team_leader_id) && (int) $event->team_leader_id === (int) $user->id) {
+            return true;
+        }
+        if ($user->hasRole('team_leader') && blank($event->team_leader_id)) {
+            if ((int) $event->created_by_id === (int) $user->id) {
+                return true;
+            }
+            if ($event->crew()->whereKey($user->id)->exists()) {
+                return true;
+            }
+        }
+        if (blank($event->team_leader_id)) {
+            return self::userIsAssignedOrRosterTeamLeader($event, $user);
+        }
+
+        return false;
+    }
 }

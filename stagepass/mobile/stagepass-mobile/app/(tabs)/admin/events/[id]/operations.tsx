@@ -21,6 +21,7 @@ import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { useAppRole } from '~/hooks/useAppRole';
 import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
+import { isPermanentlyEndedEventStatus } from '@/src/utils/eventEligibility';
 
 function formatEventDate(dateStr: string | undefined): string {
   if (!dateStr) return '';
@@ -80,7 +81,7 @@ export default function AdminEventOperationsScreen() {
   const currentUser = useSelector((s: { auth: { user: User | null } }) => s.auth.user);
 
   const eventId = id ? Number(id) : 0;
-  const isEnded = event?.status === 'completed' || event?.status === 'closed' || event?.status === 'done_for_the_day';
+  const isEnded = event ? isPermanentlyEndedEventStatus(event.status) : true;
   const crewCount = event?.crew?.length ?? 0;
   const canManageCrew = canManageEventCrew(currentUser, event);
   const canApproveAllowances = canApproveEarnedAllowancesForEvent(currentUser, event);
@@ -171,6 +172,10 @@ export default function AdminEventOperationsScreen() {
   };
 
   const handleDeleteEvent = () => {
+    if (!canManageCrew) {
+      Alert.alert('Not allowed', 'You do not have permission to delete this event.');
+      return;
+    }
     Alert.alert(
       'Delete event',
       'Are you sure you want to delete this event? This cannot be undone.',
@@ -182,7 +187,14 @@ export default function AdminEventOperationsScreen() {
           onPress: async () => {
             try {
               await api.events.delete(eventId);
-              Alert.alert('Deleted', 'Event has been deleted.', [{ text: 'OK', onPress: () => router.replace('/(tabs)/admin/events') }]);
+              const myEventsUsers = role === 'crew' || role === 'team_leader';
+              Alert.alert('Deleted', 'Event has been deleted.', [
+                {
+                  text: 'OK',
+                  onPress: () =>
+                    router.replace(myEventsUsers ? '/(tabs)/events' : '/(tabs)/admin/events'),
+                },
+              ]);
             } catch (e) {
               Alert.alert('Error', e instanceof Error ? e.message : 'Could not delete event.');
             }
@@ -381,7 +393,7 @@ export default function AdminEventOperationsScreen() {
                 <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>End event</ThemedText>
               </View>
               <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>
-                Mark this event as done for the day. Crew will no longer be able to check in.
+                Mark this event as done for the day. Crew cannot check in again until the next day of a multi-day event.
               </ThemedText>
               {!reportReady ? (
                 <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>

@@ -238,7 +238,7 @@ class EarnedAllowanceController extends Controller
         $user = $request->user();
         $event = Event::findOrFail((int) $validated['event_id']);
 
-        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED, Event::STATUS_DONE_FOR_DAY], true)) {
+        if (in_array($event->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED], true)) {
             return response()->json(['message' => 'This event is no longer active.'], 422);
         }
 
@@ -315,6 +315,9 @@ class EarnedAllowanceController extends Controller
         ]);
 
         $event = Event::findOrFail((int) $validated['event_id']);
+        if (! EventTeamLeaderGate::userCanManageEvent($event, $request->user())) {
+            return response()->json(['message' => 'You cannot allocate allowances for this event.'], 403);
+        }
         if (! $event->crew()->where('user_id', (int) $validated['crew_id'])->exists()) {
             return response()->json(['message' => 'Crew member must belong to selected event.'], 422);
         }

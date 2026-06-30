@@ -222,10 +222,11 @@ class EventCrewAttendanceService
 
     public function updateMealEligibility(Event $event, int $userId, Carbon $checkin, Carbon $checkout, string $workDate): void
     {
-        $tz = self::appTimezone();
-        $dayStart = Carbon::parse($workDate . ' 00:00:00', $tz);
-        $breakfastCutoff = $dayStart->copy()->setTime(7, 0, 0);
-        $dinnerStart = $dayStart->copy()->setTime(19, 30, 0);
+        $flags = app(MealAllowanceService::class)->computeMealFlags(
+            Carbon::parse($checkin, 'Africa/Nairobi'),
+            Carbon::parse($checkout, 'Africa/Nairobi'),
+            $workDate
+        );
 
         $meals = EventMeal::firstOrCreate(
             [
@@ -236,13 +237,9 @@ class EventCrewAttendanceService
             ['breakfast' => false, 'lunch' => false, 'dinner' => false]
         );
 
-        if ($checkin->lt($breakfastCutoff)) {
-            $meals->breakfast = true;
-        }
-        $meals->lunch = true;
-        if ($checkout->gte($dinnerStart)) {
-            $meals->dinner = true;
-        }
+        $meals->breakfast = $flags['breakfast'];
+        $meals->lunch = $flags['lunch'];
+        $meals->dinner = $flags['dinner'];
         $meals->save();
     }
 

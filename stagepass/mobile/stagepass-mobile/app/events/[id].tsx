@@ -60,7 +60,8 @@ import {
   getEventCheckInBlockedMessage,
   getLeaderManualCheckInBlockedMessage,
   getScheduledEndMs,
-  isEndedEventStatus,
+  doneForDayBlocksAttendance,
+  isPermanentlyEndedEventStatus,
 } from '@/src/utils/eventEligibility';
 
 function formatEventDate(dateStr: string | undefined): string {
@@ -521,7 +522,8 @@ export default function EventDetailScreen() {
     );
   }
 
-  const isEventEnded = event.status === 'completed' || event.status === 'closed' || event.status === 'done_for_the_day';
+  const isEventEnded = event ? isPermanentlyEndedEventStatus(event.status) : true;
+  const isClosedForToday = event ? doneForDayBlocksAttendance(event) : false;
   const checkInBlockedReason = (() => {
     if (myAssignment == null || showCheckInAction) return null;
     if (checkinTime && !checkoutTime) return null;

@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Event;
+use App\Services\EventCrewAttendanceService;
 use Carbon\Carbon;
 
 /**
@@ -16,13 +17,74 @@ final class EventAttendanceEligibility
         return (string) config('app.timezone', 'UTC');
     }
 
-    public static function isEndedStatus(Event $event): bool
+    public static function isPermanentlyEnded(Event $event): bool
     {
         return in_array($event->status, [
             Event::STATUS_COMPLETED,
             Event::STATUS_CLOSED,
-            Event::STATUS_DONE_FOR_DAY,
         ], true);
+    }
+
+    /**
+     * @deprecated Prefer isPermanentlyEnded() or attendanceBlocked() for precise checks.
+     */
+    public static function isEndedStatus(Event $event): bool
+    {
+        return self::isPermanentlyEnded($event)
+            || self::doneForDayBlocksAttendance($event);
+    }
+
+    /**
+     * "Done for the day" closes attendance for that calendar day only; multi-day events reopen on later days.
+     */
+    public static function doneForDayBlocksAttendance(Event $event, ?Carbon $now = null): bool
+    {
+        if ($event->status !== Event::STATUS_DONE_FOR_DAY) {
+            return false;
+        }
+
+        $now = $now ?? Carbon::now(self::tz());
+        $today = $now->toDateString();
+
+        if (! $event->closed_at) {
+            return true;
+        }
+
+        $closedDay = $event->closed_at->timezone(self::tz())->toDateString();
+        if ($today === $closedDay) {
+            return true;
+        }
+
+        return ! self::eventSpansDate($event, $today);
+    }
+
+    public static function attendanceBlocked(Event $event, ?Carbon $now = null): bool
+    {
+        return self::isPermanentlyEnded($event)
+            || self::doneForDayBlocksAttendance($event, $now);
+    }
+
+    public static function eventSpansDate(Event $event, string $dateYmd): bool
+    {
+        $start = $event->date->format('Y-m-d');
+        $end = app(EventCrewAttendanceService::class)->effectiveLastCalendarDate($event);
+
+        return $dateYmd >= $start && $dateYmd <= $end;
+    }
+
+    /**
+     * Reactivate a multi-day event after a new day begins following "done for the day".
+     */
+    public static function reopenIfNewAttendanceDay(Event $event, ?Carbon $now = null): void
+    {
+        if ($event->status !== Event::STATUS_DONE_FOR_DAY) {
+            return;
+        }
+        if (self::doneForDayBlocksAttendance($event, $now)) {
+            return;
+        }
+
+        $event->update(['status' => Event::STATUS_ACTIVE]);
     }
 
     /**
@@ -64,8 +126,13 @@ final class EventAttendanceEligibility
 
     public static function canCheckIn(Event $event, ?Carbon $now = null): bool
     {
-        if (self::isEndedStatus($event)) {
+        if (self::attendanceBlocked($event, $now)) {
             return false;
+        }
+
+        $now = $now ?? Carbon::now(self::tz());
+        if (self::eventSpansDate($event, $now->toDateString())) {
+            return true;
         }
 
         return ! self::eventTimeHasPassed($event, $now);
@@ -73,7 +140,7 @@ final class EventAttendanceEligibility
 
     public static function canCheckOut(Event $event, ?Carbon $now = null): bool
     {
-        if (self::isEndedStatus($event)) {
+        if (self::attendanceBlocked($event, $now)) {
             return false;
         }
 
