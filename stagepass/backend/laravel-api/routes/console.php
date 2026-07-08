@@ -88,3 +88,7 @@ Artisan::command('user:create-test-credentials {--password=Test@12345} {--rewrit
 */
 Schedule::command('attendance:send-overtime-threshold-notifications')->everyMinute();
 Schedule::command('allowances:process-meals')->everyMinute();
+
+if (filter_var(env('CRON_TEST_EMAIL_ENABLED', false), FILTER_VALIDATE_BOOL)) {
+    Schedule::command('cron:send-test-email')->everyMinute();
+}

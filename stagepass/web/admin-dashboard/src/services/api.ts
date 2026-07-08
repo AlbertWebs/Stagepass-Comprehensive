@@ -25,7 +25,7 @@ function setToken(token: string | null) {
 
 export { getToken, setToken };
 
-export type ReportType = 'events' | 'crew-attendance' | 'crew-payments' | 'tasks' | 'financial';
+export type ReportType = 'events' | 'crew-attendance' | 'crew-payments' | 'tasks' | 'financial' | 'end-of-day' | 'full-event';
 
 export interface ReportFilters {
   date_from?: string;
@@ -37,6 +37,8 @@ export interface ReportFilters {
   user_id?: number;
   page?: number;
   per_page?: number;
+  confirmed_by?: string;
+  signature?: string;
 }
 
 function reportParams(f?: ReportFilters): Record<string, string | number> {
@@ -51,6 +53,8 @@ function reportParams(f?: ReportFilters): Record<string, string | number> {
   if (f.user_id != null) p.user_id = f.user_id;
   if (f.page != null) p.page = f.page;
   if (f.per_page != null) p.per_page = f.per_page;
+  if (f.confirmed_by) p.confirmed_by = f.confirmed_by;
+  if (f.signature) p.signature = f.signature;
   return p;
 }
 
@@ -535,7 +539,7 @@ export const api = {
   reports: {
     get: (from: string, to: string) =>
       request<ReportsData>('/reports', { params: { from, to } }),
-    reportTypes: ['events', 'crew-attendance', 'crew-payments', 'tasks', 'financial'] as const,
+    reportTypes: ['events', 'crew-attendance', 'crew-payments', 'tasks', 'financial', 'end-of-day', 'full-event'] as const,
     events: (f?: ReportFilters) =>
       request<ReportEventsResponse>('/reports/events', { params: reportParams(f) }),
     crewAttendance: (f?: ReportFilters) =>
@@ -546,6 +550,10 @@ export const api = {
       request<ReportTasksResponse>('/reports/tasks', { params: reportParams(f) }),
     financial: (f?: ReportFilters) =>
       request<ReportFinancialResponse>('/reports/financial', { params: reportParams(f) }),
+    endOfDay: (f?: ReportFilters) =>
+      request<ReportEndOfDayResponse>('/reports/end-of-day', { params: reportParams(f) }),
+    fullEvent: (f?: ReportFilters) =>
+      request<ReportFullEventResponse>('/reports/full-event', { params: reportParams(f) }),
     exportHtml: (type: ReportType, f?: ReportFilters) =>
       request<{ html: string; title: string }>('/reports/export', {
         params: { ...reportParams(f), type, format: 'json' },
@@ -828,7 +836,11 @@ export interface ReportCrewPaymentsResponse {
     event_id: number;
     user_id: number;
     status: string;
+    hours?: number | null;
+    allowances?: number;
+    per_diem?: number;
     total_amount: number;
+    purpose?: string | null;
     payment_date?: string | null;
     event?: { id: number; name: string; date: string };
     user?: { id: number; name: string };
@@ -854,10 +866,134 @@ export interface ReportFinancialResponse {
     event_id: number;
     user_id: number;
     status: string;
+    hours?: number | null;
+    allowances?: number;
+    per_diem?: number;
     total_amount: number;
+    purpose?: string | null;
     payment_date?: string | null;
     event?: { id: number; name: string; date: string };
     user?: { id: number; name: string };
   }>;
   pagination: { current_page: number; last_page: number; per_page: number; total: number };
+}
+
+export interface ReportEndOfDayResponse {
+  summary: {
+    events_count: number;
+    crew_allowances_total: number;
+    other_expenses_total: number;
+    grand_total: number;
+  };
+  data: {
+    event_id: number;
+    event_name: string;
+    date: string;
+    crew_allowances: number;
+    other_expenses: number;
+    total: number;
+  }[];
+}
+
+export interface ReportFullEventResponse {
+  summary: {
+    events_count: number;
+    crew_count: number;
+    earned_allowances_total: number;
+    earned_allowances_approved_paid: number;
+    payment_allowances_total: number;
+    payment_per_diem_total: number;
+    payment_grand_total: number;
+    expenses_total: number;
+    transport_total: number;
+    combined_outflow: number;
+  };
+  events: Array<{
+    event: {
+      id: number;
+      name: string;
+      date: string | null;
+      end_date: string | null;
+      start_time?: string | null;
+      expected_end_time?: string | null;
+      location_name?: string | null;
+      status?: string | null;
+      description?: string | null;
+      daily_allowance?: number | null;
+      per_diem_enabled?: boolean;
+      team_leader?: string | null;
+      client?: string | null;
+      end_comment?: string | null;
+      ended_at?: string | null;
+      ended_by?: string | null;
+    };
+    crew: Array<{
+      user_id: number;
+      name: string;
+      email?: string | null;
+      role_in_event?: string | null;
+      checkin_time?: string | null;
+      checkout_time?: string | null;
+      total_hours?: number | null;
+      standard_hours?: number | null;
+      extra_hours?: number | null;
+      pause_duration?: number | null;
+      transport_type?: string | null;
+      transport_amount?: number | null;
+    }>;
+    earned_allowances: Array<{
+      id: number;
+      crew_id: number;
+      crew_name: string;
+      allowance_type: string;
+      amount: number;
+      status: string;
+      source: string;
+      description?: string | null;
+      meal_slot?: string | null;
+      meal_grant_date?: string | null;
+      recorded_by?: string | null;
+      recorded_at?: string | null;
+      approved_by?: string | null;
+      approved_at?: string | null;
+    }>;
+    payments: Array<{
+      id: number;
+      user_id: number;
+      crew_name: string;
+      purpose?: string | null;
+      payment_date?: string | null;
+      hours?: number | null;
+      allowances: number;
+      per_diem: number;
+      total_amount: number;
+      status: string;
+    }>;
+    expenses: Array<{
+      id: number;
+      user_id: number;
+      crew_name: string;
+      used_company_transport: boolean;
+      cab_amount: number;
+      parking_fee: number;
+      total: number;
+    }>;
+    totals: {
+      crew_count: number;
+      earned_allowances_total: number;
+      earned_allowances_approved_paid: number;
+      earned_status_breakdown: {
+        pending: number;
+        approved: number;
+        rejected: number;
+        paid: number;
+      };
+      payment_allowances_total: number;
+      payment_per_diem_total: number;
+      payment_grand_total: number;
+      expenses_total: number;
+      transport_total: number;
+      combined_outflow: number;
+    };
+  }>;
 }

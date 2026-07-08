@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Bar,
   BarChart,
@@ -21,6 +22,7 @@ import {
   type ReportEventsResponse,
   type ReportFinancialResponse,
   type ReportFilters,
+  type ReportFullEventResponse,
   type ReportTasksResponse,
   type ReportType,
   type ReportsData,
@@ -32,6 +34,7 @@ import { SectionCard } from '@/components/SectionCard';
 const CHART_COLORS = ['#ca8a04', '#1e2d5c', '#3a5092', '#22c55e', '#ef4444', '#8b5cf6'];
 
 const REPORT_TABS: { id: ReportType; label: string }[] = [
+  { id: 'full-event', label: 'Full event' },
   { id: 'events', label: 'Events' },
   { id: 'crew-attendance', label: 'Crew attendance' },
   { id: 'crew-payments', label: 'Crew payments' },
@@ -74,15 +77,22 @@ function downloadCsv(filename: string, headers: string[], rows: (string | number
 }
 
 export default function Reports() {
+  const [searchParams] = useSearchParams();
   const today = new Date();
   const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  const [activeTab, setActiveTab] = useState<ReportType>('events');
+  const eventIdFromUrl = (() => {
+    const raw = searchParams.get('event_id');
+    if (!raw) return '' as number | '';
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : ('' as number | '');
+  })();
+  const [activeTab, setActiveTab] = useState<ReportType>('full-event');
   const [dateFrom, setDateFrom] = useState(firstDayOfMonth.toISOString().slice(0, 10));
   const [dateTo, setDateTo] = useState(today.toISOString().slice(0, 10));
   const [month, setMonth] = useState<number | ''>(today.getMonth() + 1);
   const [year, setYear] = useState(today.getFullYear());
   const [useDateRange, setUseDateRange] = useState(true);
-  const [eventId, setEventId] = useState<number | ''>('');
+  const [eventId, setEventId] = useState<number | ''>(eventIdFromUrl);
   const [userId, setUserId] = useState<number | ''>('');
   const [page, setPage] = useState(1);
   const [perPage] = useState(25);
@@ -102,6 +112,7 @@ export default function Reports() {
   const [paymentsReport, setPaymentsReport] = useState<ReportCrewPaymentsResponse | null>(null);
   const [tasksReport, setTasksReport] = useState<ReportTasksResponse | null>(null);
   const [financialReport, setFinancialReport] = useState<ReportFinancialResponse | null>(null);
+  const [fullEventReport, setFullEventReport] = useState<ReportFullEventResponse | null>(null);
   const [exporting, setExporting] = useState(false);
 
   const buildFilters = useCallback((): ReportFilters => {
@@ -130,8 +141,17 @@ export default function Reports() {
     const run = async () => {
       try {
         switch (activeTab) {
+          case 'full-event':
+            setFullEventReport(await api.reports.fullEvent(fPage));
+            setEventsReport(null);
+            setAttendanceReport(null);
+            setPaymentsReport(null);
+            setTasksReport(null);
+            setFinancialReport(null);
+            break;
           case 'events':
             setEventsReport(await api.reports.events(fPage));
+            setFullEventReport(null);
             setAttendanceReport(null);
             setPaymentsReport(null);
             setTasksReport(null);
@@ -139,6 +159,7 @@ export default function Reports() {
             break;
           case 'crew-attendance':
             setAttendanceReport(await api.reports.crewAttendance(fPage));
+            setFullEventReport(null);
             setEventsReport(null);
             setPaymentsReport(null);
             setTasksReport(null);
@@ -146,6 +167,7 @@ export default function Reports() {
             break;
           case 'crew-payments':
             setPaymentsReport(await api.reports.crewPayments(fPage));
+            setFullEventReport(null);
             setEventsReport(null);
             setAttendanceReport(null);
             setTasksReport(null);
@@ -153,6 +175,7 @@ export default function Reports() {
             break;
           case 'tasks':
             setTasksReport(await api.reports.tasks(fPage));
+            setFullEventReport(null);
             setEventsReport(null);
             setAttendanceReport(null);
             setPaymentsReport(null);
@@ -160,6 +183,7 @@ export default function Reports() {
             break;
           case 'financial':
             setFinancialReport(await api.reports.financial(fPage));
+            setFullEventReport(null);
             setEventsReport(null);
             setAttendanceReport(null);
             setPaymentsReport(null);
@@ -179,6 +203,22 @@ export default function Reports() {
     api.events.list({ per_page: 500 }).then((r) => setEvents(r.data ?? [])).catch(() => setEvents([]));
     api.users.list({ per_page: 500 }).then((r) => setUsers(r.data?.map((u) => ({ id: u.id, name: u.name })) ?? [])).catch(() => setUsers([]));
   }, []);
+
+  useEffect(() => {
+    const raw = searchParams.get('event_id');
+    if (!raw) return;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return;
+    setEventId(n);
+    const match = events.find((e) => e.id === n);
+    if (match?.date) {
+      const from = String(match.date).slice(0, 10);
+      const to = match.end_date ? String(match.end_date).slice(0, 10) : from;
+      setDateFrom(from);
+      setDateTo(to);
+      setUseDateRange(true);
+    }
+  }, [searchParams, events]);
 
   const handleExportPdf = useCallback(async () => {
     setExporting(true);
@@ -202,7 +242,52 @@ export default function Reports() {
 
   const handleExportCsv = useCallback(() => {
     const f = activeTab;
-    if (f === 'events' && eventsReport?.data) {
+    if (f === 'full-event' && fullEventReport?.events) {
+      const allowanceRows: (string | number)[][] = [];
+      for (const item of fullEventReport.events) {
+        for (const a of item.earned_allowances) {
+          allowanceRows.push([
+            item.event.name,
+            item.event.date ?? '',
+            a.crew_name,
+            a.allowance_type,
+            a.amount,
+            a.status,
+            a.source,
+            a.description ?? '',
+            a.meal_slot ?? '',
+            a.meal_grant_date ?? '',
+            a.recorded_at ?? '',
+          ]);
+        }
+      }
+      downloadCsv(
+        `full-event-allowances-${dateFrom}-${dateTo}.csv`,
+        ['Event', 'Date', 'Crew', 'Allowance type', 'Amount', 'Status', 'Source', 'Description', 'Meal slot', 'Meal date', 'Recorded at'],
+        allowanceRows
+      );
+
+      const paymentRows: (string | number)[][] = [];
+      for (const item of fullEventReport.events) {
+        for (const p of item.payments) {
+          paymentRows.push([
+            item.event.name,
+            p.crew_name,
+            p.purpose ?? '',
+            p.payment_date ?? '',
+            p.allowances,
+            p.per_diem,
+            p.total_amount,
+            p.status,
+          ]);
+        }
+      }
+      downloadCsv(
+        `full-event-payments-${dateFrom}-${dateTo}.csv`,
+        ['Event', 'Crew', 'Purpose', 'Date', 'Allowances', 'Per diem', 'Total', 'Status'],
+        paymentRows
+      );
+    } else if (f === 'events' && eventsReport?.data) {
       downloadCsv(
         `events-report-${dateFrom}-${dateTo}.csv`,
         ['Event', 'Date', 'Status'],
@@ -223,11 +308,13 @@ export default function Reports() {
     } else if (f === 'crew-payments' && paymentsReport?.data) {
       downloadCsv(
         `crew-payments-${dateFrom}-${dateTo}.csv`,
-        ['Crew', 'Event', 'Date', 'Amount', 'Status'],
+        ['Crew', 'Event', 'Date', 'Allowances', 'Per diem', 'Total', 'Status'],
         paymentsReport.data.map((p) => [
           p.user?.name ?? '',
           p.event?.name ?? '',
           p.payment_date ?? '',
+          p.allowances ?? '',
+          p.per_diem ?? '',
           p.total_amount,
           p.status,
         ])
@@ -247,17 +334,19 @@ export default function Reports() {
     } else if (f === 'financial' && financialReport?.data) {
       downloadCsv(
         `financial-${dateFrom}-${dateTo}.csv`,
-        ['Crew', 'Event', 'Date', 'Amount', 'Status'],
+        ['Crew', 'Event', 'Date', 'Allowances', 'Per diem', 'Total', 'Status'],
         financialReport.data.map((p) => [
           p.user?.name ?? '',
           p.event?.name ?? '',
           p.payment_date ?? '',
+          p.allowances ?? '',
+          p.per_diem ?? '',
           p.total_amount,
           p.status,
         ])
       );
     }
-  }, [activeTab, eventsReport, attendanceReport, paymentsReport, tasksReport, financialReport, dateFrom, dateTo]);
+  }, [activeTab, fullEventReport, eventsReport, attendanceReport, paymentsReport, tasksReport, financialReport, dateFrom, dateTo]);
 
   const fetchLegacy = useCallback(() => {
     setLegacyLoading(true);
@@ -273,6 +362,7 @@ export default function Reports() {
   }, [fetchLegacy]);
 
   const hasReportData =
+    fullEventReport ||
     eventsReport ||
     attendanceReport ||
     paymentsReport ||
@@ -283,7 +373,7 @@ export default function Reports() {
     <div className="space-y-6">
       <PageHeader
         title="Reports"
-        subtitle="Event, crew attendance, payments, tasks and financial reports. Filter by date range, event or crew member and export to PDF or CSV."
+        subtitle="Download full event reports with allowance line items, attendance, payments and expenses. Filter by date range or a specific event, then export PDF or CSV."
       />
 
       {/* Tabs */}
@@ -400,7 +490,7 @@ export default function Reports() {
               ))}
             </select>
           </div>
-          {(activeTab === 'crew-attendance' || activeTab === 'crew-payments' || activeTab === 'tasks' || activeTab === 'financial') && (
+          {(activeTab === 'full-event' || activeTab === 'crew-attendance' || activeTab === 'crew-payments' || activeTab === 'tasks' || activeTab === 'financial') && (
             <div className="form-field">
               <label className="form-label" htmlFor="report-user">Crew member</label>
               <select
@@ -417,6 +507,11 @@ export default function Reports() {
                 ))}
               </select>
             </div>
+          )}
+          {activeTab === 'full-event' && eventId === '' && (
+            <p className="w-full text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              Tip: select a specific event for a single-event dossier, or leave as All events to export every event in the date range (includes full allowance breakdown).
+            </p>
           )}
           <button
             type="button"
@@ -453,6 +548,9 @@ export default function Reports() {
       )}
 
       {/* Report summary + table per tab */}
+      {activeTab === 'full-event' && fullEventReport && (
+        <FullEventReportView data={fullEventReport} formatDate={formatDate} />
+      )}
       {activeTab === 'events' && eventsReport && (
         <>
           <EventsReportView data={eventsReport} formatDate={formatDate} />
@@ -682,6 +780,171 @@ function LegacyCharts({
   );
 }
 
+function FullEventReportView({
+  data,
+  formatDate: fd,
+}: {
+  data: ReportFullEventResponse;
+  formatDate: (d: string) => string;
+}) {
+  const { summary, events: list } = data;
+  const money = (n: number) =>
+    Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  return (
+    <SectionCard sectionLabel="Full event report">
+      <div className="p-6 space-y-6">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-5">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Events</p>
+            <p className="mt-1 text-2xl font-bold text-slate-900">{summary.events_count}</p>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-amber-700">Earned allowances</p>
+            <p className="mt-1 text-xl font-bold text-amber-900">{money(summary.earned_allowances_total)}</p>
+          </div>
+          <div className="rounded-xl border border-green-200 bg-green-50/80 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-green-700">Approved / paid</p>
+            <p className="mt-1 text-xl font-bold text-green-900">{money(summary.earned_allowances_approved_paid)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Payment totals</p>
+            <p className="mt-1 text-xl font-bold text-slate-900">{money(summary.payment_grand_total)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Combined outflow</p>
+            <p className="mt-1 text-xl font-bold text-slate-900">{money(summary.combined_outflow)}</p>
+          </div>
+        </div>
+
+        {list.length === 0 ? (
+          <p className="text-sm text-slate-500">No events found for the selected filters.</p>
+        ) : (
+          list.map((item) => {
+            const ev = item.event;
+            const dateLabel =
+              ev.end_date && ev.end_date !== ev.date
+                ? `${ev.date ? fd(ev.date) : '—'} – ${fd(ev.end_date)}`
+                : ev.date
+                  ? fd(ev.date)
+                  : '—';
+            return (
+              <div key={ev.id} className="rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                  <h3 className="text-base font-semibold text-slate-900">{ev.name}</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {[dateLabel, ev.location_name || 'No location', ev.status, ev.team_leader ? `TL: ${ev.team_leader}` : null]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
+                </div>
+                <div className="p-4 space-y-4">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 text-sm">
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-slate-500">Earned allowances</p>
+                      <p className="font-semibold">{money(item.totals.earned_allowances_total)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-slate-500">Approved / paid</p>
+                      <p className="font-semibold">{money(item.totals.earned_allowances_approved_paid)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-slate-500">Payments</p>
+                      <p className="font-semibold">{money(item.totals.payment_grand_total)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-slate-500">Expenses + transport</p>
+                      <p className="font-semibold">
+                        {money(item.totals.expenses_total + item.totals.transport_total)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 text-sm font-semibold text-slate-800">Earned allowances</h4>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm border border-slate-200">
+                        <thead>
+                          <tr className="bg-slate-100">
+                            <th className="text-left p-2">Crew</th>
+                            <th className="text-left p-2">Type</th>
+                            <th className="text-right p-2">Amount</th>
+                            <th className="text-left p-2">Status</th>
+                            <th className="text-left p-2">Source</th>
+                            <th className="text-left p-2">Description</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {item.earned_allowances.length === 0 ? (
+                            <tr>
+                              <td className="p-2 text-slate-500" colSpan={6}>
+                                No earned allowances
+                              </td>
+                            </tr>
+                          ) : (
+                            item.earned_allowances.map((a) => (
+                              <tr key={a.id} className="border-t border-slate-100">
+                                <td className="p-2">{a.crew_name}</td>
+                                <td className="p-2">{a.allowance_type}</td>
+                                <td className="p-2 text-right">{money(a.amount)}</td>
+                                <td className="p-2 capitalize">{a.status}</td>
+                                <td className="p-2">{a.source}</td>
+                                <td className="p-2">{a.description || a.meal_slot || '—'}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="mb-2 text-sm font-semibold text-slate-800">Payment requests</h4>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm border border-slate-200">
+                        <thead>
+                          <tr className="bg-slate-100">
+                            <th className="text-left p-2">Crew</th>
+                            <th className="text-left p-2">Purpose</th>
+                            <th className="text-right p-2">Allowances</th>
+                            <th className="text-right p-2">Per diem</th>
+                            <th className="text-right p-2">Total</th>
+                            <th className="text-left p-2">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {item.payments.length === 0 ? (
+                            <tr>
+                              <td className="p-2 text-slate-500" colSpan={6}>
+                                No payment requests
+                              </td>
+                            </tr>
+                          ) : (
+                            item.payments.map((p) => (
+                              <tr key={p.id} className="border-t border-slate-100">
+                                <td className="p-2">{p.crew_name}</td>
+                                <td className="p-2 capitalize">{p.purpose ?? '—'}</td>
+                                <td className="p-2 text-right">{money(p.allowances)}</td>
+                                <td className="p-2 text-right">{money(p.per_diem)}</td>
+                                <td className="p-2 text-right">{money(p.total_amount)}</td>
+                                <td className="p-2 capitalize">{p.status}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </SectionCard>
+  );
+}
+
 function EventsReportView({
   data,
   formatDate: fd,
@@ -834,7 +1097,9 @@ function CrewPaymentsReportView({
                 <th className="text-left p-2">Crew</th>
                 <th className="text-left p-2">Event</th>
                 <th className="text-left p-2">Date</th>
-                <th className="text-right p-2">Amount</th>
+                <th className="text-right p-2">Allowances</th>
+                <th className="text-right p-2">Per diem</th>
+                <th className="text-right p-2">Total</th>
                 <th className="text-left p-2">Status</th>
               </tr>
             </thead>
@@ -844,6 +1109,8 @@ function CrewPaymentsReportView({
                   <td className="p-2">{p.user?.name ?? '—'}</td>
                   <td className="p-2">{p.event?.name ?? '—'}</td>
                   <td className="p-2">{p.payment_date ? fd(String(p.payment_date).slice(0, 10)) : '—'}</td>
+                  <td className="p-2 text-right">{Number(p.allowances ?? 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
+                  <td className="p-2 text-right">{Number(p.per_diem ?? 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
                   <td className="p-2 text-right">{Number(p.total_amount).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
                   <td className="p-2">{p.status}</td>
                 </tr>
@@ -966,7 +1233,9 @@ function FinancialReportView({
                 <th className="text-left p-2">Crew</th>
                 <th className="text-left p-2">Event</th>
                 <th className="text-left p-2">Date</th>
-                <th className="text-right p-2">Amount</th>
+                <th className="text-right p-2">Allowances</th>
+                <th className="text-right p-2">Per diem</th>
+                <th className="text-right p-2">Total</th>
                 <th className="text-left p-2">Status</th>
               </tr>
             </thead>
@@ -976,6 +1245,8 @@ function FinancialReportView({
                   <td className="p-2">{p.user?.name ?? '—'}</td>
                   <td className="p-2">{p.event?.name ?? '—'}</td>
                   <td className="p-2">{p.payment_date ? fd(String(p.payment_date).slice(0, 10)) : '—'}</td>
+                  <td className="p-2 text-right">{Number(p.allowances ?? 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
+                  <td className="p-2 text-right">{Number(p.per_diem ?? 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
                   <td className="p-2 text-right">{Number(p.total_amount).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
                   <td className="p-2">{p.status}</td>
                 </tr>

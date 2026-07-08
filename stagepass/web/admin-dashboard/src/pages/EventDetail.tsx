@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { api, PAYMENT_PURPOSES, type Client, type Event, type EquipmentItem, type PaymentItem, type User } from '@/services/api';
+import {
+  api,
+  PAYMENT_PURPOSES,
+  type Client,
+  type Event,
+  type EquipmentItem,
+  type PaymentItem,
+  type ReportFilters,
+  type ReportType,
+  type User,
+} from '@/services/api';
 import { FormModal } from '@/components/FormModal';
-import { PageHeader } from '@/components/PageHeader';
 import { Preloader } from '@/components/Preloader';
 import { SectionCard } from '@/components/SectionCard';
 
@@ -45,6 +54,35 @@ function formatDate(d: string | null | undefined): string {
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+function dateOnly(d: string | null | undefined): string {
+  if (!d) return '';
+  return typeof d === 'string' && d.includes('T') ? d.slice(0, 10) : String(d).slice(0, 10);
+}
+
+function escapeCsvCell(s: string | number): string {
+  const str = String(s ?? '');
+  if (/[",\n\r]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
+  return str;
+}
+
+function downloadCsv(filename: string, headers: string[], rows: (string | number)[][]) {
+  const line = (row: (string | number)[]) => row.map(escapeCsvCell).join(',');
+  const csv = [line(headers), ...rows.map((row) => line(row))].join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function eventReportFilters(event: Event): ReportFilters {
+  const from = dateOnly(event.date) || new Date().toISOString().slice(0, 10);
+  const to = dateOnly(event.end_date) || from;
+  return { event_id: event.id, date_from: from, date_to: to, per_page: 500 };
+}
+
 export default function EventDetail() {
   const { id } = useParams<{ id: string }>();
   const [event, setEvent] = useState<Event | null>(null);
@@ -73,6 +111,7 @@ export default function EventDetail() {
   const [equipmentList, setEquipmentList] = useState<EquipmentItem[]>([]);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState('');
   const [attachingEquipment, setAttachingEquipment] = useState(false);
+  const [exportingReport, setExportingReport] = useState<ReportType | 'csv' | null>(null);
 
   const fetchEvent = useCallback(() => {
     if (!id) return;
@@ -282,6 +321,77 @@ export default function EventDetail() {
     setAllocatePayOpen(true);
   };
 
+  const handleDownloadPdf = async (type: ReportType) => {
+    if (!event) return;
+    setExportingReport(type);
+    setError(null);
+    try {
+      const { html } = await api.reports.exportHtml(type, eventReportFilters(event));
+      const w = window.open('', '_blank');
+      if (w) {
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        setTimeout(() => {
+          w.print();
+        }, 500);
+      } else {
+        setError('Pop-up blocked. Allow pop-ups to download/print the report.');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export report');
+    } finally {
+      setExportingReport(null);
+    }
+  };
+
+  const handleDownloadCsv = async () => {
+    if (!event) return;
+    setExportingReport('csv');
+    setError(null);
+    try {
+      const filters = eventReportFilters(event);
+      const full = await api.reports.fullEvent(filters);
+      const item = full.events?.find((e) => e.event.id === event.id) ?? full.events?.[0];
+      const slug = event.name.replace(/[^\w\-]+/g, '-').replace(/-+/g, '-').slice(0, 40) || `event-${event.id}`;
+      const dateLabel = dateOnly(event.date) || 'report';
+
+      downloadCsv(
+        `${slug}-allowances-${dateLabel}.csv`,
+        ['Crew', 'Type', 'Amount', 'Status', 'Source', 'Description', 'Meal slot', 'Meal date', 'Recorded at'],
+        (item?.earned_allowances ?? []).map((a) => [
+          a.crew_name,
+          a.allowance_type,
+          a.amount,
+          a.status,
+          a.source,
+          a.description ?? '',
+          a.meal_slot ?? '',
+          a.meal_grant_date ?? '',
+          a.recorded_at ?? '',
+        ])
+      );
+
+      downloadCsv(
+        `${slug}-payments-${dateLabel}.csv`,
+        ['Crew', 'Purpose', 'Date', 'Allowances', 'Per diem', 'Total', 'Status'],
+        (item?.payments ?? []).map((p) => [
+          p.crew_name,
+          p.purpose ?? '',
+          p.payment_date ?? '',
+          p.allowances,
+          p.per_diem,
+          p.total_amount,
+          p.status,
+        ])
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export CSV');
+    } finally {
+      setExportingReport(null);
+    }
+  };
+
   const handleAllocatePay = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!event || !payUserId) return;
@@ -356,13 +466,23 @@ export default function EventDetail() {
               {subtitle}
             </p>
           </div>
-          <Link
-            to="/events"
-            className="inline-flex items-center gap-2 rounded-xl border border-white/25 bg-white/15 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/25 hover:border-white/40"
-          >
-            <span aria-hidden>←</span>
-            Back to events
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleDownloadPdf('full-event')}
+              disabled={exportingReport !== null}
+              className="inline-flex items-center gap-2 rounded-xl border border-white/25 bg-[#ca8a04] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#a16204] disabled:opacity-50"
+            >
+              {exportingReport === 'full-event' ? 'Preparing…' : 'Download report'}
+            </button>
+            <Link
+              to="/events"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/25 bg-white/15 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/25 hover:border-white/40"
+            >
+              <span aria-hidden>←</span>
+              Back to events
+            </Link>
+          </div>
         </div>
         <div className="absolute bottom-0 right-0 h-28 w-44 rounded-tl-full opacity-30" style={{ background: 'linear-gradient(135deg, #ca8a04 0%, transparent 70%)' }} aria-hidden />
       </div>
@@ -589,6 +709,65 @@ export default function EventDetail() {
           </div>
         </SectionCard>
       </div>
+
+      <SectionCard sectionLabel="Reports">
+        <div
+          className="rounded-r-xl border-l-4 p-6"
+          style={{ borderColor: '#ca8a04', background: 'linear-gradient(90deg, #fef9ee 0%, #ffffff 100%)' }}
+        >
+          <p className="mb-4 text-sm text-slate-600">
+            Download a printable PDF or CSV export for this event (attendance, payments, and end-of-day summary).
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => handleDownloadPdf('full-event')}
+              disabled={exportingReport !== null}
+              className="btn-brand text-sm disabled:opacity-50"
+            >
+              {exportingReport === 'full-event' ? 'Preparing…' : 'Full event PDF'}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDownloadPdf('end-of-day')}
+              disabled={exportingReport !== null}
+              className="btn-secondary text-sm disabled:opacity-50"
+            >
+              {exportingReport === 'end-of-day' ? 'Preparing…' : 'End-of-day PDF'}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDownloadPdf('crew-attendance')}
+              disabled={exportingReport !== null}
+              className="btn-secondary text-sm disabled:opacity-50"
+            >
+              {exportingReport === 'crew-attendance' ? 'Preparing…' : 'Attendance PDF'}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDownloadPdf('crew-payments')}
+              disabled={exportingReport !== null}
+              className="btn-secondary text-sm disabled:opacity-50"
+            >
+              {exportingReport === 'crew-payments' ? 'Preparing…' : 'Payments PDF'}
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadCsv}
+              disabled={exportingReport !== null}
+              className="btn-secondary text-sm disabled:opacity-50"
+            >
+              {exportingReport === 'csv' ? 'Preparing…' : 'Export CSV'}
+            </button>
+            <Link
+              to={`/reports?event_id=${event.id}`}
+              className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              Open in Reports
+            </Link>
+          </div>
+        </div>
+      </SectionCard>
 
       <SectionCard sectionLabel="Crew arrivals">
         <div className="p-4 sm:px-6">

@@ -107,6 +107,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('reports/tasks', [ReportsController::class, 'tasks']);
     Route::get('reports/financial', [ReportsController::class, 'financial']);
     Route::get('reports/end-of-day', [ReportsController::class, 'endOfDay']);
+    Route::get('reports/full-event', [ReportsController::class, 'fullEvent']);
     Route::get('reports/export', [ReportsController::class, 'export']);
     Route::get('holidays', [HolidayController::class, 'index']);
     Route::post('holidays', [HolidayController::class, 'store']);
