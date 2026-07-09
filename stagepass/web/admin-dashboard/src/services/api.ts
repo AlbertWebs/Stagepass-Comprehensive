@@ -359,6 +359,12 @@ export const api = {
     /** Wipe all tables except users and user-related (roles, permissions, sessions, etc.). Admin only. */
     wipeNonUserData: () =>
       request<{ message: string; wiped_tables: string[] }>('/danger-zone/wipe-non-user-data', { method: 'POST' }),
+    /** Selectively wipe test data by scope. Admin only. */
+    wipeTestData: (body: { scopes: string[]; confirm: string }) =>
+      request<{ message: string; scopes: string[]; wiped_tables: string[]; deleted_users: number }>(
+        '/danger-zone/wipe-test-data',
+        { method: 'POST', body: JSON.stringify(body) }
+      ),
   },
   settings: {
     get: () =>

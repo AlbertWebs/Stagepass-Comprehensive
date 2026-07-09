@@ -155,6 +155,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('backup', BackupController::class);
     Route::post('danger-zone/wipe-non-user-data', [DangerZoneController::class, 'wipeNonUserData']);
+    Route::post('danger-zone/wipe-test-data', [DangerZoneController::class, 'wipeTestData']);
     Route::get('settings/office-checkin-config', [SettingsController::class, 'officeCheckinConfig']);
     Route::get('settings', [SettingsController::class, 'index']);
     Route::put('settings', [SettingsController::class, 'update']);
