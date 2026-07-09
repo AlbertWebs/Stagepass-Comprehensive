@@ -41,12 +41,20 @@ export function TransferCrewModal({ visible, onClose, sourceEventId, crew, membe
   const loadEventOptions = useCallback(async () => {
     if (!sourceEventId) return;
     try {
-      const res = await api.events.list({ per_page: 100 });
+      const [res, source] = await Promise.all([
+        api.events.list({ per_page: 100 }),
+        api.events.get(sourceEventId),
+      ]);
       const allEvents = Array.isArray(res?.data) ? res.data : [];
+      const refDay = source?.date ? String(source.date).slice(0, 10) : '';
       setEventOptions(
         allEvents.filter((e) => {
           if (e.id === sourceEventId) return false;
-          return e.status !== 'completed' && e.status !== 'closed' && e.status !== 'done_for_the_day';
+          if (e.status === 'completed' || e.status === 'closed') return false;
+          if (!refDay) return true;
+          const from = String(e.date).slice(0, 10);
+          const to = e.end_date ? String(e.end_date).slice(0, 10) : from;
+          return from <= refDay && refDay <= to;
         })
       );
     } catch {

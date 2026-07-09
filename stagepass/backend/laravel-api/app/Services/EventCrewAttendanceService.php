@@ -119,9 +119,6 @@ class EventCrewAttendanceService
         return Carbon::parse($checkinTime)->timezone(self::appTimezone())->toDateString();
     }
 
-    /**
-     * @param  array{total_hours: float, standard_hours: float, extra_hours: float, is_sunday: bool, is_holiday: bool, holiday_name: ?string, day_type: string}  $calc
-     */
     public function finalizeCheckoutWithSession(
         Event $event,
         EventUser $assignment,
@@ -152,6 +149,58 @@ class EventCrewAttendanceService
         $this->clearOpenAttendance($assignment);
 
         return $session;
+    }
+
+    /**
+     * Check out an open assignment (check-in without checkout). Returns false if nothing to do.
+     */
+    public function checkoutOpenAssignment(
+        Event $event,
+        EventUser $assignment,
+        ?Carbon $checkout = null,
+        ?array $calc = null
+    ): bool {
+        if (! $assignment->checkin_time || $assignment->checkout_time) {
+            return false;
+        }
+
+        $checkout = $checkout ?? now();
+        $pausedMinutes = (int) ($assignment->pause_duration ?? 0);
+        if ($assignment->is_paused && $assignment->pause_start_time) {
+            $pausedMinutes += Carbon::parse($assignment->pause_start_time)->diffInMinutes($checkout);
+        }
+        if ($calc === null) {
+            $calc = app(AttendanceOvertimeService::class)->calculate(
+                Carbon::parse($assignment->checkin_time),
+                $checkout,
+                null,
+                $pausedMinutes
+            );
+        }
+
+        if ($this->isMultiDayEvent($event)) {
+            $this->finalizeCheckoutWithSession($event, $assignment, $checkout, $calc, $pausedMinutes);
+        } else {
+            $assignment->update([
+                'checkout_time' => $checkout,
+                'total_hours' => $calc['total_hours'],
+                'standard_hours' => $calc['standard_hours'],
+                'extra_hours' => $calc['extra_hours'],
+                'is_paused' => false,
+                'pause_start_time' => null,
+                'pause_end_time' => $assignment->is_paused ? $checkout : $assignment->pause_end_time,
+                'pause_duration' => $pausedMinutes,
+            ]);
+            $this->updateMealEligibility(
+                $event,
+                (int) $assignment->user_id,
+                Carbon::parse($assignment->checkin_time),
+                $checkout,
+                $this->workDateForEventSession($assignment->checkin_time)
+            );
+        }
+
+        return true;
     }
 
     private function writeSession(

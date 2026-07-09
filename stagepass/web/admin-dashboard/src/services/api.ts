@@ -133,7 +133,9 @@ async function request<T>(
     const message = firstErrors.length
       ? firstErrors.join(' ')
       : body.message || `Request failed (${res.status})`;
-    throw new Error(message);
+    const err = new Error(message) as Error & { responseBody?: Record<string, unknown> };
+    err.responseBody = data as Record<string, unknown>;
+    throw err;
   }
   return data as T;
 }
@@ -415,8 +417,8 @@ export const api = {
     get: (id: number) => request<Event>(`/events/${id}`),
     create: (body: Partial<Event>) =>
       request<Event>('/events', { method: 'POST', body: JSON.stringify(body) }),
-    update: (id: number, body: Partial<Event>) =>
-      request<Event>(`/events/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    update: (id: number, body: Partial<Event> & { confirm_date_adjustment?: boolean }) =>
+      request<Event & { date_adjustment?: Record<string, unknown> }>(`/events/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (id: number) => request<void>(`/events/${id}`, { method: 'DELETE' }),
     assignUser: (eventId: number, userId: number, roleInEvent?: string) =>
       request<unknown>(`/events/${eventId}/assign-user`, {
@@ -977,6 +979,22 @@ export interface ReportFullEventResponse {
       cab_amount: number;
       parking_fee: number;
       total: number;
+    }>;
+    tasks?: Array<{
+      id: number;
+      title: string;
+      status: string;
+      priority: string;
+      due_date?: string | null;
+      assignees: string[];
+    }>;
+    equipment?: Array<{
+      id: number;
+      equipment_id: number;
+      name: string;
+      serial_number?: string | null;
+      condition?: string | null;
+      notes?: string | null;
     }>;
     totals: {
       crew_count: number;

@@ -97,5 +97,7 @@ class FullEventReportTest extends TestCase
         $this->assertStringContainsString('Transport Allowance', (string) $export->json('html'));
         $this->assertStringContainsString('Late return taxi', (string) $export->json('html'));
         $this->assertStringContainsString('Earned allowances (full breakdown)', (string) $export->json('html'));
+        $this->assertStringContainsString('Project lead sign-off', (string) $export->json('html'));
+        $this->assertStringContainsString('Project lead signature', (string) $export->json('html'));
     }
 }

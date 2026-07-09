@@ -204,6 +204,7 @@ export default function Dashboard() {
   const [createdEvents, setCreatedEvents] = useState<Event[]>([]);
   const [usersCount, setUsersCount] = useState<number | null>(null);
   const [equipmentTotal, setEquipmentTotal] = useState<number | null>(null);
+  const [officeCheckinsToday, setOfficeCheckinsToday] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -215,8 +216,9 @@ export default function Dashboard() {
       api.events.list({ status: 'created' }),
       api.users.list({}),
       api.equipment.list({}),
+      api.checkins.list({ from: todayStr, to: todayStr }),
     ])
-      .then(([all, active, created, users, equipment]) => {
+      .then(([all, active, created, users, equipment, checkins]) => {
         setAllEvents(all);
         setActiveEvents(active.data ?? []);
         setCreatedEvents(
@@ -226,6 +228,7 @@ export default function Dashboard() {
         );
         setUsersCount(users.total);
         setEquipmentTotal(equipment.total ?? (equipment.data?.length ?? 0));
+        setOfficeCheckinsToday(checkins.summary?.office ?? 0);
       })
       .catch(() => {
         setAllEvents({ data: [], current_page: 1, last_page: 1, per_page: 20, total: 0 });
@@ -233,6 +236,7 @@ export default function Dashboard() {
         setCreatedEvents([]);
         setUsersCount(0);
         setEquipmentTotal(0);
+        setOfficeCheckinsToday(0);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -280,13 +284,13 @@ export default function Dashboard() {
           At a glance
         </h2>
         {loading ? (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
-            {[1, 2, 3, 4, 5].map((i) => (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-6">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
               <div key={i} className="dashboard-stat-card h-40 animate-pulse p-6" />
             ))}
           </div>
         ) : (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-6">
             <StatCard
               to="/events"
               label="Total events"
@@ -320,6 +324,13 @@ export default function Dashboard() {
               value={equipmentTotal ?? '—'}
               icon={CpuIcon}
               iconStyle={{ backgroundColor: BRAND['100'], color: BRAND['700'] }}
+            />
+            <StatCard
+              to="/checkins"
+              label="Office check-ins today"
+              value={officeCheckinsToday ?? '—'}
+              icon={ClipboardCheckIcon}
+              iconStyle={{ backgroundColor: '#ecfdf5', color: '#047857' }}
             />
           </div>
         )}

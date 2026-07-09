@@ -6,6 +6,14 @@ import { LocationSearchInput } from '@/components/LocationSearchInput';
 import { PageHeader } from '@/components/PageHeader';
 import { Preloader } from '@/components/Preloader';
 import { SectionCard } from '@/components/SectionCard';
+import { useAuth } from '@/contexts/AuthContext';
+
+function hasAdminAccess(user: { roles?: Array<{ name?: string }> } | null): boolean {
+  const names = (user?.roles ?? [])
+    .map((r) => String(r?.name ?? '').trim().toLowerCase())
+    .filter(Boolean);
+  return names.some((n) => n === 'admin' || n === 'super_admin' || n === 'director');
+}
 
 const STATUS_OPTIONS = [
   { value: 'created', label: 'Created' },
@@ -40,6 +48,7 @@ type EventFormState = {
   longitude: number | '';
   geofence_radius: number;
   per_diem_enabled: boolean;
+  daily_allowance: number | '';
   team_leader_id: string;
   client_id: string;
   status: string;
@@ -60,6 +69,7 @@ function emptyForm(): EventFormState {
     longitude: '',
     geofence_radius: 100,
     per_diem_enabled: false,
+    daily_allowance: '',
     team_leader_id: '',
     client_id: '',
     status: 'created',
@@ -79,6 +89,7 @@ function eventToForm(e: Event): EventFormState {
     longitude: e.longitude != null ? e.longitude : '',
     geofence_radius: e.geofence_radius ?? 100,
     per_diem_enabled: Boolean(e.per_diem_enabled),
+    daily_allowance: e.daily_allowance != null ? e.daily_allowance : '',
     team_leader_id: e.team_leader_id ? String(e.team_leader_id) : '',
     client_id: e.client_id != null ? String(e.client_id) : '',
     status: e.status ?? 'created',
@@ -86,6 +97,8 @@ function eventToForm(e: Event): EventFormState {
 }
 
 export default function Events() {
+  const { user: authUser } = useAuth();
+  const isAdmin = hasAdminAccess(authUser);
   const [data, setData] = useState<Paginated<Event> | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -94,6 +107,7 @@ export default function Events() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editEvent, setEditEvent] = useState<Event | null>(null);
   const [deleteEvent, setDeleteEvent] = useState<Event | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const firstInputRef = useRef<HTMLInputElement>(null);
@@ -155,8 +169,14 @@ export default function Events() {
     setCreateOpen(false);
     setEditEvent(null);
     setDeleteEvent(null);
+    setDeleteConfirmText('');
     setError(null);
   };
+
+  const deleteConfirmOk =
+    deleteEvent != null &&
+    (deleteConfirmText.trim() === deleteEvent.name.trim() ||
+      deleteConfirmText.trim().toUpperCase() === 'DELETE');
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -175,6 +195,7 @@ export default function Events() {
         longitude: form.longitude !== '' ? Number(form.longitude) : undefined,
         geofence_radius: form.geofence_radius,
         per_diem_enabled: form.per_diem_enabled,
+        daily_allowance: form.daily_allowance !== '' ? Number(form.daily_allowance) : undefined,
         team_leader_id: form.team_leader_id ? Number(form.team_leader_id) : undefined,
         client_id: form.client_id ? Number(form.client_id) : undefined,
       });
@@ -195,26 +216,47 @@ export default function Events() {
     if (!editEvent) return;
     setSaving(true);
     setError(null);
+    const payload = {
+      name: form.name,
+      description: form.description || undefined,
+      date: form.date,
+      end_date: form.end_date?.trim() || null,
+      start_time: form.start_time,
+      expected_end_time: form.expected_end_time || undefined,
+      location_name: form.location_name || undefined,
+      latitude: form.latitude !== '' ? Number(form.latitude) : undefined,
+      longitude: form.longitude !== '' ? Number(form.longitude) : undefined,
+      geofence_radius: form.geofence_radius,
+      per_diem_enabled: form.per_diem_enabled,
+      daily_allowance: form.daily_allowance !== '' ? Number(form.daily_allowance) : null,
+      team_leader_id: form.team_leader_id ? Number(form.team_leader_id) : undefined,
+      client_id: form.client_id ? Number(form.client_id) : undefined,
+      status: form.status,
+    };
     try {
-      await api.events.update(editEvent.id, {
-        name: form.name,
-        description: form.description || undefined,
-        date: form.date,
-        end_date: form.end_date?.trim() || null,
-        start_time: form.start_time,
-        expected_end_time: form.expected_end_time || undefined,
-        location_name: form.location_name || undefined,
-        latitude: form.latitude !== '' ? Number(form.latitude) : undefined,
-        longitude: form.longitude !== '' ? Number(form.longitude) : undefined,
-        geofence_radius: form.geofence_radius,
-        per_diem_enabled: form.per_diem_enabled,
-        team_leader_id: form.team_leader_id ? Number(form.team_leader_id) : undefined,
-        client_id: form.client_id ? Number(form.client_id) : undefined,
-        status: form.status,
-      });
+      await api.events.update(editEvent.id, payload);
       closeModals();
       fetchEvents();
     } catch (err) {
+      const body = (err as Error & { responseBody?: { requires_date_adjustment_confirmation?: boolean } }).responseBody;
+      if (body?.requires_date_adjustment_confirmation) {
+        const ok = window.confirm(
+          'Changing dates will recalculate attendance and allowance dates for this event. Continue?'
+        );
+        if (ok) {
+          try {
+            await api.events.update(editEvent.id, { ...payload, confirm_date_adjustment: true });
+            closeModals();
+            fetchEvents();
+            return;
+          } catch (retryErr) {
+            setError(retryErr instanceof Error ? retryErr.message : 'Failed to update event');
+            return;
+          }
+        }
+        setError('Date change cancelled.');
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Failed to update event');
     } finally {
       setSaving(false);
@@ -332,6 +374,19 @@ export default function Events() {
               className="form-input"
             />
           </div>
+        </div>
+        <div className="form-field">
+          <label className="form-label form-label-optional" htmlFor="event-daily-allowance">Daily allowance (KES)</label>
+          <input
+            id="event-daily-allowance"
+            type="number"
+            min={0}
+            step={0.01}
+            value={form.daily_allowance}
+            onChange={(e) => setForm((f) => ({ ...f, daily_allowance: e.target.value === '' ? '' : Number(e.target.value) }))}
+            className="form-input"
+            placeholder="Optional default per crew day"
+          />
         </div>
         <div className="form-field">
           <label className="form-label form-label-optional">Per diem policy</label>
@@ -490,13 +545,19 @@ export default function Events() {
                           <button type="button" onClick={() => openEdit(e)} className="link-brand">
                             Edit
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => { setDeleteEvent(e); setError(null); }}
-                            className="text-sm font-medium text-red-600 hover:underline"
-                          >
-                            Delete
-                          </button>
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDeleteEvent(e);
+                                setDeleteConfirmText('');
+                                setError(null);
+                              }}
+                              className="text-sm font-medium text-red-600 hover:underline"
+                            >
+                              Delete
+                            </button>
+                          )}
                         </span>
                       </td>
                     </tr>
@@ -554,8 +615,31 @@ export default function Events() {
           <div className="form-card-body">
             {error && <div className="form-error-banner mb-5">{error}</div>}
             <p className="text-slate-700">
-              Are you sure you want to delete <strong>{deleteEvent.name}</strong>? This cannot be undone.
+              You are about to permanently delete <strong>{deleteEvent.name}</strong>.
             </p>
+            <div className="mt-5 rounded-xl border-2 border-red-200 bg-red-50/50 p-4">
+              <h3 className="text-sm font-semibold text-red-800">Danger zone</h3>
+              <p className="mt-2 text-sm text-red-700">
+                This permanently deletes the event and cannot be undone.
+              </p>
+              <div className="mt-4">
+                <label htmlFor="delete-event-confirm" className="mb-1 block text-sm font-medium text-slate-700">
+                  Type the event name{' '}
+                  <code className="rounded bg-red-100 px-1.5 py-0.5 font-mono text-red-800">{deleteEvent.name}</code>{' '}
+                  or <code className="rounded bg-red-100 px-1.5 py-0.5 font-mono text-red-800">DELETE</code> to confirm
+                </label>
+                <input
+                  id="delete-event-confirm"
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder={deleteEvent.name}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-red-500 focus:ring-1 focus:ring-red-500"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+            </div>
             <div className="form-actions mt-6">
               <button type="button" onClick={closeModals} className="btn-secondary">
                 Cancel
@@ -563,10 +647,10 @@ export default function Events() {
               <button
                 type="button"
                 onClick={handleDelete}
-                disabled={saving}
-                className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                disabled={saving || !deleteConfirmOk}
+                className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {saving ? 'Deleting…' : 'Delete'}
+                {saving ? 'Deleting…' : 'Delete permanently'}
               </button>
             </div>
           </div>

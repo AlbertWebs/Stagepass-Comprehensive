@@ -171,39 +171,6 @@ export default function AdminEventOperationsScreen() {
     }
   };
 
-  const handleDeleteEvent = () => {
-    if (!canManageCrew) {
-      Alert.alert('Not allowed', 'You do not have permission to delete this event.');
-      return;
-    }
-    Alert.alert(
-      'Delete event',
-      'Are you sure you want to delete this event? This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.events.delete(eventId);
-              const myEventsUsers = role === 'crew' || role === 'team_leader';
-              Alert.alert('Deleted', 'Event has been deleted.', [
-                {
-                  text: 'OK',
-                  onPress: () =>
-                    router.replace(myEventsUsers ? '/(tabs)/events' : '/(tabs)/admin/events'),
-                },
-              ]);
-            } catch (e) {
-              Alert.alert('Error', e instanceof Error ? e.message : 'Could not delete event.');
-            }
-          },
-        },
-      ]
-    );
-  };
-
   if (loading || !event) {
     return (
       <ThemedView style={styles.container}>
@@ -393,7 +360,7 @@ export default function AdminEventOperationsScreen() {
                 <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>End event</ThemedText>
               </View>
               <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>
-                Mark this event as done for the day. Crew cannot check in again until the next day of a multi-day event.
+                Checks out all crew still on site and closes the event for today. Crew can check in again tomorrow if the event continues.
               </ThemedText>
               {!reportReady ? (
                 <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>
@@ -413,32 +380,18 @@ export default function AdminEventOperationsScreen() {
                   }}
                   style={[styles.endDeleteBtn, { borderColor: opsOutlineBorder }]}
                 />
-                <StagePassButton
-                  title="Delete event"
-                  variant="destructive"
-                  onPress={handleDeleteEvent}
-                  style={styles.endDeleteBtn}
-                />
               </View>
             </View>
           </View>
         )}
 
         {isEnded && (
-          <>
-            <View style={[styles.card, { backgroundColor: colors.surface, borderColor: opsBorder }]}>
-              <View style={[styles.endedBadge, { backgroundColor: themeBlue }]}>
-                <Ionicons name="checkmark-done" size={20} color={themeYellow} />
-                <ThemedText style={styles.endedLabel}>This event has been ended.</ThemedText>
-              </View>
+          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: opsBorder }]}>
+            <View style={[styles.endedBadge, { backgroundColor: themeBlue }]}>
+              <Ionicons name="checkmark-done" size={20} color={themeYellow} />
+              <ThemedText style={styles.endedLabel}>This event has been ended.</ThemedText>
             </View>
-            <StagePassButton
-              title="Delete event"
-              variant="destructive"
-              onPress={handleDeleteEvent}
-              style={styles.deleteBtn}
-            />
-          </>
+          </View>
         )}
       </ScrollView>
 

@@ -94,6 +94,33 @@ export default function AdminEventCrewScreen() {
       setSelectedUserId('');
       setRoleInEvent('');
     } catch (e) {
+      const body = (e as Error & { responseBody?: { conflicting_events?: Array<{ id: number; name: string }> } })
+        .responseBody;
+      const conflict = body?.conflicting_events?.[0];
+      if (conflict) {
+        Alert.alert(
+          'Schedule conflict',
+          `This person is on "${conflict.name}". Move them from that event instead?`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Transfer',
+              onPress: async () => {
+                try {
+                  await api.events.transferUser(conflict.id, uid, eventId);
+                  await loadEvent();
+                  setAddModalVisible(false);
+                  setSelectedUserId('');
+                  setRoleInEvent('');
+                } catch (transferErr) {
+                  Alert.alert('Transfer failed', transferErr instanceof Error ? transferErr.message : 'Could not transfer.');
+                }
+              },
+            },
+          ]
+        );
+        return;
+      }
       Alert.alert('Error', e instanceof Error ? e.message : 'Could not add crew member.');
     } finally {
       setAssigning(false);

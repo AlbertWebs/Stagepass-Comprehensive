@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Event;
+use App\Models\EventAllowance;
 use App\Models\EventUser;
 use App\Models\User;
 use App\Notifications\TeamLeaderAssignedNotification;
@@ -11,6 +12,7 @@ use App\Services\AttendanceOvertimeService;
 use App\Services\EventCrewAttendanceService;
 use App\Support\ApiDateTime;
 use App\Support\EventAttendanceEligibility;
+use App\Services\EventDateAdjustmentService;
 use App\Support\EventTeamLeaderGate;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -20,7 +22,8 @@ class EventController extends Controller
 {
     public function __construct(
         private AttendanceOvertimeService $overtime,
-        private EventCrewAttendanceService $eventCrewAttendance
+        private EventCrewAttendanceService $eventCrewAttendance,
+        private EventDateAdjustmentService $dateAdjustment
     ) {}
     /**
      * Get the current user's event assigned for today (for crew/leader home).
@@ -228,41 +231,16 @@ class EventController extends Controller
             'closing_comment' => 'required|string|max:5000',
         ]);
 
-        // Auto check out closer if still checked in (archives that day’s session for multi-day events).
-        $assignment = $event->eventCrew()->where('user_id', $user->id)->first();
-        if ($assignment && $assignment->checkin_time && ! $assignment->checkout_time) {
-            $checkout = now();
-            $pausedMinutes = (int) ($assignment->pause_duration ?? 0);
-            if ($assignment->is_paused && $assignment->pause_start_time) {
-                $pausedMinutes += Carbon::parse($assignment->pause_start_time)->diffInMinutes($checkout);
-            }
-            $calc = $this->overtime->calculate(Carbon::parse($assignment->checkin_time), $checkout, null, $pausedMinutes);
-            if ($this->eventCrewAttendance->isMultiDayEvent($event)) {
-                $this->eventCrewAttendance->finalizeCheckoutWithSession(
-                    $event,
-                    $assignment,
-                    $checkout,
-                    $calc,
-                    $pausedMinutes
-                );
-            } else {
-                $assignment->update([
-                    'checkout_time' => $checkout,
-                    'total_hours' => $calc['total_hours'],
-                    'standard_hours' => $calc['standard_hours'],
-                    'extra_hours' => $calc['extra_hours'],
-                    'is_paused' => false,
-                    'pause_start_time' => null,
-                    'pause_end_time' => $assignment->is_paused ? $checkout : $assignment->pause_end_time,
-                    'pause_duration' => $pausedMinutes,
-                ]);
-                $this->eventCrewAttendance->updateMealEligibility(
-                    $event,
-                    (int) $assignment->user_id,
-                    Carbon::parse($assignment->checkin_time),
-                    $checkout,
-                    $this->eventCrewAttendance->workDateForEventSession($assignment->checkin_time)
-                );
+        $checkout = now();
+        $crewCheckedOut = 0;
+        $openAssignments = $event->eventCrew()
+            ->whereNotNull('checkin_time')
+            ->whereNull('checkout_time')
+            ->get();
+
+        foreach ($openAssignments as $assignment) {
+            if ($this->eventCrewAttendance->checkoutOpenAssignment($event, $assignment, $checkout)) {
+                $crewCheckedOut++;
             }
         }
 
@@ -277,7 +255,11 @@ class EventController extends Controller
             'end_comment' => $validated['closing_comment'],
         ]);
 
-        return response()->json($event->fresh()->load(['teamLeader', 'closedBy']));
+        $fresh = $event->fresh()->load(['teamLeader', 'closedBy']);
+
+        return response()->json(array_merge($fresh->toArray(), [
+            'crew_checked_out' => $crewCheckedOut,
+        ]));
     }
 
     public function update(Request $request, Event $event): JsonResponse
@@ -306,7 +288,37 @@ class EventController extends Controller
 
         $previousTeamLeaderId = $event->team_leader_id;
 
+        $previous = [
+            'date' => $event->date->format('Y-m-d'),
+            'end_date' => $event->end_date?->format('Y-m-d'),
+            'start_time' => $event->start_time,
+            'expected_end_time' => $event->expected_end_time,
+        ];
+
+        $dateFieldsChanging = collect(['date', 'end_date', 'start_time', 'expected_end_time'])
+            ->contains(fn (string $key) => array_key_exists($key, $validated));
+
+        if ($dateFieldsChanging) {
+            $hasAttendanceData = EventUser::query()
+                ->where('event_id', $event->id)
+                ->whereNotNull('checkin_time')
+                ->exists()
+                || EventAllowance::query()->where('event_id', $event->id)->exists();
+
+            if ($hasAttendanceData && ! $request->boolean('confirm_date_adjustment')) {
+                return response()->json([
+                    'message' => 'Changing dates will recalculate attendance and allowance dates.',
+                    'requires_date_adjustment_confirmation' => true,
+                ], 422);
+            }
+        }
+
         $event->update($validated);
+
+        $adjustmentSummary = null;
+        if ($dateFieldsChanging) {
+            $adjustmentSummary = $this->dateAdjustment->adjust($event->fresh(), $previous);
+        }
 
         if (array_key_exists('team_leader_id', $validated)) {
             $event->refresh();
@@ -323,13 +335,18 @@ class EventController extends Controller
             }
         }
 
-        return response()->json($event->fresh()->load(['teamLeader', 'client']));
+        return response()->json(array_merge(
+            $event->fresh()->load(['teamLeader', 'client'])->toArray(),
+            $adjustmentSummary !== null ? ['date_adjustment' => $adjustmentSummary] : []
+        ));
     }
 
     public function destroy(Request $request, Event $event): JsonResponse
     {
-        if (! EventTeamLeaderGate::userCanManageEvent($event, $request->user())) {
-            return response()->json(['message' => 'You cannot delete this event.'], 403);
+        $user = $request->user();
+        $isAdmin = $user->hasRole('super_admin') || $user->hasRole('director') || $user->hasRole('admin');
+        if (! $isAdmin) {
+            return response()->json(['message' => 'Only an admin can delete events. Use the web admin portal.'], 403);
         }
 
         $event->delete();

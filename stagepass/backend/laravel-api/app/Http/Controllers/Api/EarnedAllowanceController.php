@@ -158,7 +158,9 @@ class EarnedAllowanceController extends Controller
             });
         }
 
-        $perPage = min((int) $request->input('per_page', 25), 100);
+        $perPage = $request->filled('event_id')
+            ? min((int) $request->input('per_page', 25), 500)
+            : min((int) $request->input('per_page', 25), 100);
         $rows = $query->orderByDesc('recorded_at')->paginate($perPage);
 
         $grouped = collect($rows->items())->groupBy('event_id')->map(function ($items, $eventId) {

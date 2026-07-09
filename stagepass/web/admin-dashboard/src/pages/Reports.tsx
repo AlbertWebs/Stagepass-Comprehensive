@@ -34,7 +34,7 @@ import { SectionCard } from '@/components/SectionCard';
 const CHART_COLORS = ['#ca8a04', '#1e2d5c', '#3a5092', '#22c55e', '#ef4444', '#8b5cf6'];
 
 const REPORT_TABS: { id: ReportType; label: string }[] = [
-  { id: 'full-event', label: 'Full event' },
+  { id: 'full-event', label: 'Comprehensive' },
   { id: 'events', label: 'Events' },
   { id: 'crew-attendance', label: 'Crew attendance' },
   { id: 'crew-payments', label: 'Crew payments' },
@@ -114,6 +114,8 @@ export default function Reports() {
   const [financialReport, setFinancialReport] = useState<ReportFinancialResponse | null>(null);
   const [fullEventReport, setFullEventReport] = useState<ReportFullEventResponse | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [projectLeadName, setProjectLeadName] = useState('');
+  const [projectLeadSignature, setProjectLeadSignature] = useState('');
 
   const buildFilters = useCallback((): ReportFilters => {
     const f: ReportFilters = { page, per_page: perPage };
@@ -128,8 +130,10 @@ export default function Reports() {
     }
     if (eventId !== '') f.event_id = eventId as number;
     if (userId !== '') f.user_id = userId as number;
+    if (projectLeadName.trim()) f.confirmed_by = projectLeadName.trim();
+    if (projectLeadSignature.trim()) f.signature = projectLeadSignature.trim();
     return f;
-  }, [useDateRange, dateFrom, dateTo, month, year, eventId, userId, page, perPage]);
+  }, [useDateRange, dateFrom, dateTo, month, year, eventId, userId, page, perPage, projectLeadName, projectLeadSignature]);
 
   const fetchReport = useCallback((pageNum?: number) => {
     const p = pageNum ?? page;
@@ -219,6 +223,15 @@ export default function Reports() {
       setUseDateRange(true);
     }
   }, [searchParams, events]);
+
+  useEffect(() => {
+    if (eventId === '') return;
+    const match = events.find((e) => e.id === eventId);
+    const leadName = match?.team_leader?.name?.trim();
+    if (leadName && !projectLeadName.trim()) {
+      setProjectLeadName(leadName);
+    }
+  }, [eventId, events, projectLeadName]);
 
   const handleExportPdf = useCallback(async () => {
     setExporting(true);
@@ -373,7 +386,7 @@ export default function Reports() {
     <div className="space-y-6">
       <PageHeader
         title="Reports"
-        subtitle="Download full event reports with allowance line items, attendance, payments and expenses. Filter by date range or a specific event, then export PDF or CSV."
+        subtitle="Comprehensive event dossiers with allowance line items, attendance, payments, tasks, equipment, and expenses. Filters auto-apply; export PDF or CSV."
       />
 
       {/* Tabs */}
@@ -513,6 +526,38 @@ export default function Reports() {
               Tip: select a specific event for a single-event dossier, or leave as All events to export every event in the date range (includes full allowance breakdown).
             </p>
           )}
+          <div className="w-full rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+            <p className="mb-3 text-sm font-semibold text-slate-800">Project lead sign-off (for PDF)</p>
+            <p className="mb-3 text-xs text-slate-500">
+              These appear as a signature block at the bottom of the printable report. Leave blank to print empty lines for wet-ink signing.
+            </p>
+            <div className="flex flex-wrap gap-4">
+              <div className="form-field min-w-[14rem] flex-1">
+                <label className="form-label" htmlFor="project-lead-name">Project lead name</label>
+                <input
+                  id="project-lead-name"
+                  type="text"
+                  value={projectLeadName}
+                  onChange={(e) => setProjectLeadName(e.target.value)}
+                  className="form-input"
+                  placeholder="e.g. team leader name"
+                  maxLength={120}
+                />
+              </div>
+              <div className="form-field min-w-[14rem] flex-1">
+                <label className="form-label" htmlFor="project-lead-signature">Signature (typed)</label>
+                <input
+                  id="project-lead-signature"
+                  type="text"
+                  value={projectLeadSignature}
+                  onChange={(e) => setProjectLeadSignature(e.target.value)}
+                  className="form-input"
+                  placeholder="Type name to sign, or leave blank"
+                  maxLength={120}
+                />
+              </div>
+            </div>
+          </div>
           <button
             type="button"
             onClick={() => { setPage(1); fetchReport(1); }}
@@ -792,7 +837,7 @@ function FullEventReportView({
     Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
-    <SectionCard sectionLabel="Full event report">
+    <SectionCard sectionLabel="Comprehensive event report">
       <div className="p-6 space-y-6">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-5">
           <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
@@ -935,6 +980,64 @@ function FullEventReportView({
                       </table>
                     </div>
                   </div>
+
+                  {(item.tasks?.length ?? 0) > 0 && (
+                    <div>
+                      <h4 className="mb-2 text-sm font-semibold text-slate-800">Tasks</h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm border border-slate-200">
+                          <thead>
+                            <tr className="bg-slate-100">
+                              <th className="text-left p-2">Task</th>
+                              <th className="text-left p-2">Status</th>
+                              <th className="text-left p-2">Priority</th>
+                              <th className="text-left p-2">Due</th>
+                              <th className="text-left p-2">Assignees</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {item.tasks!.map((t) => (
+                              <tr key={t.id} className="border-t border-slate-100">
+                                <td className="p-2">{t.title}</td>
+                                <td className="p-2 capitalize">{t.status}</td>
+                                <td className="p-2 capitalize">{t.priority}</td>
+                                <td className="p-2">{t.due_date ? fd(t.due_date) : '—'}</td>
+                                <td className="p-2">{t.assignees.join(', ') || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {(item.equipment?.length ?? 0) > 0 && (
+                    <div>
+                      <h4 className="mb-2 text-sm font-semibold text-slate-800">Equipment</h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm border border-slate-200">
+                          <thead>
+                            <tr className="bg-slate-100">
+                              <th className="text-left p-2">Name</th>
+                              <th className="text-left p-2">Serial</th>
+                              <th className="text-left p-2">Condition</th>
+                              <th className="text-left p-2">Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {item.equipment!.map((eq) => (
+                              <tr key={eq.id} className="border-t border-slate-100">
+                                <td className="p-2">{eq.name}</td>
+                                <td className="p-2">{eq.serial_number ?? '—'}</td>
+                                <td className="p-2">{eq.condition ?? '—'}</td>
+                                <td className="p-2">{eq.notes ?? '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             );

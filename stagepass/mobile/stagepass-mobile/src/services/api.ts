@@ -292,7 +292,11 @@ async function request<T>(
             onUnauthorized?.();
           }
         }
-        throw new Error(data.message ?? data.error ?? `HTTP ${res.status}`);
+        const err = new Error(data.message ?? data.error ?? `HTTP ${res.status}`) as Error & {
+          responseBody?: Record<string, unknown>;
+        };
+        err.responseBody = data as Record<string, unknown>;
+        throw err;
       }
         if (cacheableGet) {
           getResponseCache.set(cacheKey, {
@@ -374,7 +378,11 @@ async function requestMultipart<T>(
           onUnauthorized?.();
         }
       }
-      throw new Error(data.message ?? data.error ?? `HTTP ${res.status}`);
+      const err = new Error(data.message ?? data.error ?? `HTTP ${res.status}`) as Error & {
+        responseBody?: Record<string, unknown>;
+      };
+      err.responseBody = data as Record<string, unknown>;
+      throw err;
     }
     return data as T;
   } catch (e) {

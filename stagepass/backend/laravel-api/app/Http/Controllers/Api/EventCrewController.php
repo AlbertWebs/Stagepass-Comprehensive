@@ -75,6 +75,7 @@ class EventCrewController extends Controller
 
             return response()->json([
                 'message' => $message,
+                'assign_event_id' => $event->id,
                 'conflicting_events' => $conflictingEvents->map(fn (Event $other) => [
                     'id' => $other->id,
                     'name' => $other->name,
@@ -134,6 +135,9 @@ class EventCrewController extends Controller
         if ($targetEvent->id === $event->id) {
             return response()->json(['message' => 'Source and target event must be different.'], 422);
         }
+        if (! $this->canManageCrew($request, $targetEvent)) {
+            return response()->json(['message' => 'You cannot transfer crew to this event.'], 403);
+        }
         if (EventAttendanceEligibility::isPermanentlyEnded($targetEvent)) {
             return response()->json(['message' => 'Cannot transfer crew to an event that is already ended.'], 422);
         }
@@ -142,8 +146,20 @@ class EventCrewController extends Controller
             ->where('user_id', $request->user_id)
             ->firstOrFail();
 
-        $roleInEvent = $assignment->role_in_event;
         $transferredUserId = (int) $request->user_id;
+        if ($targetEvent->crew()->where('user_id', $transferredUserId)->exists()) {
+            return response()->json(['message' => 'User is already on the target event crew.'], 422);
+        }
+
+        if ($assignment->checkin_time && ! $assignment->checkout_time) {
+            $this->eventCrewAttendance->checkoutOpenAssignment($event, $assignment);
+            $assignment->refresh();
+        }
+        if ($assignment->checkin_time && $assignment->checkout_time) {
+            $this->eventCrewAttendance->archiveFromPivotIfComplete($assignment);
+        }
+
+        $roleInEvent = $assignment->role_in_event;
 
         $targetEvent->crew()->attach($transferredUserId, [
             'role_in_event' => $roleInEvent,

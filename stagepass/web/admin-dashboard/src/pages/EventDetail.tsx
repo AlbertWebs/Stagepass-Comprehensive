@@ -4,6 +4,7 @@ import {
   api,
   PAYMENT_PURPOSES,
   type Client,
+  type EarnedAllowanceDetail,
   type Event,
   type EquipmentItem,
   type PaymentItem,
@@ -77,10 +78,23 @@ function downloadCsv(filename: string, headers: string[], rows: (string | number
   URL.revokeObjectURL(url);
 }
 
-function eventReportFilters(event: Event): ReportFilters {
+function eventCoversDate(ev: Event, day: string): boolean {
+  const from = dateOnly(ev.date) || day;
+  const to = dateOnly(ev.end_date) || from;
+  return from <= day && day <= to;
+}
+
+function eventReportFilters(event: Event, extras?: { confirmed_by?: string; signature?: string }): ReportFilters {
   const from = dateOnly(event.date) || new Date().toISOString().slice(0, 10);
   const to = dateOnly(event.end_date) || from;
-  return { event_id: event.id, date_from: from, date_to: to, per_page: 500 };
+  return {
+    event_id: event.id,
+    date_from: from,
+    date_to: to,
+    per_page: 500,
+    ...(extras?.confirmed_by ? { confirmed_by: extras.confirmed_by } : {}),
+    ...(extras?.signature ? { signature: extras.signature } : {}),
+  };
 }
 
 export default function EventDetail() {
@@ -100,8 +114,15 @@ export default function EventDetail() {
   const [payUserId, setPayUserId] = useState('');
   const [payPurpose, setPayPurpose] = useState<string>('fair');
   const [payDate, setPayDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [payAmount, setPayAmount] = useState('');
+  const [payPerDiem, setPayPerDiem] = useState('');
+  const [payAllowances, setPayAllowances] = useState('');
   const [paymentSaving, setPaymentSaving] = useState(false);
+  const [earnedAllowances, setEarnedAllowances] = useState<EarnedAllowanceDetail[]>([]);
+  const [allEvents, setAllEvents] = useState<Event[]>([]);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferUserId, setTransferUserId] = useState('');
+  const [transferTargetId, setTransferTargetId] = useState('');
+  const [transferring, setTransferring] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [teamLeaderSaving, setTeamLeaderSaving] = useState(false);
   const [clientSaving, setClientSaving] = useState(false);
@@ -155,6 +176,22 @@ export default function EventDetail() {
     if (id) fetchEventPayments();
   }, [id, fetchEventPayments]);
 
+  const fetchEarnedAllowances = useCallback(() => {
+    if (!id) return;
+    api.payments
+      .earnedAllowances({ event_id: Number(id), per_page: 500 })
+      .then((r) => setEarnedAllowances(r.flat ?? r.data?.[0]?.details ?? []))
+      .catch(() => setEarnedAllowances([]));
+  }, [id]);
+
+  useEffect(() => {
+    if (id) fetchEarnedAllowances();
+  }, [id, fetchEarnedAllowances]);
+
+  useEffect(() => {
+    api.events.list({ per_page: 500 }).then((r) => setAllEvents(r.data ?? [])).catch(() => setAllEvents([]));
+  }, []);
+
   useEffect(() => {
     if (!id || !event?.crew?.length) return;
     const hasOpenSession = event.crew.some((u) => {
@@ -169,6 +206,20 @@ export default function EventDetail() {
   }, [id, event?.crew]);
 
   const isEventEnded = event?.status === 'completed' || event?.status === 'closed';
+  const isDoneForDay = event?.status === 'done_for_the_day';
+  const eventSpanEnded = event
+    ? (dateOnly(event.end_date) || dateOnly(event.date) || '') < new Date().toISOString().slice(0, 10)
+    : false;
+  const showPermanentEnd = !isEventEnded && (!isDoneForDay || eventSpanEnded);
+
+  const transferTargetEvents = event
+    ? allEvents.filter((e) => {
+        if (e.id === event.id) return false;
+        if (e.status === 'completed' || e.status === 'closed') return false;
+        const refDay = dateOnly(event.date);
+        return refDay ? eventCoversDate(e, refDay) : false;
+      })
+    : [];
 
   const openEndEvent = () => {
     setEndComment('');
@@ -213,9 +264,46 @@ export default function EventDetail() {
       setAddCrewOpen(false);
       fetchEvent();
     } catch (err) {
+      const body = (err as Error & { responseBody?: { conflicting_events?: Array<{ id: number; name: string }> } })
+        .responseBody;
+      const conflict = body?.conflicting_events?.[0];
+      if (conflict && window.confirm(`This person is on "${conflict.name}". Move them from that event instead?`)) {
+        try {
+          await api.events.transferUser(conflict.id, Number(selectedUserId), event.id);
+          setAddCrewOpen(false);
+          fetchEvent();
+          return;
+        } catch (transferErr) {
+          setError(transferErr instanceof Error ? transferErr.message : 'Transfer failed');
+          return;
+        }
+      }
       setError(err instanceof Error ? err.message : 'Failed to add crew member');
     } finally {
       setAssigning(false);
+    }
+  };
+
+  const openTransferCrew = () => {
+    setTransferUserId('');
+    setTransferTargetId('');
+    setError(null);
+    setTransferOpen(true);
+  };
+
+  const handleTransferCrew = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!event || !transferUserId || !transferTargetId) return;
+    setTransferring(true);
+    setError(null);
+    try {
+      await api.events.transferUser(event.id, Number(transferUserId), Number(transferTargetId));
+      setTransferOpen(false);
+      fetchEvent();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Transfer failed');
+    } finally {
+      setTransferring(false);
     }
   };
 
@@ -316,7 +404,8 @@ export default function EventDetail() {
     setPayUserId('');
     setPayPurpose('fair');
     setPayDate(new Date().toISOString().slice(0, 10));
-    setPayAmount('');
+    setPayPerDiem('');
+    setPayAllowances('');
     setError(null);
     setAllocatePayOpen(true);
   };
@@ -326,7 +415,11 @@ export default function EventDetail() {
     setExportingReport(type);
     setError(null);
     try {
-      const { html } = await api.reports.exportHtml(type, eventReportFilters(event));
+      const leadName = event.team_leader?.name?.trim();
+      const { html } = await api.reports.exportHtml(
+        type,
+        eventReportFilters(event, leadName ? { confirmed_by: leadName } : undefined)
+      );
       const w = window.open('', '_blank');
       if (w) {
         w.document.write(html);
@@ -395,7 +488,9 @@ export default function EventDetail() {
   const handleAllocatePay = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!event || !payUserId) return;
-    const amount = Number(payAmount) || 0;
+    const perDiem = Number(payPerDiem) || 0;
+    const allowances = Number(payAllowances) || 0;
+    if (perDiem <= 0 && allowances <= 0) return;
     setPaymentSaving(true);
     setError(null);
     try {
@@ -404,7 +499,8 @@ export default function EventDetail() {
         user_id: Number(payUserId),
         purpose: payPurpose || undefined,
         payment_date: payDate || undefined,
-        amount,
+        per_diem: perDiem,
+        allowances,
       });
       setAllocatePayOpen(false);
       fetchEventPayments();
@@ -547,6 +643,16 @@ export default function EventDetail() {
               </div>
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                 <div>
+                  <dt className="text-xs font-medium uppercase tracking-wider text-brand-600">Daily allowance</dt>
+                  <dd className="mt-1 font-medium text-slate-900">
+                    {event.daily_allowance != null ? Number(event.daily_allowance).toFixed(2) : '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wider text-brand-600">Per diem</dt>
+                  <dd className="mt-1 font-medium text-slate-900">{event.per_diem_enabled ? 'Enabled' : 'Disabled'}</dd>
+                </div>
+                <div>
                   <dt className="text-xs font-medium uppercase tracking-wider text-brand-600">Start</dt>
                   <dd className="mt-1 font-medium text-slate-900">{event.start_time}</dd>
                 </div>
@@ -583,9 +689,16 @@ export default function EventDetail() {
               <span className="text-sm font-semibold" style={{ color: '#1e2d5c' }}>
                 {(event.crew?.length ?? 0)} member{(event.crew?.length ?? 0) === 1 ? '' : 's'}
               </span>
-              <button type="button" onClick={openAddCrew} className="btn-brand text-sm">
-                Add crew
-              </button>
+              <div className="flex gap-2">
+                <button type="button" onClick={openAddCrew} className="btn-brand text-sm">
+                  Add crew
+                </button>
+                {(event.crew?.length ?? 0) > 0 && transferTargetEvents.length > 0 && (
+                  <button type="button" onClick={openTransferCrew} className="btn-secondary text-sm">
+                    Transfer crew
+                  </button>
+                )}
+              </div>
             </div>
             <div className="overflow-x-auto">
               {(event.crew?.length ?? 0) > 0 ? (
@@ -875,6 +988,57 @@ export default function EventDetail() {
         </div>
       </SectionCard>
 
+      <SectionCard sectionLabel="Earned allowances">
+        <div className="flex flex-col">
+          <div
+            className="flex flex-shrink-0 items-center justify-between border-b px-6 py-3.5"
+            style={{ borderColor: '#b3c1e1', background: 'linear-gradient(90deg, #fef9ee 0%, #f8f9fc 100%)' }}
+          >
+            <span className="text-sm font-medium" style={{ color: '#1e2d5c' }}>
+              Meal and manual allowance lines recorded for this event (from check-in rules or approvals).
+            </span>
+            <Link to="/payments?tab=allowances" className="link-brand text-sm">
+              Manage on Payments
+            </Link>
+          </div>
+          <div className="overflow-x-auto">
+            {earnedAllowances.length > 0 ? (
+              <table className="w-full table-header-brand">
+                <thead>
+                  <tr>
+                    <th>Crew</th>
+                    <th>Type</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Source</th>
+                    <th>Description</th>
+                    <th>Recorded</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {earnedAllowances.map((a) => (
+                    <tr key={a.id} className="border-b border-slate-100 transition hover:bg-slate-50/60">
+                      <td className="px-6 py-4 font-medium text-slate-900">{a.crew_name}</td>
+                      <td className="px-6 py-4 text-slate-700">{a.allowance_type}</td>
+                      <td className="px-6 py-4 text-slate-700">{Number(a.amount).toFixed(2)}</td>
+                      <td className="px-6 py-4 capitalize text-slate-700">{a.status}</td>
+                      <td className="px-6 py-4 text-slate-600">{a.source ?? '—'}</td>
+                      <td className="px-6 py-4 text-slate-600">
+                        {a.description || a.meal_slot || '—'}
+                        {a.meal_grant_date ? ` (${a.meal_grant_date})` : ''}
+                      </td>
+                      <td className="px-6 py-4 text-slate-600">{a.recorded_at ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="px-6 py-10 text-center text-sm text-slate-500">No earned allowances recorded for this event yet.</p>
+            )}
+          </div>
+        </div>
+      </SectionCard>
+
       <SectionCard sectionLabel="Payment requests">
         <div className="flex flex-col">
           <div
@@ -900,6 +1064,7 @@ export default function EventDetail() {
                   <tr>
                     <th>Member</th>
                     <th>Purpose</th>
+                    <th>Per diem</th>
                     <th>Allowances</th>
                     <th>Total</th>
                     <th>Status</th>
@@ -915,6 +1080,7 @@ export default function EventDetail() {
                       <td className="px-6 py-4">
                         <span className="capitalize text-slate-700">{p.purpose ?? '–'}</span>
                       </td>
+                      <td className="px-6 py-4 text-slate-700">{Number(p.per_diem ?? 0).toFixed(2)}</td>
                       <td className="px-6 py-4 text-slate-700">{Number(p.allowances).toFixed(2)}</td>
                       <td className="px-6 py-4 font-medium text-slate-900">{Number(p.total_amount).toFixed(2)}</td>
                       <td className="px-6 py-4">
@@ -943,6 +1109,7 @@ export default function EventDetail() {
         </div>
       </SectionCard>
 
+      {showPermanentEnd && (
       <SectionCard sectionLabel="End event">
         <div className="p-4 sm:px-6">
           {isEventEnded ? (
@@ -976,8 +1143,15 @@ export default function EventDetail() {
           )}
         </div>
       </SectionCard>
+      )}
 
-      {error && !addCrewOpen && !allocatePayOpen && !endEventOpen && (
+      {isDoneForDay && !isEventEnded && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-6 py-4 text-sm text-amber-900">
+          This event is done for the day. Crew were checked out and can check in again tomorrow if the event continues.
+        </div>
+      )}
+
+      {error && !addCrewOpen && !allocatePayOpen && !endEventOpen && !transferOpen && (
         <div className="form-error-banner">{error}</div>
       )}
 
@@ -1153,15 +1327,27 @@ export default function EventDetail() {
                 />
               </div>
               <div className="form-field">
-                <label className="form-label" htmlFor="alloc-amount">Amount *</label>
+                <label className="form-label" htmlFor="alloc-per-diem">Per diem</label>
                 <input
-                  id="alloc-amount"
+                  id="alloc-per-diem"
                   type="number"
                   min={0}
                   step={0.01}
-                  required
-                  value={payAmount}
-                  onChange={(e) => setPayAmount(e.target.value)}
+                  value={payPerDiem}
+                  onChange={(e) => setPayPerDiem(e.target.value)}
+                  className="form-input"
+                  placeholder="0"
+                />
+              </div>
+              <div className="form-field">
+                <label className="form-label" htmlFor="alloc-allowances">Allowances</label>
+                <input
+                  id="alloc-allowances"
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={payAllowances}
+                  onChange={(e) => setPayAllowances(e.target.value)}
                   className="form-input"
                   placeholder="0"
                 />
@@ -1170,8 +1356,61 @@ export default function EventDetail() {
                 <button type="button" onClick={() => setAllocatePayOpen(false)} className="btn-secondary">
                   Cancel
                 </button>
-                <button type="submit" disabled={paymentSaving || !payUserId} className="btn-brand disabled:opacity-50">
+                <button
+                  type="submit"
+                  disabled={paymentSaving || !payUserId || (Number(payPerDiem) <= 0 && Number(payAllowances) <= 0)}
+                  className="btn-brand disabled:opacity-50"
+                >
                   {paymentSaving ? 'Creating…' : 'Create payment request'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </FormModal>
+      )}
+
+      {transferOpen && event && (
+        <FormModal title="Transfer crew" onClose={() => { setTransferOpen(false); setError(null); }} wide={false}>
+          <div className="form-card-body">
+            {error && <div className="form-error-banner mb-4">{error}</div>}
+            <p className="mb-4 text-sm text-slate-600">
+              Move a crew member to another event on the same day. Open check-ins on this event are checked out automatically.
+            </p>
+            <form onSubmit={handleTransferCrew} className="space-y-4">
+              <div className="form-field">
+                <label className="form-label" htmlFor="xfer-user">Crew member *</label>
+                <select
+                  id="xfer-user"
+                  required
+                  value={transferUserId}
+                  onChange={(e) => setTransferUserId(e.target.value)}
+                  className="form-select"
+                >
+                  <option value="">Select crew member</option>
+                  {(event.crew ?? []).map((u) => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-field">
+                <label className="form-label" htmlFor="xfer-target">To event (same day) *</label>
+                <select
+                  id="xfer-target"
+                  required
+                  value={transferTargetId}
+                  onChange={(e) => setTransferTargetId(e.target.value)}
+                  className="form-select"
+                >
+                  <option value="">Select destination event</option>
+                  {transferTargetEvents.map((e) => (
+                    <option key={e.id} value={e.id}>{e.name} – {formatDate(e.date)}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-actions">
+                <button type="button" onClick={() => setTransferOpen(false)} className="btn-secondary">Cancel</button>
+                <button type="submit" disabled={transferring || !transferUserId || !transferTargetId} className="btn-brand disabled:opacity-50">
+                  {transferring ? 'Transferring…' : 'Transfer'}
                 </button>
               </div>
             </form>

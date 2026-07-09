@@ -20,6 +20,17 @@ type CrewMember = User & {
 
 const EVENT_STATUSES_FOR_OPS = ['created', 'active'];
 
+function dateOnly(d: string | null | undefined): string {
+  if (!d) return '';
+  return typeof d === 'string' && d.includes('T') ? d.slice(0, 10) : String(d).slice(0, 10);
+}
+
+function eventCoversDate(ev: Event, day: string): boolean {
+  const from = dateOnly(ev.date) || day;
+  const to = dateOnly(ev.end_date) || from;
+  return from <= day && day <= to;
+}
+
 export default function EventOperations() {
   const [events, setEvents] = useState<Event[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -86,9 +97,12 @@ export default function EventOperations() {
     ? events.find((e) => e.id === Number(transferSourceEventId))
     : null;
   const sourceEventCrew = sourceEvent?.crew ?? [];
-  const targetEventsForTransfer = activeEvents.filter(
-    (e) => e.id !== Number(transferSourceEventId)
-  );
+  const targetEventsForTransfer = activeEvents.filter((e) => {
+    if (e.id === Number(transferSourceEventId)) return false;
+    if (!sourceEvent) return true;
+    const refDay = dateOnly(sourceEvent.date);
+    return refDay ? eventCoversDate(e, refDay) : true;
+  });
 
   const checkinEvent = checkinEventId
     ? events.find((e) => e.id === Number(checkinEventId))
@@ -161,6 +175,23 @@ export default function EventOperations() {
       setAddCrewRole('');
       fetchData();
     } catch (err) {
+      const body = (err as Error & { responseBody?: { conflicting_events?: Array<{ id: number; name: string }> } })
+        .responseBody;
+      const conflict = body?.conflicting_events?.[0];
+      if (conflict && window.confirm(`This person is on "${conflict.name}". Move them from that event instead?`)) {
+        try {
+          await api.events.transferUser(conflict.id, userId, eventId);
+          setSuccess('Crew member transferred to this event.');
+          setAddCrewEventId('');
+          setAddCrewUserId('');
+          setAddCrewRole('');
+          fetchData();
+          return;
+        } catch (transferErr) {
+          setError(transferErr instanceof Error ? transferErr.message : 'Transfer failed.');
+          return;
+        }
+      }
       setError(err instanceof Error ? err.message : 'Failed to add crew.');
     } finally {
       setAddCrewSaving(false);
@@ -466,6 +497,9 @@ export default function EventOperations() {
 
       <SectionCard sectionLabel="Done for the day">
         <div className="p-6">
+          <p className="mb-4 text-sm text-slate-600">
+            Checks out all crew still on site and closes the event for today. Crew can check in again tomorrow if the event continues.
+          </p>
           <form onSubmit={handleDoneForDay} className="flex flex-wrap items-end gap-4">
             <div className="form-field min-w-[220px]">
               <label className="form-label">Event</label>

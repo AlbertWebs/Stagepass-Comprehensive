@@ -8,6 +8,7 @@ use App\Models\Event;
 use App\Models\EventExpense;
 use App\Models\EventAllowance;
 use App\Models\EventPayment;
+use App\Models\EventEquipment;
 use App\Models\EventUser;
 use App\Models\Task;
 use Carbon\Carbon;
@@ -465,7 +466,6 @@ class ReportsController extends Controller
 
         $summaryHtml = '';
         $tableRows = '';
-        $signatureHtml = '';
 
         switch ($type) {
             case 'events':
@@ -541,11 +541,6 @@ class ReportsController extends Controller
                 }
                 $tableRows = $tableRows ?: '<tr><td colspan="5">No records for selected range.</td></tr>';
                 $tableHeader = '<tr><th>Date</th><th>Event</th><th style="text-align:right;">Crew allowances (KES)</th><th style="text-align:right;">Other expenses (KES)</th><th style="text-align:right;">Total (KES)</th></tr>';
-                $signatureHtml = '<div class="sig-wrap">'
-                    . '<div class="sig-card"><div class="sig-label">Confirmed by</div><div class="sig-value">' . e($confirmedBy !== '' ? $confirmedBy : '________________________') . '</div></div>'
-                    . '<div class="sig-card"><div class="sig-label">Signature</div><div class="sig-value">' . e($signature !== '' ? $signature : '________________________') . '</div></div>'
-                    . '<div class="sig-card"><div class="sig-label">Date</div><div class="sig-value">' . e(now()->format('Y-m-d H:i')) . '</div></div>'
-                    . '</div>';
                 break;
         }
 
@@ -558,6 +553,8 @@ class ReportsController extends Controller
             };
         }
 
+        $signatureHtml = $this->buildProjectLeadSignatureHtml($confirmedBy, $signature);
+
         return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' . e($title) . '</title><style>
 body{font-family:system-ui,sans-serif;margin:24px;color:#111;}
 h1{font-size:1.5rem;margin-bottom:4px;}
@@ -569,19 +566,52 @@ th{background:#f5f5f5;font-weight:600;}
 .kpi{border:1px solid #ddd;border-radius:10px;padding:10px 12px;background:#fbfbfb;}
 .kpi .k{display:block;color:#555;font-size:12px;margin-bottom:4px;}
 .kpi .v{display:block;font-size:18px;font-weight:700;color:#0f1838;}
-.sig-wrap{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:10px;margin-top:18px;}
-.sig-card{border:1px solid #ddd;border-radius:10px;padding:10px 12px;min-height:72px;}
-.sig-label{font-size:12px;color:#666;margin-bottom:8px;}
-.sig-value{font-size:14px;font-weight:600;}
+'.$this->signatureCss().'
 @media print{body{margin:12px;} .no-print{display:none;}}
 </style></head><body>
 <h1>' . e($title) . '</h1>
 <p class="meta">Period: ' . e($period) . ' | Generated: ' . e($generatedAt) . '</p>
 <div class="summary">' . $summaryHtml . '</div>
 <table><thead>' . $tableHeader . '</thead><tbody>' . $tableRows . '</tbody></table>
-' . ($signatureHtml ?? '') . '
+' . $signatureHtml . '
 <p class="meta" style="margin-top:24px;">Stagepass Reports – ' . e($generatedAt) . '</p>
 </body></html>';
+    }
+
+    /**
+     * Shared printable sign-off block for project lead / team leader.
+     */
+    private function buildProjectLeadSignatureHtml(string $confirmedBy = '', string $signature = ''): string
+    {
+        $nameValue = $confirmedBy !== '' ? e($confirmedBy) : '&nbsp;';
+        $signatureValue = $signature !== '' ? e($signature) : '&nbsp;';
+        $dateValue = e(now()->format('Y-m-d'));
+
+        return '<section class="sig-section">'
+            .'<h2 class="sig-heading">Project lead sign-off</h2>'
+            .'<p class="sig-note">I confirm that I have reviewed this report and that the event details, crew attendance, allowances, payments and expenses are accurate to the best of my knowledge.</p>'
+            .'<div class="sig-wrap">'
+            .'<div class="sig-card"><div class="sig-label">Project lead name</div><div class="sig-value">'.$nameValue.'</div><div class="sig-line"></div></div>'
+            .'<div class="sig-card sig-card-wide"><div class="sig-label">Project lead signature</div><div class="sig-value sig-hand">'.$signatureValue.'</div><div class="sig-line sig-line-tall"></div></div>'
+            .'<div class="sig-card"><div class="sig-label">Date</div><div class="sig-value">'.$dateValue.'</div><div class="sig-line"></div></div>'
+            .'</div>'
+            .'</section>';
+    }
+
+    private function signatureCss(): string
+    {
+        return '.sig-section{margin-top:28px;padding-top:8px;page-break-inside:avoid;}'
+            .'.sig-heading{font-size:1.1rem;margin:0 0 6px;color:#0f1838;border-bottom:2px solid #ca8a04;padding-bottom:4px;}'
+            .'.sig-note{color:#555;font-size:0.85rem;margin:0 0 14px;max-width:48rem;}'
+            .'.sig-wrap{display:grid;grid-template-columns:1.2fr 1.6fr 0.9fr;gap:12px;margin-top:8px;}'
+            .'.sig-card{border:1px solid #c9d2e4;border-radius:10px;padding:12px 14px;min-height:110px;background:#fafbff;}'
+            .'.sig-card-wide{min-height:130px;}'
+            .'.sig-label{font-size:12px;color:#555;margin-bottom:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;}'
+            .'.sig-value{font-size:14px;font-weight:600;min-height:24px;}'
+            .'.sig-hand{font-family:Georgia,"Times New Roman",serif;font-size:18px;font-weight:500;}'
+            .'.sig-line{border-bottom:1px solid #334155;margin-top:28px;}'
+            .'.sig-line-tall{margin-top:48px;}'
+            .'@media (max-width:720px){.sig-wrap{grid-template-columns:1fr;}}';
     }
 
     private function eventsReportData(Carbon $from, Carbon $to, ?int $eventId): array
@@ -790,6 +820,20 @@ th{background:#f5f5f5;font-weight:600;}
             ->get()
             ->groupBy('event_id');
 
+        $tasksByEvent = Task::query()
+            ->with(['assignees:id,name'])
+            ->whereIn('event_id', $eventIds)
+            ->when($userId, fn ($q) => $q->whereHas('assignees', fn ($aq) => $aq->where('users.id', $userId)))
+            ->orderBy('due_date')
+            ->get()
+            ->groupBy('event_id');
+
+        $equipmentByEvent = EventEquipment::query()
+            ->with('equipment:id,name,serial_number,condition')
+            ->whereIn('event_id', $eventIds)
+            ->get()
+            ->groupBy('event_id');
+
         $dossier = [];
         $totals = [
             'events_count' => 0,
@@ -809,6 +853,8 @@ th{background:#f5f5f5;font-weight:600;}
             $allowanceRows = $allowancesByEvent->get($eid, collect());
             $paymentRows = $paymentsByEvent->get($eid, collect());
             $expenseRows = $expensesByEvent->get($eid, collect());
+            $taskRows = $tasksByEvent->get($eid, collect());
+            $equipmentRows = $equipmentByEvent->get($eid, collect());
 
             $crew = $crewRows->map(function (EventUser $a) {
                 return [
@@ -873,6 +919,28 @@ th{background:#f5f5f5;font-weight:600;}
                 ];
             })->values()->all();
 
+            $tasks = $taskRows->map(function (Task $t) {
+                return [
+                    'id' => $t->id,
+                    'title' => $t->title,
+                    'status' => $t->status,
+                    'priority' => $t->priority,
+                    'due_date' => $t->due_date?->format('Y-m-d'),
+                    'assignees' => $t->assignees->pluck('name')->filter()->values()->all(),
+                ];
+            })->values()->all();
+
+            $equipment = $equipmentRows->map(function (EventEquipment $row) {
+                return [
+                    'id' => $row->id,
+                    'equipment_id' => $row->equipment_id,
+                    'name' => $row->equipment?->name ?? ('Equipment #'.$row->equipment_id),
+                    'serial_number' => $row->equipment?->serial_number,
+                    'condition' => $row->equipment?->condition,
+                    'notes' => $row->notes,
+                ];
+            })->values()->all();
+
             $earnedTotal = round($allowanceRows->sum(fn ($a) => (float) $a->amount), 2);
             $earnedApprovedPaid = round($allowanceRows
                 ->whereIn('status', [EventAllowance::STATUS_APPROVED, EventAllowance::STATUS_PAID])
@@ -913,6 +981,8 @@ th{background:#f5f5f5;font-weight:600;}
                 'earned_allowances' => $allowances,
                 'payments' => $payments,
                 'expenses' => $expenses,
+                'tasks' => $tasks,
+                'equipment' => $equipment,
                 'totals' => [
                     'crew_count' => count($crew),
                     'earned_allowances_total' => $earnedTotal,
@@ -1063,6 +1133,34 @@ th{background:#f5f5f5;font-weight:600;}
                 $expenseRowsHtml = '<tr><td colspan="5">No cab/parking expenses.</td></tr>';
             }
 
+            $taskRowsHtml = '';
+            foreach ($item['tasks'] ?? [] as $task) {
+                $assignees = is_array($task['assignees'] ?? null) ? implode(', ', $task['assignees']) : '—';
+                $taskRowsHtml .= '<tr>'
+                    .'<td>'.e((string) ($task['title'] ?? '—')).'</td>'
+                    .'<td>'.e((string) ($task['status'] ?? '—')).'</td>'
+                    .'<td>'.e((string) ($task['priority'] ?? '—')).'</td>'
+                    .'<td>'.e((string) ($task['due_date'] ?? '—')).'</td>'
+                    .'<td>'.e($assignees).'</td>'
+                    .'</tr>';
+            }
+            if ($taskRowsHtml === '') {
+                $taskRowsHtml = '<tr><td colspan="5">No tasks assigned.</td></tr>';
+            }
+
+            $equipmentRowsHtml = '';
+            foreach ($item['equipment'] ?? [] as $eq) {
+                $equipmentRowsHtml .= '<tr>'
+                    .'<td>'.e((string) ($eq['name'] ?? '—')).'</td>'
+                    .'<td>'.e((string) ($eq['serial_number'] ?? '—')).'</td>'
+                    .'<td>'.e((string) ($eq['condition'] ?? '—')).'</td>'
+                    .'<td>'.e((string) ($eq['notes'] ?? '—')).'</td>'
+                    .'</tr>';
+            }
+            if ($equipmentRowsHtml === '') {
+                $equipmentRowsHtml = '<tr><td colspan="4">No equipment assigned.</td></tr>';
+            }
+
             $sections .= '<section class="event-block">'
                 .'<h2>'.e((string) ($ev['name'] ?? 'Event')).'</h2>'
                 .'<div class="kpi-grid">'
@@ -1081,6 +1179,10 @@ th{background:#f5f5f5;font-weight:600;}
                 .'<table><thead><tr><th>Crew</th><th>Purpose</th><th>Date</th><th style="text-align:right;">Allowances</th><th style="text-align:right;">Per diem</th><th style="text-align:right;">Total</th><th>Status</th></tr></thead><tbody>'.$paymentRowsHtml.'</tbody></table>'
                 .'<h3>Cab / parking expenses</h3>'
                 .'<table><thead><tr><th>Crew</th><th>Company transport</th><th style="text-align:right;">Cab</th><th style="text-align:right;">Parking</th><th style="text-align:right;">Total</th></tr></thead><tbody>'.$expenseRowsHtml.'</tbody></table>'
+                .'<h3>Tasks</h3>'
+                .'<table><thead><tr><th>Task</th><th>Status</th><th>Priority</th><th>Due</th><th>Assignees</th></tr></thead><tbody>'.$taskRowsHtml.'</tbody></table>'
+                .'<h3>Equipment</h3>'
+                .'<table><thead><tr><th>Name</th><th>Serial</th><th>Condition</th><th>Notes</th></tr></thead><tbody>'.$equipmentRowsHtml.'</tbody></table>'
                 .'</section>';
         }
 
@@ -1088,11 +1190,7 @@ th{background:#f5f5f5;font-weight:600;}
             $sections = '<p>No events found for the selected filters.</p>';
         }
 
-        $signatureHtml = '<div class="sig-wrap">'
-            .'<div class="sig-card"><div class="sig-label">Confirmed by</div><div class="sig-value">'.e($confirmedBy !== '' ? $confirmedBy : '________________________').'</div></div>'
-            .'<div class="sig-card"><div class="sig-label">Signature</div><div class="sig-value">'.e($signature !== '' ? $signature : '________________________').'</div></div>'
-            .'<div class="sig-card"><div class="sig-label">Date</div><div class="sig-value">'.e(now()->format('Y-m-d H:i')).'</div></div>'
-            .'</div>';
+        $signatureHtml = $this->buildProjectLeadSignatureHtml($confirmedBy, $signature);
 
         return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'.e($title).'</title><style>
 body{font-family:system-ui,sans-serif;margin:24px;color:#111;}
@@ -1109,10 +1207,7 @@ th{background:#f5f5f5;font-weight:600;}
 .kpi .k{display:block;color:#555;font-size:12px;margin-bottom:4px;}
 .kpi .v{display:block;font-size:16px;font-weight:700;color:#0f1838;}
 .event-block{page-break-inside:avoid;margin-bottom:28px;}
-.sig-wrap{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:10px;margin-top:24px;}
-.sig-card{border:1px solid #ddd;border-radius:10px;padding:10px 12px;min-height:72px;}
-.sig-label{font-size:12px;color:#666;margin-bottom:8px;}
-.sig-value{font-size:14px;font-weight:600;}
+'.$this->signatureCss().'
 @media print{body{margin:12px;} .no-print{display:none;}}
 </style></head><body>
 <h1>'.e($title).'</h1>
