@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Event;
+use App\Models\Role;
 use App\Models\User;
 use App\Notifications\TeamLeaderAssignedNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -192,19 +193,38 @@ class EventsApiTest extends TestCase
         Notification::assertNothingSent();
     }
 
-    public function test_events_destroy_deletes_event(): void
+    public function test_events_destroy_deletes_event_for_admin(): void
+    {
+        $admin = User::factory()->create();
+        $role = Role::firstOrCreate(['name' => 'admin'], ['label' => 'Admin']);
+        $admin->roles()->syncWithoutDetaching([$role->id]);
+
+        $event = Event::create([
+            'name' => 'To Delete',
+            'date' => now()->toDateString(),
+            'start_time' => '09:00',
+            'created_by_id' => $admin->id,
+            'status' => Event::STATUS_CREATED,
+        ]);
+        $response = $this->withHeaders($this->auth($admin))
+            ->deleteJson('/api/events/' . $event->id);
+        $response->assertStatus(204);
+        $this->assertDatabaseMissing('events', ['id' => $event->id]);
+    }
+
+    public function test_events_destroy_rejects_non_admin(): void
     {
         $user = User::factory()->create();
         $event = Event::create([
-            'name' => 'To Delete',
+            'name' => 'Protected',
             'date' => now()->toDateString(),
             'start_time' => '09:00',
             'created_by_id' => $user->id,
             'status' => Event::STATUS_CREATED,
         ]);
-        $response = $this->withHeaders($this->auth($user))
-            ->deleteJson('/api/events/' . $event->id);
-        $response->assertStatus(204);
-        $this->assertDatabaseMissing('events', ['id' => $event->id]);
+        $this->withHeaders($this->auth($user))
+            ->deleteJson('/api/events/' . $event->id)
+            ->assertStatus(403);
+        $this->assertDatabaseHas('events', ['id' => $event->id]);
     }
 }

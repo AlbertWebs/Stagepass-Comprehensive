@@ -723,7 +723,7 @@ export default function EventDetail() {
                         </td>
                         <td className="px-6 py-4">
                           {(u as CrewMember).pivot?.role_in_event ? (
-                            <span className="chip-brand">{(u as CrewMember).pivot.role_in_event}</span>
+                            <span className="chip-brand">{(u as CrewMember).pivot?.role_in_event}</span>
                           ) : (
                             <span className="text-slate-400">–</span>
                           )}
