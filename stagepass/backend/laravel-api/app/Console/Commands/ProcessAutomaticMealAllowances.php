@@ -53,9 +53,13 @@ class ProcessAutomaticMealAllowances extends Command
 
         if ($total > 0) {
             $this->info("Granted {$total} meal allowance(s).");
+            $this->sendRunNotification($now, $tz, $total, $status, $slotResults, $errorMessage);
+        } else {
+            Log::info('allowances:process-meals completed with no allocations', [
+                'status' => $status,
+                'at' => $now->toIso8601String(),
+            ]);
         }
-
-        $this->sendRunNotification($now, $tz, $total, $status, $slotResults, $errorMessage);
 
         return $status === 'success' ? self::SUCCESS : self::FAILURE;
     }
