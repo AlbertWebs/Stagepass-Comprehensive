@@ -30,7 +30,7 @@ class ProcessAutomaticMealAllowances extends Command
         try {
             foreach ([MealAllowanceService::SLOT_BREAKFAST, MealAllowanceService::SLOT_LUNCH, MealAllowanceService::SLOT_DINNER] as $slot) {
                 $scheduledTime = $meals->scheduledTimeForSlot($slot);
-                $dueThisMinute = $scheduledTime === $now->format('H:i');
+                $dueThisMinute = $meals->isSlotDue($slot, $now);
                 $granted = $meals->processScheduledSlot($slot, $now);
                 $total += $granted;
 

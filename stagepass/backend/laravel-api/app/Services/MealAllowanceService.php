@@ -12,6 +12,7 @@ use App\Support\EventTeamLeaderGate;
 use Carbon\Carbon;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Automatic meal allowances: role-based amounts and check-in/out eligibility rules.
@@ -116,7 +117,52 @@ class MealAllowanceService
             return '00:00';
         }
 
-        return substr(trim((string) Setting::get($key, $defaults[$mealSlot] ?? '00:00')), 0, 5);
+        return $this->normalizeHm((string) Setting::get($key, $defaults[$mealSlot] ?? '00:00'), $defaults[$mealSlot] ?? '00:00');
+    }
+
+    /**
+     * Slot is due at/after its scheduled time for the rest of that calendar day (catch-up safe with dedupe).
+     */
+    public function isSlotDue(string $mealSlot, Carbon $now): bool
+    {
+        $now = $now->copy()->timezone($this->appTimezone());
+        $scheduledMins = $this->hmToMinutes($this->scheduledTimeForSlot($mealSlot));
+        $nowMins = $this->hmToMinutes($now->format('H:i'));
+
+        return $scheduledMins !== null && $nowMins !== null && $nowMins >= $scheduledMins;
+    }
+
+    public function normalizeHm(mixed $value, string $fallback = '00:00'): string
+    {
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return $fallback;
+        }
+
+        if (preg_match('/^(\d{1,2}):(\d{2})/', $raw, $m)) {
+            return sprintf('%02d:%02d', (int) $m[1], (int) $m[2]);
+        }
+
+        return $fallback;
+    }
+
+    public function hmToMinutes(string $hm): ?int
+    {
+        if (! preg_match('/^(\d{1,2}):(\d{2})$/', $this->normalizeHm($hm), $m)) {
+            return null;
+        }
+
+        return ((int) $m[1]) * 60 + (int) $m[2];
+    }
+
+    public function ensureMealAllowanceType(string $mealSlot): ?AllowanceType
+    {
+        $name = $this->typeNameForSlot($mealSlot);
+
+        return AllowanceType::query()->firstOrCreate(
+            ['name' => $name],
+            ['is_active' => true]
+        );
     }
 
     public function typeNameForSlot(string $mealSlot): string
@@ -150,18 +196,21 @@ class MealAllowanceService
     public function processScheduledSlot(string $mealSlot, Carbon $now): int
     {
         $now = $now->copy()->timezone($this->appTimezone());
-        $slotMinute = $now->format('H:i');
-        if ($this->scheduledTimeForSlot($mealSlot) !== $slotMinute) {
+        $scheduled = $this->scheduledTimeForSlot($mealSlot);
+        if (! $this->isSlotDue($mealSlot, $now)) {
             return 0;
         }
 
         $mealGrantDate = $now->toDateString();
-        $type = AllowanceType::query()
-            ->where('name', $this->typeNameForSlot($mealSlot))
-            ->where('is_active', true)
-            ->first();
+        $type = $this->ensureMealAllowanceType($mealSlot);
+        if (! $type || ! $type->is_active) {
+            Log::warning('allowances:process-meals skipped slot: missing/inactive allowance type', [
+                'slot' => $mealSlot,
+                'type' => $this->typeNameForSlot($mealSlot),
+                'scheduled' => $scheduled,
+                'now' => $now->toIso8601String(),
+            ]);
 
-        if (! $type) {
             return 0;
         }
 
@@ -178,18 +227,36 @@ class MealAllowanceService
             $query->whereNotNull('checkout_time');
         }
 
+        $assignments = $query->get();
         $granted = 0;
-        foreach ($query->get() as $assignment) {
+        $skippedQualify = 0;
+        $skippedGrant = 0;
+
+        foreach ($assignments as $assignment) {
             if (! $assignment->event || ! $assignment->user) {
+                $skippedGrant++;
                 continue;
             }
             if (! $this->qualifiesForSlot($assignment, $mealSlot, $mealGrantDate)) {
+                $skippedQualify++;
                 continue;
             }
             if ($this->grantMealAllowance($assignment->event, $assignment, $assignment->user, $mealSlot, $mealGrantDate, $type->id)) {
                 $granted++;
+            } else {
+                $skippedGrant++;
             }
         }
+
+        Log::info('allowances:process-meals slot processed', [
+            'slot' => $mealSlot,
+            'scheduled' => $scheduled,
+            'now' => $now->format('Y-m-d H:i:s T'),
+            'candidates' => $assignments->count(),
+            'granted' => $granted,
+            'skipped_qualify' => $skippedQualify,
+            'skipped_grant_or_dedupe' => $skippedGrant,
+        ]);
 
         return $granted;
     }
@@ -207,12 +274,8 @@ class MealAllowanceService
             return false;
         }
 
-        $type = AllowanceType::query()
-            ->where('name', $this->typeNameForSlot(self::SLOT_DINNER))
-            ->where('is_active', true)
-            ->first();
-
-        if (! $type) {
+        $type = $this->ensureMealAllowanceType(self::SLOT_DINNER);
+        if (! $type || ! $type->is_active) {
             return false;
         }
 
