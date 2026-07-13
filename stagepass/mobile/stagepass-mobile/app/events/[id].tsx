@@ -26,7 +26,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
-import { api, type Event as EventType, type User } from '~/services/api';
+import { api, type EarnedAllowanceDetail, type Event as EventType, type User } from '~/services/api';
 import { formatApiTime, parseApiDateTime } from '@/src/utils/formatApiDateTime';
 import { useAppRole } from '~/hooks/useAppRole';
 import {
@@ -90,6 +90,17 @@ function formatHoursLabel(hours: number): string {
   return `${h}h ${m}m`;
 }
 
+function formatKes(amount: number): string {
+  return `KES ${Number(amount).toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
+function allowanceStatusColor(status: string): string {
+  const st = status.toLowerCase();
+  if (st === 'rejected') return '#c0392b';
+  if (st === 'approved' || st === 'paid') return StatusColors.checkedIn;
+  return themeYellow;
+}
+
 function parseCoord(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
@@ -111,6 +122,7 @@ export default function EventDetailScreen() {
   const currentUserId = currentUser?.id;
   const role = useAppRole();
   const [event, setEvent] = useState<EventType | null>(null);
+  const [eventAllowances, setEventAllowances] = useState<EarnedAllowanceDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [clockTick, setClockTick] = useState(0);
@@ -127,10 +139,34 @@ export default function EventDetailScreen() {
 
   const fetchEvent = useCallback(() => {
     if (!id) return;
+    const eventId = Number(id);
     setLoading(true);
-    api.events
-      .get(Number(id))
-      .then(setEvent)
+    Promise.all([
+      api.events.get(eventId),
+      api.payments.earnedAllowances({ event_id: eventId, per_page: 200 }).catch(() => null),
+    ])
+      .then(([ev, earnedRes]) => {
+        setEvent(ev);
+        const groups = Array.isArray(earnedRes?.data) ? earnedRes.data : [];
+        const flatFromApi = Array.isArray((earnedRes as { flat?: EarnedAllowanceDetail[] } | null)?.flat)
+          ? ((earnedRes as { flat: EarnedAllowanceDetail[] }).flat)
+          : null;
+        const flattened =
+          flatFromApi ??
+          groups.flatMap((group) =>
+            (group.details ?? []).map((detail) => ({
+              ...detail,
+              event_name: group.event_name ?? detail.event_name,
+            }))
+          );
+        setEventAllowances(
+          flattened.sort((a, b) => {
+            const at = a.recorded_at ? new Date(a.recorded_at).getTime() : 0;
+            const bt = b.recorded_at ? new Date(b.recorded_at).getTime() : 0;
+            return bt - at;
+          })
+        );
+      })
       .catch(() => Alert.alert('Error', 'Failed to load event'))
       .finally(() => setLoading(false));
   }, [id]);
@@ -920,28 +956,82 @@ export default function EventDetailScreen() {
             </>
           ) : null}
 
-          {event.daily_allowance != null && event.daily_allowance > 0 ? (
-            <>
+          <>
               <View style={styles.sectionTitleRow}>
                 <View style={[styles.sectionTitleAccent, { backgroundColor: accentBrand }]} />
                 <View style={[styles.sectionTitleIconWrap, { backgroundColor: sectionIconBg }]}>
                   <Ionicons name="wallet-outline" size={Icons.small} color={accentBrand} />
                 </View>
-                <ThemedText style={[styles.sectionTitle, { color: accent }]}>Allowance</ThemedText>
+                <ThemedText style={[styles.sectionTitle, { color: accent }]}>Allowances</ThemedText>
               </View>
-              <View style={[styles.allowanceCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
-                <View style={[styles.allowanceIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
-                  <Ionicons name="wallet-outline" size={Icons.standard} color={accentBrand} />
+              {event.daily_allowance != null && event.daily_allowance > 0 ? (
+                <View style={[styles.allowanceCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+                  <View style={[styles.allowanceIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
+                    <Ionicons name="wallet-outline" size={Icons.standard} color={accentBrand} />
+                  </View>
+                  <View style={styles.allowanceTextWrap}>
+                    <ThemedText style={[styles.allowanceValue, { color: colors.text }]}>
+                      {formatKes(Number(event.daily_allowance))}
+                    </ThemedText>
+                    <ThemedText style={[styles.allowanceLabel, { color: colors.textSecondary }]}>Daily allowance</ThemedText>
+                  </View>
                 </View>
-                <View style={styles.allowanceTextWrap}>
-                  <ThemedText style={[styles.allowanceValue, { color: colors.text }]}>
-                    KES {Number(event.daily_allowance).toLocaleString()}
+              ) : null}
+              <View style={[styles.allowanceListCard, { backgroundColor: cardSurface, borderColor: cardBorder }]}>
+                {eventAllowances.length === 0 ? (
+                  <ThemedText style={[styles.allowanceEmpty, { color: colors.textSecondary }]}>
+                    No allowances recorded for this event yet.
                   </ThemedText>
-                  <ThemedText style={[styles.allowanceLabel, { color: colors.textSecondary }]}>Daily allowance</ThemedText>
-                </View>
+                ) : (
+                  eventAllowances.map((a, index) => {
+                    const st = (a.status ?? '').toLowerCase();
+                    const subtitleParts = [
+                      formatKes(Number(a.amount)),
+                      a.status,
+                      a.meal_slot ? String(a.meal_slot) : null,
+                      a.meal_grant_date
+                        ? a.meal_grant_date
+                        : a.recorded_at
+                          ? new Date(a.recorded_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+                          : null,
+                    ].filter(Boolean);
+                    const showCrewName =
+                      canManageEventCrew ||
+                      canApprovePendingAllowances ||
+                      role === 'admin' ||
+                      (currentUserId != null && a.crew_id !== currentUserId);
+                    return (
+                      <View
+                        key={a.id}
+                        style={[
+                          styles.allowanceListRow,
+                          index < eventAllowances.length - 1 && {
+                            borderBottomWidth: StyleSheet.hairlineWidth,
+                            borderBottomColor: cardBorder,
+                          },
+                        ]}
+                      >
+                        <View style={[styles.allowanceStatusDot, { backgroundColor: allowanceStatusColor(st) }]} />
+                        <View style={styles.allowanceListTextWrap}>
+                          <ThemedText style={[styles.allowanceListTitle, { color: colors.text }]} numberOfLines={1}>
+                            {a.allowance_type}
+                            {showCrewName && a.crew_name ? ` · ${a.crew_name}` : ''}
+                          </ThemedText>
+                          <ThemedText style={[styles.allowanceListSub, { color: colors.textSecondary }]} numberOfLines={2}>
+                            {subtitleParts.join(' · ')}
+                          </ThemedText>
+                          {a.description && a.source !== 'automatic' ? (
+                            <ThemedText style={[styles.allowanceListSub, { color: colors.textSecondary, marginTop: 2 }]} numberOfLines={2}>
+                              {a.description}
+                            </ThemedText>
+                          ) : null}
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
               </View>
             </>
-          ) : null}
 
           {myAssignment != null &&
           !isEventEnded &&
@@ -1375,6 +1465,38 @@ const styles = StyleSheet.create({
   allowanceTextWrap: { flex: 1 },
   allowanceValue: { fontSize: Typography.body, fontWeight: Typography.buttonTextWeight },
   allowanceLabel: { fontSize: Typography.label, marginTop: 2 },
+  allowanceListCard: {
+    borderRadius: Cards.borderRadius,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  allowanceEmpty: {
+    fontSize: Typography.bodySmall,
+    paddingVertical: Spacing.md,
+  },
+  allowanceListRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.md,
+    paddingVertical: Spacing.md,
+  },
+  allowanceStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginTop: 6,
+  },
+  allowanceListTextWrap: { flex: 1 },
+  allowanceListTitle: {
+    fontSize: Typography.bodySmall,
+    fontWeight: '600',
+  },
+  allowanceListSub: {
+    fontSize: Typography.label,
+    marginTop: 2,
+  },
   leadOpsCard: {
     flexDirection: 'row',
     alignItems: 'center',

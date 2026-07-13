@@ -94,7 +94,7 @@ Schedule::command('attendance:send-overtime-threshold-notifications')
     ->timezone($eastAfrica);
 
 Schedule::command('allowances:process-meals')
-    ->everyMinute()
+    ->hourly()
     ->timezone($eastAfrica);
 
 if (filter_var(env('CRON_TEST_EMAIL_ENABLED', false), FILTER_VALIDATE_BOOL)) {
