@@ -16,6 +16,9 @@ class AllowanceCronRunMail extends Mailable
 {
     use Queueable, SerializesModels;
 
+    /**
+     * @param  list<array{slot: string, label: string, scheduled_time: string, due_this_minute: bool, granted: int}>  $slotResults
+     */
     public function __construct(
         public Carbon $sentAt,
         public string $appName,
@@ -23,14 +26,21 @@ class AllowanceCronRunMail extends Mailable
         public string $timezone,
         public int $grantedCount,
         public ?string $hostname,
+        public string $status = 'success',
+        public array $slotResults = [],
+        public ?string $errorMessage = null,
     ) {}
 
     public function envelope(): Envelope
     {
+        $statusLabel = $this->status === 'success' ? 'OK' : 'FAILED';
+
         return new Envelope(
             subject: sprintf(
-                '[%s] Allowance cron ran %s',
+                '[%s] Allowance cron %s — %d granted (%s)',
                 $this->appName,
+                $statusLabel,
+                $this->grantedCount,
                 $this->sentAt->format('Y-m-d H:i:s')
             ),
         );

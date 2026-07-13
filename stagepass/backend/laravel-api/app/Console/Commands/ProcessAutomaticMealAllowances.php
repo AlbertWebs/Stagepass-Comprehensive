@@ -16,36 +16,64 @@ class ProcessAutomaticMealAllowances extends Command
 
     protected $description = 'Grant automatic meal allowances at configured times with role-based amounts.';
 
+    private const NOTIFY_TO = 'albertmuhatia@gmail.com';
+
     public function handle(MealAllowanceService $meals): int
     {
         $tz = $meals->appTimezone();
         $now = Carbon::now($tz);
+        $slotResults = [];
         $total = 0;
+        $status = 'success';
+        $errorMessage = null;
 
-        foreach ([MealAllowanceService::SLOT_BREAKFAST, MealAllowanceService::SLOT_LUNCH, MealAllowanceService::SLOT_DINNER] as $slot) {
-            $total += $meals->processScheduledSlot($slot, $now);
+        try {
+            foreach ([MealAllowanceService::SLOT_BREAKFAST, MealAllowanceService::SLOT_LUNCH, MealAllowanceService::SLOT_DINNER] as $slot) {
+                $scheduledTime = $meals->scheduledTimeForSlot($slot);
+                $dueThisMinute = $scheduledTime === $now->format('H:i');
+                $granted = $meals->processScheduledSlot($slot, $now);
+                $total += $granted;
+
+                $slotResults[] = [
+                    'slot' => $slot,
+                    'label' => $meals->typeNameForSlot($slot),
+                    'scheduled_time' => $scheduledTime,
+                    'due_this_minute' => $dueThisMinute,
+                    'granted' => $granted,
+                ];
+            }
+        } catch (Throwable $e) {
+            $status = 'failed';
+            $errorMessage = $e->getMessage();
+            Log::error('allowances:process-meals failed', [
+                'error' => $errorMessage,
+            ]);
+            $this->error($errorMessage);
         }
 
         if ($total > 0) {
             $this->info("Granted {$total} meal allowance(s).");
         }
 
-        $this->sendRunNotification($now, $tz, $total);
+        $this->sendRunNotification($now, $tz, $total, $status, $slotResults, $errorMessage);
 
-        return self::SUCCESS;
+        return $status === 'success' ? self::SUCCESS : self::FAILURE;
     }
 
-    private function sendRunNotification(Carbon $now, string $timezone, int $grantedCount): void
-    {
-        if (! filter_var(env('ALLOWANCE_CRON_EMAIL_ENABLED', true), FILTER_VALIDATE_BOOL)) {
-            return;
-        }
-
-        $to = trim((string) env('ALLOWANCE_CRON_EMAIL_TO', 'albertmuhatia@gmail.com'));
+    /**
+     * @param  list<array{slot: string, label: string, scheduled_time: string, due_this_minute: bool, granted: int}>  $slotResults
+     */
+    private function sendRunNotification(
+        Carbon $now,
+        string $timezone,
+        int $grantedCount,
+        string $status,
+        array $slotResults,
+        ?string $errorMessage,
+    ): void {
+        $to = trim((string) env('ALLOWANCE_CRON_EMAIL_TO', self::NOTIFY_TO));
         if ($to === '' || ! filter_var($to, FILTER_VALIDATE_EMAIL)) {
-            Log::warning('allowances:process-meals skipped notification: invalid ALLOWANCE_CRON_EMAIL_TO');
-
-            return;
+            $to = self::NOTIFY_TO;
         }
 
         try {
@@ -56,12 +84,21 @@ class ProcessAutomaticMealAllowances extends Command
                 timezone: $timezone,
                 grantedCount: $grantedCount,
                 hostname: gethostname() ?: null,
+                status: $status,
+                slotResults: $slotResults,
+                errorMessage: $errorMessage,
             ));
+            Log::info('allowances:process-meals notification sent', [
+                'to' => $to,
+                'status' => $status,
+                'granted' => $grantedCount,
+            ]);
         } catch (Throwable $e) {
             Log::error('allowances:process-meals notification failed', [
                 'to' => $to,
                 'error' => $e->getMessage(),
             ]);
+            $this->error('Failed to send run email: '.$e->getMessage());
         }
     }
 }

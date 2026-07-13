@@ -11,7 +11,7 @@ class AllowanceCronEmailTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_command_sends_run_notification_email(): void
+    public function test_command_sends_run_notification_email_with_status_and_slots(): void
     {
         Mail::fake();
 
@@ -19,18 +19,28 @@ class AllowanceCronEmailTest extends TestCase
             ->assertSuccessful();
 
         Mail::assertSent(AllowanceCronRunMail::class, function (AllowanceCronRunMail $mail): bool {
-            return $mail->hasTo('albertmuhatia@gmail.com');
+            return $mail->hasTo('albertmuhatia@gmail.com')
+                && $mail->status === 'success'
+                && $mail->grantedCount === 0
+                && count($mail->slotResults) === 3
+                && collect($mail->slotResults)->pluck('slot')->all() === ['breakfast', 'lunch', 'dinner'];
         });
     }
 
-    public function test_command_skips_email_when_disabled(): void
+    public function test_command_uses_env_recipient_override(): void
     {
         Mail::fake();
-        putenv('ALLOWANCE_CRON_EMAIL_ENABLED=false');
+        putenv('ALLOWANCE_CRON_EMAIL_TO=ops@example.com');
 
-        $this->artisan('allowances:process-meals')
-            ->assertSuccessful();
+        try {
+            $this->artisan('allowances:process-meals')
+                ->assertSuccessful();
 
-        Mail::assertNothingSent();
+            Mail::assertSent(AllowanceCronRunMail::class, function (AllowanceCronRunMail $mail): bool {
+                return $mail->hasTo('ops@example.com');
+            });
+        } finally {
+            putenv('ALLOWANCE_CRON_EMAIL_TO');
+        }
     }
 }
