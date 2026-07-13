@@ -84,11 +84,21 @@ Artisan::command('user:create-test-credentials {--password=Test@12345} {--rewrit
 /*
 |--------------------------------------------------------------------------
 | Scheduler — run `php artisan schedule:work` (dev) or cron: * * * * * cd /path && php artisan schedule:run
+| All due times are evaluated in East Africa Time (Africa/Nairobi).
 |--------------------------------------------------------------------------
 */
-Schedule::command('attendance:send-overtime-threshold-notifications')->everyMinute();
-Schedule::command('allowances:process-meals')->everyMinute();
+$eastAfrica = 'Africa/Nairobi';
+
+Schedule::command('attendance:send-overtime-threshold-notifications')
+    ->everyMinute()
+    ->timezone($eastAfrica);
+
+Schedule::command('allowances:process-meals')
+    ->everyMinute()
+    ->timezone($eastAfrica);
 
 if (filter_var(env('CRON_TEST_EMAIL_ENABLED', false), FILTER_VALIDATE_BOOL)) {
-    Schedule::command('cron:send-test-email')->everyMinute();
+    Schedule::command('cron:send-test-email')
+        ->everyMinute()
+        ->timezone($eastAfrica);
 }

@@ -63,12 +63,12 @@ return [
     |--------------------------------------------------------------------------
     |
     | Here you may specify the default timezone for your application, which
-    | will be used by the PHP date and date-time functions. The timezone
-    | is set to "UTC" by default as it is suitable for most use cases.
+    | will be used by the PHP date and date-time functions. Stagepass uses
+    | East Africa Time (Africa/Nairobi) for cron, meals, and attendance days.
     |
     */
 
-    'timezone' => env('APP_TIMEZONE', 'UTC'),
+    'timezone' => env('APP_TIMEZONE', 'Africa/Nairobi'),
 
     /*
     |--------------------------------------------------------------------------
