@@ -723,37 +723,45 @@ export default function Payments() {
                           <td className="px-6 py-4 text-xs text-slate-600">
                             P:{g.status_breakdown.pending} A:{g.status_breakdown.approved} Pd:{g.status_breakdown.paid}
                           </td>
-                          <td className="px-6 py-4 text-right space-x-2">
-                            <button type="button" className="link-brand" onClick={() => setExpandedEventId(expandedEventId === g.event_id ? null : g.event_id)}>View Details</button>
-                            <button
-                              type="button"
-                              className="link-brand text-emerald-700"
-                              onClick={() => openB2cModal(g.event_id)}
-                              disabled={b2cLoading || (g.status_breakdown.approved ?? 0) < 1}
-                            >
-                              Process B2C
-                            </button>
-                            <button
-                              type="button"
-                              className="link-brand text-blue-700"
-                              onClick={async () => {
-                                await Promise.all(
-                                  g.details
-                                    .filter((d) => d.status === 'pending')
-                                    .map((d) => api.payments.updateAllowanceStatus(d.id, 'approved'))
-                                );
-                                fetchAllowances();
-                              }}
-                            >
-                              Approve Allowances
-                            </button>
-                            <button
-                              type="button"
-                              className="link-brand"
-                              onClick={() => window.open(`${window.location.origin.replace(/\/$/, '')}/api/payments/earned-allowances/export?format=csv`, '_blank')}
-                            >
-                              Export
-                            </button>
+                          <td className="px-6 py-4 text-right">
+                            <div className="inline-flex flex-wrap justify-end gap-1.5">
+                              <button
+                                type="button"
+                                className="rounded-lg border border-slate-200/90 bg-white px-2.5 py-1 text-xs font-medium text-brand-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                                onClick={() => setExpandedEventId(expandedEventId === g.event_id ? null : g.event_id)}
+                              >
+                                View Details
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-lg border border-slate-200/90 bg-white px-2.5 py-1 text-xs font-medium text-emerald-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+                                onClick={() => openB2cModal(g.event_id)}
+                                disabled={b2cLoading || (g.status_breakdown.approved ?? 0) < 1}
+                              >
+                                Process B2C
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-lg border border-slate-200/90 bg-white px-2.5 py-1 text-xs font-medium text-blue-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                                onClick={async () => {
+                                  await Promise.all(
+                                    g.details
+                                      .filter((d) => d.status === 'pending')
+                                      .map((d) => api.payments.updateAllowanceStatus(d.id, 'approved'))
+                                  );
+                                  fetchAllowances();
+                                }}
+                              >
+                                Approve Allowances
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-lg border border-slate-200/90 bg-white px-2.5 py-1 text-xs font-medium text-brand-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                                onClick={() => window.open(`${window.location.origin.replace(/\/$/, '')}/api/payments/earned-allowances/export?format=csv`, '_blank')}
+                              >
+                                Export
+                              </button>
+                            </div>
                           </td>
                         </tr>
                         {expandedEventId === g.event_id && (
