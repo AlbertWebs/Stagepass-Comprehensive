@@ -861,11 +861,90 @@ function AllowancesReportView({
   const { summary, data: list, pagination } = data;
   const money = (n: number) =>
     Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const amountCell = (n: number | null | undefined) =>
+    n == null || Number.isNaN(Number(n)) || Number(n) === 0 ? '' : money(Number(n));
+
+  type PivotRow = {
+    key: string;
+    date: string | null;
+    crew_name: string;
+    breakfast: number;
+    lunch: number;
+    dinner: number;
+    other: number;
+    time_in: string | null;
+    time_out: string | null;
+  };
+
+  const byEvent = list.reduce<
+    Record<
+      number,
+      {
+        event_id: number;
+        event_name: string;
+        event_date: string | null;
+        rows: PivotRow[];
+        otherLines: typeof list;
+      }
+    >
+  >((acc, a) => {
+    const eid = a.event_id;
+    if (!acc[eid]) {
+      acc[eid] = {
+        event_id: eid,
+        event_name: a.event_name,
+        event_date: a.event_date ?? null,
+        rows: [],
+        otherLines: [],
+      };
+    }
+    const date = a.meal_grant_date ?? a.event_date ?? null;
+    const key = `${a.crew_id}|${date ?? 'na'}`;
+    let row = acc[eid].rows.find((r) => r.key === key);
+    if (!row) {
+      row = {
+        key,
+        date,
+        crew_name: a.crew_name,
+        breakfast: 0,
+        lunch: 0,
+        dinner: 0,
+        other: 0,
+        time_in: a.time_in ?? null,
+        time_out: a.time_out ?? null,
+      };
+      acc[eid].rows.push(row);
+    }
+    const amount = Number(a.amount) || 0;
+    if (a.status === 'rejected') {
+      // skip rejected from register-style grid
+    } else if (a.meal_slot === 'breakfast') {
+      row.breakfast += amount;
+    } else if (a.meal_slot === 'lunch') {
+      row.lunch += amount;
+    } else if (a.meal_slot === 'dinner') {
+      row.dinner += amount;
+    } else {
+      row.other += amount;
+      acc[eid].otherLines.push(a);
+    }
+    if (!row.time_in && a.time_in) row.time_in = a.time_in;
+    if (!row.time_out && a.time_out) row.time_out = a.time_out;
+    return acc;
+  }, {});
+
+  const events = Object.values(byEvent).sort((a, b) =>
+    String(a.event_date ?? '').localeCompare(String(b.event_date ?? ''))
+  );
 
   return (
     <SectionCard sectionLabel="Allowances report">
-      <div className="p-6 space-y-4">
+      <div className="p-6 space-y-6">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Lines</p>
+            <p className="mt-1 text-2xl font-bold text-slate-900">{summary.active_count}</p>
+          </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
             <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Breakfast</p>
             <p className="mt-1 text-xl font-bold text-slate-900">{money(summary.breakfast_total)}</p>
@@ -879,56 +958,175 @@ function AllowancesReportView({
             <p className="mt-1 text-xl font-bold text-slate-900">{money(summary.dinner_total)}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Other</p>
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Other allowances</p>
             <p className="mt-1 text-xl font-bold text-slate-900">{money(summary.other_total)}</p>
           </div>
           <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-amber-700">Meals total</p>
-            <p className="mt-1 text-xl font-bold text-amber-900">{money(summary.meal_total)}</p>
-          </div>
-          <div className="rounded-xl border border-green-200 bg-green-50/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-green-700">Grand total</p>
-            <p className="mt-1 text-xl font-bold text-green-900">{money(summary.grand_total)}</p>
+            <p className="text-xs font-medium uppercase tracking-wider text-amber-700">Earned total</p>
+            <p className="mt-1 text-xl font-bold text-amber-900">{money(summary.grand_total)}</p>
+            <p className="mt-1 text-[11px] text-amber-800/80">B+L+D+Other</p>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border border-slate-200">
-            <thead>
-              <tr className="bg-slate-100">
-                <th className="text-left p-2">Event</th>
-                <th className="text-left p-2">Date</th>
-                <th className="text-left p-2">Crew</th>
-                <th className="text-left p-2">Type</th>
-                <th className="text-left p-2">Slot</th>
-                <th className="text-right p-2">Amount</th>
-                <th className="text-left p-2">Time In</th>
-                <th className="text-left p-2">Time Out</th>
-                <th className="text-left p-2">Status</th>
-                <th className="text-left p-2">Source</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((a) => (
-                <tr key={a.id} className="border-t border-slate-100">
-                  <td className="p-2">{a.event_name}</td>
-                  <td className="p-2 whitespace-nowrap">
-                    {a.meal_grant_date ? fd(a.meal_grant_date) : a.event_date ? fd(a.event_date) : '—'}
-                  </td>
-                  <td className="p-2">{a.crew_name}</td>
-                  <td className="p-2">{a.allowance_type}</td>
-                  <td className="p-2 capitalize">{a.meal_slot ?? '—'}</td>
-                  <td className="p-2 text-right tabular-nums">{money(a.amount)}</td>
-                  <td className="p-2 whitespace-nowrap">{formatTime24(a.time_in) || '—'}</td>
-                  <td className="p-2 whitespace-nowrap">{formatTime24(a.time_out) || '—'}</td>
-                  <td className="p-2 capitalize">{a.status}</td>
-                  <td className="p-2">{a.source}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+
+        {events.length === 0 ? (
+          <p className="text-sm text-slate-500">No allowances found for the selected filters.</p>
+        ) : (
+          events.map((item) => {
+            const registerTotals = {
+              breakfast: item.rows.reduce((s, r) => s + r.breakfast, 0),
+              lunch: item.rows.reduce((s, r) => s + r.lunch, 0),
+              dinner: item.rows.reduce((s, r) => s + r.dinner, 0),
+              other: item.rows.reduce((s, r) => s + r.other, 0),
+            };
+            const sortedRows = [...item.rows].sort((a, b) => {
+              const d = String(a.date ?? '').localeCompare(String(b.date ?? ''));
+              return d !== 0 ? d : a.crew_name.localeCompare(b.crew_name);
+            });
+            return (
+              <div key={item.event_id} className="rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        Stagepass Audio Visual · Allowances register
+                      </p>
+                      <h3 className="text-base font-semibold text-slate-900">{item.event_name}</h3>
+                    </div>
+                    <p className="text-sm text-slate-600">
+                      {item.event_date ? fd(item.event_date) : '—'}
+                    </p>
+                  </div>
+                </div>
+                <div className="p-4 space-y-4">
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[720px] border border-slate-300 text-sm">
+                      <thead>
+                        <tr className="bg-slate-100">
+                          <th className="border border-slate-300 p-2 text-left" rowSpan={2}>
+                            Date
+                          </th>
+                          <th className="border border-slate-300 p-2 text-left" rowSpan={2}>
+                            Name
+                          </th>
+                          <th className="border border-slate-300 p-2 text-center" colSpan={3}>
+                            Meals (KES)
+                          </th>
+                          <th className="border border-slate-300 p-2 text-right" rowSpan={2}>
+                            Other
+                          </th>
+                          <th className="border border-slate-300 p-2 text-left" rowSpan={2}>
+                            Time In
+                          </th>
+                          <th className="border border-slate-300 p-2 text-left" rowSpan={2}>
+                            Time Out
+                          </th>
+                        </tr>
+                        <tr className="bg-slate-50">
+                          <th className="border border-slate-300 p-2 text-right font-medium">Breakfast</th>
+                          <th className="border border-slate-300 p-2 text-right font-medium">Lunch</th>
+                          <th className="border border-slate-300 p-2 text-right font-medium">Dinner</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedRows.length === 0 ? (
+                          <tr>
+                            <td className="border border-slate-300 p-3 text-slate-500" colSpan={8}>
+                              No allowance rows for this event.
+                            </td>
+                          </tr>
+                        ) : (
+                          <>
+                            {sortedRows.map((r) => (
+                              <tr key={r.key} className="bg-white">
+                                <td className="border border-slate-300 p-2 whitespace-nowrap">
+                                  {r.date ? fd(r.date) : '—'}
+                                </td>
+                                <td className="border border-slate-300 p-2 font-medium text-slate-900">
+                                  {r.crew_name}
+                                </td>
+                                <td className="border border-slate-300 p-2 text-right tabular-nums">
+                                  {amountCell(r.breakfast)}
+                                </td>
+                                <td className="border border-slate-300 p-2 text-right tabular-nums">
+                                  {amountCell(r.lunch)}
+                                </td>
+                                <td className="border border-slate-300 p-2 text-right tabular-nums">
+                                  {amountCell(r.dinner)}
+                                </td>
+                                <td className="border border-slate-300 p-2 text-right tabular-nums">
+                                  {amountCell(r.other)}
+                                </td>
+                                <td className="border border-slate-300 p-2 whitespace-nowrap">
+                                  {formatTime24(r.time_in)}
+                                </td>
+                                <td className="border border-slate-300 p-2 whitespace-nowrap">
+                                  {formatTime24(r.time_out)}
+                                </td>
+                              </tr>
+                            ))}
+                            <tr className="bg-slate-100 font-semibold">
+                              <td className="border border-slate-300 p-2" colSpan={2}>
+                                Totals
+                              </td>
+                              <td className="border border-slate-300 p-2 text-right tabular-nums">
+                                {money(registerTotals.breakfast)}
+                              </td>
+                              <td className="border border-slate-300 p-2 text-right tabular-nums">
+                                {money(registerTotals.lunch)}
+                              </td>
+                              <td className="border border-slate-300 p-2 text-right tabular-nums">
+                                {money(registerTotals.dinner)}
+                              </td>
+                              <td className="border border-slate-300 p-2 text-right tabular-nums">
+                                {money(registerTotals.other)}
+                              </td>
+                              <td className="border border-slate-300 p-2" colSpan={2} />
+                            </tr>
+                          </>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {item.otherLines.length > 0 && (
+                    <div>
+                      <h4 className="mb-2 text-sm font-semibold text-slate-800">Other allowances (detail)</h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm border border-slate-200">
+                          <thead>
+                            <tr className="bg-slate-100">
+                              <th className="text-left p-2">Crew</th>
+                              <th className="text-left p-2">Type</th>
+                              <th className="text-right p-2">Amount</th>
+                              <th className="text-left p-2">Status</th>
+                              <th className="text-left p-2">Source</th>
+                              <th className="text-left p-2">Description</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {item.otherLines.map((a) => (
+                              <tr key={a.id} className="border-t border-slate-100">
+                                <td className="p-2">{a.crew_name}</td>
+                                <td className="p-2">{a.allowance_type}</td>
+                                <td className="p-2 text-right tabular-nums">{money(a.amount)}</td>
+                                <td className="p-2 capitalize">{a.status}</td>
+                                <td className="p-2">{a.source}</td>
+                                <td className="p-2">{a.description || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+
         <p className="text-slate-500 text-sm">
-          Showing {list.length} of {pagination.total}
+          Showing {list.length} of {pagination.total} allowance lines
         </p>
       </div>
     </SectionCard>

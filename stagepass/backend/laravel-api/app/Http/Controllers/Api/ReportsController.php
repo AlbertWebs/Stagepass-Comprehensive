@@ -643,24 +643,21 @@ class ReportsController extends Controller
                 if ($session) {
                     return ['time_in' => $fmt($session->checkin_time), 'time_out' => $fmt($session->checkout_time)];
                 }
-            }
 
-            $session = $sessions
-                ->filter(fn (EventAttendanceSession $s) => (int) $s->event_id === $eventId && (int) $s->user_id === $userId)
-                ->sortByDesc(fn (EventAttendanceSession $s) => $s->checkin_time?->timestamp ?? 0)
-                ->first();
-            if ($session) {
-                return ['time_in' => $fmt($session->checkin_time), 'time_out' => $fmt($session->checkout_time)];
-            }
+                $assignment = $openAssignments->first(
+                    fn (EventUser $a) => (int) $a->event_id === $eventId && (int) $a->user_id === $userId
+                );
+                if ($assignment?->checkin_time) {
+                    $pivotDate = Carbon::parse($assignment->checkin_time)->timezone('Africa/Nairobi')->format('Y-m-d');
+                    if ($pivotDate === $workDate) {
+                        return [
+                            'time_in' => $fmt($assignment->checkin_time),
+                            'time_out' => $fmt($assignment->checkout_time),
+                        ];
+                    }
+                }
 
-            $assignment = $openAssignments->first(
-                fn (EventUser $a) => (int) $a->event_id === $eventId && (int) $a->user_id === $userId
-            );
-            if ($assignment?->checkin_time) {
-                return [
-                    'time_in' => $fmt($assignment->checkin_time),
-                    'time_out' => $fmt($assignment->checkout_time),
-                ];
+                return ['time_in' => null, 'time_out' => null];
             }
 
             return ['time_in' => null, 'time_out' => null];
@@ -1224,52 +1221,28 @@ tr{page-break-inside:avoid;break-inside:avoid;}
                     return Carbon::parse($dt)->timezone('Africa/Nairobi')->format('H:i');
                 };
 
-                $session = $workDate
-                    ? $sessionsByUserDate->get($userId.'|'.$workDate)?->first()
-                    : null;
-                if ($session instanceof EventAttendanceSession) {
-                    return [
-                        'time_in' => $fmt($session->checkin_time),
-                        'time_out' => $fmt($session->checkout_time),
-                    ];
-                }
-
-                $pivotDate = $assignment->checkin_time
-                    ? $assignment->checkin_time->copy()->timezone('Africa/Nairobi')->format('Y-m-d')
-                    : null;
-                if ($assignment->checkin_time && ($workDate === null || $pivotDate === $workDate)) {
-                    return [
-                        'time_in' => $fmt($assignment->checkin_time),
-                        'time_out' => $fmt($assignment->checkout_time),
-                    ];
-                }
-
-                // Fallback: any session for this crew on the event (nearest / latest).
-                $anySessions = $sessionsByUserDate
-                    ->filter(fn ($group, $key) => str_starts_with((string) $key, $userId.'|'))
-                    ->flatten(1)
-                    ->sortByDesc(fn (EventAttendanceSession $s) => $s->checkin_time?->timestamp ?? 0)
-                    ->values();
                 if ($workDate) {
-                    $sameDay = $anySessions->first(function (EventAttendanceSession $s) use ($workDate) {
-                        $d = $s->work_date?->format('Y-m-d')
-                            ?? $s->checkin_time?->timezone('Africa/Nairobi')->format('Y-m-d');
-
-                        return $d === $workDate;
-                    });
-                    if ($sameDay) {
+                    $session = $sessionsByUserDate->get($userId.'|'.$workDate)?->first();
+                    if ($session instanceof EventAttendanceSession) {
                         return [
-                            'time_in' => $fmt($sameDay->checkin_time),
-                            'time_out' => $fmt($sameDay->checkout_time),
+                            'time_in' => $fmt($session->checkin_time),
+                            'time_out' => $fmt($session->checkout_time),
                         ];
                     }
-                }
-                $latest = $anySessions->first();
-                if ($latest) {
-                    return [
-                        'time_in' => $fmt($latest->checkin_time),
-                        'time_out' => $fmt($latest->checkout_time),
-                    ];
+
+                    // Only use open pivot times when they belong to this work date.
+                    $pivotDate = $assignment->checkin_time
+                        ? $assignment->checkin_time->copy()->timezone('Africa/Nairobi')->format('Y-m-d')
+                        : null;
+                    if ($assignment->checkin_time && $pivotDate === $workDate) {
+                        return [
+                            'time_in' => $fmt($assignment->checkin_time),
+                            'time_out' => $fmt($assignment->checkout_time),
+                        ];
+                    }
+
+                    // Do not copy another day's times onto this date.
+                    return ['time_in' => null, 'time_out' => null];
                 }
 
                 if ($assignment->checkin_time) {
