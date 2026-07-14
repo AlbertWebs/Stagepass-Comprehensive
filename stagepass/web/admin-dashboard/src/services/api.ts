@@ -25,7 +25,7 @@ function setToken(token: string | null) {
 
 export { getToken, setToken };
 
-export type ReportType = 'events' | 'crew-attendance' | 'crew-payments' | 'tasks' | 'financial' | 'end-of-day' | 'full-event';
+export type ReportType = 'events' | 'crew-attendance' | 'crew-payments' | 'tasks' | 'financial' | 'end-of-day' | 'full-event' | 'allowances';
 
 export interface ReportFilters {
   date_from?: string;
@@ -547,11 +547,13 @@ export const api = {
   reports: {
     get: (from: string, to: string) =>
       request<ReportsData>('/reports', { params: { from, to } }),
-    reportTypes: ['events', 'crew-attendance', 'crew-payments', 'tasks', 'financial', 'end-of-day', 'full-event'] as const,
+    reportTypes: ['events', 'crew-attendance', 'crew-payments', 'tasks', 'financial', 'end-of-day', 'full-event', 'allowances'] as const,
     events: (f?: ReportFilters) =>
       request<ReportEventsResponse>('/reports/events', { params: reportParams(f) }),
     crewAttendance: (f?: ReportFilters) =>
       request<ReportCrewAttendanceResponse>('/reports/crew-attendance', { params: reportParams(f) }),
+    allowances: (f?: ReportFilters) =>
+      request<ReportAllowancesResponse>('/reports/allowances', { params: reportParams(f) }),
     crewPayments: (f?: ReportFilters) =>
       request<ReportCrewPaymentsResponse>('/reports/crew-payments', { params: reportParams(f) }),
     tasks: (f?: ReportFilters) =>
@@ -826,6 +828,41 @@ export interface ReportCrewAttendanceResponse {
     holiday_name?: string | null;
     event?: { id: number; name: string; date: string };
     user?: { id: number; name: string };
+  }>;
+  pagination: { current_page: number; last_page: number; per_page: number; total: number };
+}
+
+export interface ReportAllowancesResponse {
+  summary: {
+    total_count: number;
+    active_count: number;
+    rejected_count: number;
+    meal_count: number;
+    other_count: number;
+    meal_total: number;
+    other_total: number;
+    grand_total: number;
+    breakfast_total: number;
+    lunch_total: number;
+    dinner_total: number;
+  };
+  by_slot: Array<{ slot: string; count: number; total: number }>;
+  data: Array<{
+    id: number;
+    event_id: number;
+    event_name: string;
+    event_date?: string | null;
+    crew_id: number;
+    crew_name: string;
+    allowance_type: string;
+    amount: number;
+    status: string;
+    source: string;
+    description?: string | null;
+    meal_slot?: string | null;
+    meal_grant_date?: string | null;
+    recorded_by?: string | null;
+    recorded_at?: string | null;
   }>;
   pagination: { current_page: number; last_page: number; per_page: number; total: number };
 }

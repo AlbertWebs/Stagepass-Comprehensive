@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\AllowanceType;
 use App\Models\Event;
 use App\Models\EventAllowance;
+use App\Models\EventAttendanceSession;
 use App\Models\EventUser;
 use App\Models\Setting;
 use App\Models\User;
@@ -184,13 +185,49 @@ class MealAllowanceService
         $checkin = $this->parseAssignmentTime($assignment->checkin_time);
         $checkout = $this->parseAssignmentTime($assignment->checkout_time);
 
+        return $this->qualifiesTimesForSlot($mealSlot, $checkin, $checkout, $mealGrantDate);
+    }
+
+    /**
+     * Dinner: checked out at/after 19:30, or still checked in once the dinner window has started.
+     */
+    public function qualifiesTimesForSlot(
+        string $mealSlot,
+        ?Carbon $checkin,
+        ?Carbon $checkout,
+        string $mealGrantDate,
+        ?Carbon $asOf = null
+    ): bool {
+        if (! $checkin) {
+            return false;
+        }
+
+        $asOf = ($asOf ?? now())->copy()->timezone($this->appTimezone());
+
         return match ($mealSlot) {
             self::SLOT_BREAKFAST => $checkin->lt($this->breakfastCutoffOn($mealGrantDate)),
             self::SLOT_LUNCH => $checkin->toDateString() <= $mealGrantDate
                 && ($checkout === null || $checkout->toDateString() >= $mealGrantDate),
-            self::SLOT_DINNER => $checkout !== null && $checkout->gte($this->dinnerCheckoutFromOn($mealGrantDate)),
+            self::SLOT_DINNER => $this->qualifiesForDinner($checkin, $checkout, $mealGrantDate, $asOf),
             default => false,
         };
+    }
+
+    public function qualifiesForDinner(
+        Carbon $checkin,
+        ?Carbon $checkout,
+        string $mealGrantDate,
+        ?Carbon $asOf = null
+    ): bool {
+        $threshold = $this->dinnerCheckoutFromOn($mealGrantDate);
+        $asOf = ($asOf ?? now())->copy()->timezone($this->appTimezone());
+
+        if ($checkout !== null) {
+            return $checkout->gte($threshold);
+        }
+
+        // Still on site past dinner time — count as present for dinner.
+        return $asOf->gte($threshold) && $checkin->toDateString() <= $mealGrantDate;
     }
 
     public function processScheduledSlot(string $mealSlot, Carbon $now): int
@@ -223,10 +260,6 @@ class MealAllowanceService
             })
             ->with(['event', 'user']);
 
-        if ($mealSlot === self::SLOT_DINNER) {
-            $query->whereNotNull('checkout_time');
-        }
-
         $assignments = $query->get();
         $granted = 0;
         $skippedQualify = 0;
@@ -248,6 +281,14 @@ class MealAllowanceService
             }
         }
 
+        if ($mealSlot === self::SLOT_DINNER) {
+            // Recover dinners cleared into attendance sessions (incl. recent past days).
+            for ($i = 0; $i < 7; $i++) {
+                $d = $now->copy()->subDays($i)->toDateString();
+                $granted += $this->grantDinnerFromCompletedSessions($d, (int) $type->id, $now);
+            }
+        }
+
         Log::info('allowances:process-meals slot processed', [
             'slot' => $mealSlot,
             'scheduled' => $scheduled,
@@ -261,16 +302,65 @@ class MealAllowanceService
         return $granted;
     }
 
-    public function tryGrantDinnerOnCheckout(Event $event, EventUser $assignment, Carbon $checkout): bool
+    /**
+     * Multi-day checkouts clear event_user times into sessions — catch up dinner from those rows.
+     */
+    public function grantDinnerFromCompletedSessions(string $mealGrantDate, int $allowanceTypeId, ?Carbon $asOf = null): int
     {
+        $asOf = ($asOf ?? now())->copy()->timezone($this->appTimezone());
+        $threshold = $this->dinnerCheckoutFromOn($mealGrantDate);
+        $sessions = EventAttendanceSession::query()
+            ->whereDate('work_date', $mealGrantDate)
+            ->whereNotNull('checkin_time')
+            ->whereNotNull('checkout_time')
+            ->where('checkout_time', '>=', $threshold->format('Y-m-d H:i:s'))
+            ->with(['event', 'user'])
+            ->get();
+
+        $granted = 0;
+        foreach ($sessions as $session) {
+            if (! $session->event || ! $session->user) {
+                continue;
+            }
+            $assignment = EventUser::query()
+                ->where('event_id', $session->event_id)
+                ->where('user_id', $session->user_id)
+                ->first();
+            if (! $assignment) {
+                continue;
+            }
+            if ($this->grantMealAllowance(
+                $session->event,
+                $assignment,
+                $session->user,
+                self::SLOT_DINNER,
+                $mealGrantDate,
+                $allowanceTypeId
+            )) {
+                $granted++;
+            }
+        }
+
+        return $granted;
+    }
+
+    public function tryGrantDinnerOnCheckout(
+        Event $event,
+        EventUser $assignment,
+        Carbon $checkout,
+        ?Carbon $checkin = null
+    ): bool {
         $assignment->loadMissing('user');
         $user = $assignment->user;
-        if (! $user || ! $assignment->checkin_time) {
+        $checkin = $checkin
+            ? $checkin->copy()->timezone($this->appTimezone())
+            : $this->parseAssignmentTime($assignment->checkin_time);
+        if (! $user || ! $checkin) {
             return false;
         }
 
-        $workDate = app(EventCrewAttendanceService::class)->workDateForEventSession($assignment->checkin_time);
-        if (! $this->qualifiesForSlot($assignment->fresh(), self::SLOT_DINNER, $workDate)) {
+        $workDate = app(EventCrewAttendanceService::class)->workDateForEventSession($checkin);
+        if (! $this->qualifiesForDinner($checkin, $checkout->copy()->timezone($this->appTimezone()), $workDate, $checkout)) {
             return false;
         }
 

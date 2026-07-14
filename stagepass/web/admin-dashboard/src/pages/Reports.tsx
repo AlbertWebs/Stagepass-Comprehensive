@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   api,
   type Event,
+  type ReportAllowancesResponse,
   type ReportCrewAttendanceResponse,
   type ReportFilters,
   type ReportFullEventResponse,
@@ -12,7 +13,8 @@ import { PageHeader } from '@/components/PageHeader';
 import { SectionCard } from '@/components/SectionCard';
 
 const REPORT_TABS: { id: ReportType; label: string }[] = [
-  { id: 'full-event', label: 'Comprehensive allowances' },
+  { id: 'full-event', label: 'Comprehensive' },
+  { id: 'allowances', label: 'Allowances' },
   { id: 'crew-attendance', label: 'Attendance' },
 ];
 
@@ -71,6 +73,7 @@ export default function Reports() {
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [attendanceReport, setAttendanceReport] = useState<ReportCrewAttendanceResponse | null>(null);
+  const [allowancesReport, setAllowancesReport] = useState<ReportAllowancesResponse | null>(null);
   const [fullEventReport, setFullEventReport] = useState<ReportFullEventResponse | null>(null);
   const [exporting, setExporting] = useState(false);
   const [projectLeadName, setProjectLeadName] = useState('');
@@ -106,9 +109,15 @@ export default function Reports() {
         if (activeTab === 'full-event') {
           setFullEventReport(await api.reports.fullEvent(fPage));
           setAttendanceReport(null);
+          setAllowancesReport(null);
+        } else if (activeTab === 'allowances') {
+          setAllowancesReport(await api.reports.allowances(fPage));
+          setFullEventReport(null);
+          setAttendanceReport(null);
         } else {
           setAttendanceReport(await api.reports.crewAttendance(fPage));
           setFullEventReport(null);
+          setAllowancesReport(null);
         }
       } catch (e) {
         setReportError(e instanceof Error ? e.message : 'Failed to load report');
@@ -224,6 +233,23 @@ export default function Reports() {
           allowanceRows
         );
       }
+    } else if (activeTab === 'allowances' && allowancesReport?.data) {
+      downloadCsv(
+        `allowances-${dateFrom}-${dateTo}.csv`,
+        ['Event', 'Date', 'Crew', 'Type', 'Slot', 'Amount', 'Status', 'Source', 'Description', 'Recorded at'],
+        allowancesReport.data.map((a) => [
+          a.event_name,
+          a.meal_grant_date ?? a.event_date ?? '',
+          a.crew_name,
+          a.allowance_type,
+          a.meal_slot ?? '',
+          a.amount,
+          a.status,
+          a.source,
+          a.description ?? '',
+          a.recorded_at ?? '',
+        ])
+      );
     } else if (activeTab === 'crew-attendance' && attendanceReport?.data) {
       downloadCsv(
         `crew-attendance-${dateFrom}-${dateTo}.csv`,
@@ -239,15 +265,15 @@ export default function Reports() {
         ])
       );
     }
-  }, [activeTab, fullEventReport, attendanceReport, dateFrom, dateTo]);
+  }, [activeTab, fullEventReport, allowancesReport, attendanceReport, dateFrom, dateTo]);
 
-  const hasReportData = fullEventReport || attendanceReport;
+  const hasReportData = fullEventReport || allowancesReport || attendanceReport;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Reports"
-        subtitle="Comprehensive allowance dossiers and crew attendance. Filters auto-apply; export PDF or CSV."
+        subtitle="Comprehensive dossier, allowances-only, or attendance-only. Filters auto-apply; export PDF or CSV."
       />
 
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
@@ -451,6 +477,16 @@ export default function Reports() {
 
       {activeTab === 'full-event' && fullEventReport && (
         <FullEventReportView data={fullEventReport} formatDate={formatDate} />
+      )}
+      {activeTab === 'allowances' && allowancesReport && (
+        <>
+          <AllowancesReportView data={allowancesReport} formatDate={formatDate} />
+          <ReportPagination
+            pagination={allowancesReport.pagination}
+            loading={reportLoading}
+            onPage={(p) => { setPage(p); fetchReport(p); }}
+          />
+        </>
       )}
       {activeTab === 'crew-attendance' && attendanceReport && (
         <>
@@ -766,6 +802,86 @@ function formatAttendanceDateTime(value: string | null | undefined, formatDate: 
   const timePart = normalized.slice(11, 16);
   if (!datePart) return value;
   return `${formatDate(datePart)}${timePart ? ` ${timePart}` : ''}`;
+}
+
+function AllowancesReportView({
+  data,
+  formatDate: fd,
+}: {
+  data: ReportAllowancesResponse;
+  formatDate: (d: string) => string;
+}) {
+  const { summary, data: list, pagination } = data;
+  const money = (n: number) =>
+    Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  return (
+    <SectionCard sectionLabel="Allowances report">
+      <div className="p-6 space-y-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Breakfast</p>
+            <p className="mt-1 text-xl font-bold text-slate-900">{money(summary.breakfast_total)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Lunch</p>
+            <p className="mt-1 text-xl font-bold text-slate-900">{money(summary.lunch_total)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Dinner</p>
+            <p className="mt-1 text-xl font-bold text-slate-900">{money(summary.dinner_total)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Other</p>
+            <p className="mt-1 text-xl font-bold text-slate-900">{money(summary.other_total)}</p>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-amber-700">Meals total</p>
+            <p className="mt-1 text-xl font-bold text-amber-900">{money(summary.meal_total)}</p>
+          </div>
+          <div className="rounded-xl border border-green-200 bg-green-50/80 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-green-700">Grand total</p>
+            <p className="mt-1 text-xl font-bold text-green-900">{money(summary.grand_total)}</p>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border border-slate-200">
+            <thead>
+              <tr className="bg-slate-100">
+                <th className="text-left p-2">Event</th>
+                <th className="text-left p-2">Date</th>
+                <th className="text-left p-2">Crew</th>
+                <th className="text-left p-2">Type</th>
+                <th className="text-left p-2">Slot</th>
+                <th className="text-right p-2">Amount</th>
+                <th className="text-left p-2">Status</th>
+                <th className="text-left p-2">Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((a) => (
+                <tr key={a.id} className="border-t border-slate-100">
+                  <td className="p-2">{a.event_name}</td>
+                  <td className="p-2 whitespace-nowrap">
+                    {a.meal_grant_date ? fd(a.meal_grant_date) : a.event_date ? fd(a.event_date) : '—'}
+                  </td>
+                  <td className="p-2">{a.crew_name}</td>
+                  <td className="p-2">{a.allowance_type}</td>
+                  <td className="p-2 capitalize">{a.meal_slot ?? '—'}</td>
+                  <td className="p-2 text-right tabular-nums">{money(a.amount)}</td>
+                  <td className="p-2 capitalize">{a.status}</td>
+                  <td className="p-2">{a.source}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-slate-500 text-sm">
+          Showing {list.length} of {pagination.total}
+        </p>
+      </div>
+    </SectionCard>
+  );
 }
 
 function CrewAttendanceReportView({

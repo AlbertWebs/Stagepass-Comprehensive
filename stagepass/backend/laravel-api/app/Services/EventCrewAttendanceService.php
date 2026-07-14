@@ -133,19 +133,21 @@ class EventCrewAttendanceService
             throw new \InvalidArgumentException('Assignment already has checkout on pivot.');
         }
 
-        $workDate = $this->workDateForEventSession($assignment->checkin_time);
+        $checkin = Carbon::parse($assignment->checkin_time);
+        $workDate = $this->workDateForEventSession($checkin);
         $session = $this->writeSession(
             (int) $event->id,
             (int) $assignment->user_id,
             $workDate,
-            Carbon::parse($assignment->checkin_time),
+            $checkin,
             $checkout,
             $assignment,
             $calc,
             $pausedMinutes
         );
 
-        $this->updateMealEligibility($event, (int) $assignment->user_id, Carbon::parse($assignment->checkin_time), $checkout, $workDate);
+        $this->updateMealEligibility($event, (int) $assignment->user_id, $checkin, $checkout, $workDate);
+        app(MealAllowanceService::class)->tryGrantDinnerOnCheckout($event, $assignment, $checkout, $checkin);
         $this->clearOpenAttendance($assignment);
 
         return $session;
@@ -181,6 +183,7 @@ class EventCrewAttendanceService
         if ($this->isMultiDayEvent($event)) {
             $this->finalizeCheckoutWithSession($event, $assignment, $checkout, $calc, $pausedMinutes);
         } else {
+            $checkin = Carbon::parse($assignment->checkin_time);
             $assignment->update([
                 'checkout_time' => $checkout,
                 'total_hours' => $calc['total_hours'],
@@ -194,10 +197,11 @@ class EventCrewAttendanceService
             $this->updateMealEligibility(
                 $event,
                 (int) $assignment->user_id,
-                Carbon::parse($assignment->checkin_time),
+                $checkin,
                 $checkout,
-                $this->workDateForEventSession($assignment->checkin_time)
+                $this->workDateForEventSession($checkin)
             );
+            app(MealAllowanceService::class)->tryGrantDinnerOnCheckout($event, $assignment->fresh(), $checkout, $checkin);
         }
 
         return true;

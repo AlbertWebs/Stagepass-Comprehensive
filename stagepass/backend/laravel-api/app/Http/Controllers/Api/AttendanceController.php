@@ -408,6 +408,7 @@ class AttendanceController extends Controller
         $calc = $this->overtime->calculate(Carbon::parse($assignment->checkin_time), $checkout, null, $pausedMinutes);
 
         if ($this->eventCrewAttendance->isMultiDayEvent($event)) {
+            $checkinBefore = Carbon::parse($assignment->checkin_time);
             $session = $this->eventCrewAttendance->finalizeCheckoutWithSession(
                 $event,
                 $assignment,
@@ -417,21 +418,28 @@ class AttendanceController extends Controller
             );
             $assignment->refresh();
 
+            $workDate = $session->work_date?->format('Y-m-d')
+                ?? $this->eventCrewAttendance->workDateForEventSession($checkinBefore);
             $this->eventCrewAttendance->updateMealEligibility(
                 $event,
                 (int) $assignment->user_id,
-                Carbon::parse($assignment->checkin_time),
+                $checkinBefore,
                 Carbon::parse($session->checkout_time),
-                $session->work_date?->format('Y-m-d') ?? $this->eventCrewAttendance->workDateForEventSession($assignment->checkin_time)
+                $workDate
             );
-            $this->mealAllowances->tryGrantDinnerOnCheckout($event, $assignment, Carbon::parse($session->checkout_time));
+            $this->mealAllowances->tryGrantDinnerOnCheckout(
+                $event,
+                $assignment,
+                Carbon::parse($session->checkout_time),
+                $checkinBefore
+            );
 
             event(new \App\Events\CrewCheckedOut($assignment, $session));
 
             return response()->json([
                 'message' => 'Checked out successfully',
                 'checkout_time' => $session->checkout_time->toIso8601String(),
-                'work_date' => $session->work_date?->format('Y-m-d') ?? (string) $session->work_date,
+                'work_date' => $workDate,
                 'total_hours' => $session->total_hours,
                 'standard_hours' => $session->standard_hours,
                 'extra_hours' => $session->extra_hours,

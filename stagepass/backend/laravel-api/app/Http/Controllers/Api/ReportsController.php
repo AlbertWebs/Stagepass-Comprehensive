@@ -21,7 +21,7 @@ use Illuminate\Support\Collection;
 
 class ReportsController extends Controller
 {
-    private const REPORT_TYPES = ['events', 'crew-attendance', 'crew-payments', 'tasks', 'financial', 'end-of-day', 'full-event'];
+    private const REPORT_TYPES = ['events', 'crew-attendance', 'crew-payments', 'tasks', 'financial', 'end-of-day', 'full-event', 'allowances'];
 
     private function canAccessReports(Request $request): bool
     {
@@ -554,6 +554,118 @@ class ReportsController extends Controller
     }
 
     /**
+     * GET /reports/allowances - Allowances-only report (meals + other earned allowances).
+     */
+    public function allowances(Request $request): JsonResponse
+    {
+        if (! $this->canAccessReports($request)) {
+            return response()->json(['message' => 'You do not have access to reports.'], 403);
+        }
+
+        [$from, $to] = $this->parseDateRange($request);
+        $eventId = $request->filled('event_id') ? (int) $request->event_id : null;
+        $userId = $request->filled('user_id') ? (int) $request->user_id : null;
+        $built = $this->buildAllowancesReport($from, $to, $eventId, $userId);
+
+        $perPage = min((int) $request->input('per_page', 50), 100);
+        $page = max(1, (int) $request->input('page', 1));
+        $rows = $built['rows'];
+        $total = $rows->count();
+        $lastPage = max(1, (int) ceil($total / $perPage));
+        if ($page > $lastPage) {
+            $page = $lastPage;
+        }
+
+        return response()->json([
+            'summary' => $built['summary'],
+            'by_slot' => $built['by_slot'],
+            'data' => $rows->forPage($page, $perPage)->values()->all(),
+            'pagination' => [
+                'current_page' => $page,
+                'last_page' => $lastPage,
+                'per_page' => $perPage,
+                'total' => $total,
+            ],
+        ]);
+    }
+
+    /**
+     * @return array{rows: Collection<int, array<string, mixed>>, summary: array<string, mixed>, by_slot: list<array<string, mixed>>}
+     */
+    private function buildAllowancesReport(
+        Carbon $from,
+        Carbon $to,
+        ?int $eventId = null,
+        ?int $userId = null
+    ): array {
+        $query = EventAllowance::query()
+            ->with(['crew:id,name', 'type:id,name', 'event:id,name,date', 'recorder:id,name'])
+            ->whereHas('event', fn ($q) => $q->spansRange($from->toDateString(), $to->toDateString()))
+            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
+            ->when($userId, fn ($q) => $q->where('crew_id', $userId))
+            ->orderByDesc('recorded_at')
+            ->orderByDesc('id');
+
+        $all = $query->get();
+        $active = $all->where('status', '!=', EventAllowance::STATUS_REJECTED);
+        $meals = $active->filter(fn (EventAllowance $a) => ! empty($a->meal_slot));
+        $other = $active->filter(fn (EventAllowance $a) => empty($a->meal_slot));
+
+        $bySlot = [];
+        foreach (['breakfast', 'lunch', 'dinner'] as $slot) {
+            $slotRows = $meals->where('meal_slot', $slot);
+            $bySlot[] = [
+                'slot' => $slot,
+                'count' => $slotRows->count(),
+                'total' => round((float) $slotRows->sum(fn (EventAllowance $a) => (float) $a->amount), 2),
+            ];
+        }
+        $bySlot[] = [
+            'slot' => 'other',
+            'count' => $other->count(),
+            'total' => round((float) $other->sum(fn (EventAllowance $a) => (float) $a->amount), 2),
+        ];
+
+        $rows = $all->map(function (EventAllowance $a) {
+            return [
+                'id' => $a->id,
+                'event_id' => $a->event_id,
+                'event_name' => $a->event?->name ?? '—',
+                'event_date' => $a->event?->date?->format('Y-m-d'),
+                'crew_id' => $a->crew_id,
+                'crew_name' => $a->crew?->name ?? ('Crew #'.$a->crew_id),
+                'allowance_type' => $a->type?->name ?? '—',
+                'amount' => (float) $a->amount,
+                'status' => $a->status,
+                'source' => $a->source ?? EventAllowance::SOURCE_MANUAL,
+                'description' => $a->description,
+                'meal_slot' => $a->meal_slot,
+                'meal_grant_date' => $a->meal_grant_date?->format('Y-m-d'),
+                'recorded_by' => $a->recorder?->name,
+                'recorded_at' => $a->recorded_at?->format('Y-m-d H:i'),
+            ];
+        })->values();
+
+        return [
+            'rows' => $rows,
+            'summary' => [
+                'total_count' => $all->count(),
+                'active_count' => $active->count(),
+                'rejected_count' => $all->where('status', EventAllowance::STATUS_REJECTED)->count(),
+                'meal_count' => $meals->count(),
+                'other_count' => $other->count(),
+                'meal_total' => round((float) $meals->sum(fn (EventAllowance $a) => (float) $a->amount), 2),
+                'other_total' => round((float) $other->sum(fn (EventAllowance $a) => (float) $a->amount), 2),
+                'grand_total' => round((float) $active->sum(fn (EventAllowance $a) => (float) $a->amount), 2),
+                'breakfast_total' => round((float) $meals->where('meal_slot', 'breakfast')->sum(fn (EventAllowance $a) => (float) $a->amount), 2),
+                'lunch_total' => round((float) $meals->where('meal_slot', 'lunch')->sum(fn (EventAllowance $a) => (float) $a->amount), 2),
+                'dinner_total' => round((float) $meals->where('meal_slot', 'dinner')->sum(fn (EventAllowance $a) => (float) $a->amount), 2),
+            ],
+            'by_slot' => $bySlot,
+        ];
+    }
+
+    /**
      * GET /reports/export - Export report as printable HTML (for PDF via browser print).
      */
     public function export(Request $request)
@@ -579,11 +691,22 @@ class ReportsController extends Controller
             'financial' => 'Financial Summary Report',
             'end-of-day' => 'End-of-Day Signed Report',
             'full-event' => 'Full Event Report',
+            'allowances' => 'Allowances Report',
             default => 'Report',
         };
 
         if ($type === 'full-event') {
             $html = $this->buildFullEventExportHtml(
+                $title,
+                $from,
+                $to,
+                $eventId,
+                $userId,
+                trim((string) $request->input('confirmed_by', '')),
+                trim((string) $request->input('signature', ''))
+            );
+        } elseif ($type === 'allowances') {
+            $html = $this->buildAllowancesExportHtml(
                 $title,
                 $from,
                 $to,
@@ -1424,6 +1547,76 @@ tr{page-break-inside:avoid;break-inside:avoid;}
             'summary' => $totals,
             'events' => $dossier,
         ];
+    }
+
+    private function buildAllowancesExportHtml(
+        string $title,
+        Carbon $from,
+        Carbon $to,
+        ?int $eventId,
+        ?int $userId,
+        string $confirmedBy = '',
+        string $signature = ''
+    ): string {
+        $built = $this->buildAllowancesReport($from, $to, $eventId, $userId);
+        $summary = $built['summary'];
+        $period = $from->format('M j, Y').' – '.$to->format('M j, Y');
+        $generatedAt = now()->format('M j, Y g:i A');
+
+        $summaryHtml = '<div class="kpi-grid">'
+            .'<div class="kpi"><span class="k">Lines</span><span class="v">'.$summary['active_count'].'</span></div>'
+            .'<div class="kpi"><span class="k">Breakfast</span><span class="v">KES '.number_format((float) $summary['breakfast_total'], 2).'</span></div>'
+            .'<div class="kpi"><span class="k">Lunch</span><span class="v">KES '.number_format((float) $summary['lunch_total'], 2).'</span></div>'
+            .'<div class="kpi"><span class="k">Dinner</span><span class="v">KES '.number_format((float) $summary['dinner_total'], 2).'</span></div>'
+            .'<div class="kpi"><span class="k">Other</span><span class="v">KES '.number_format((float) $summary['other_total'], 2).'</span></div>'
+            .'<div class="kpi"><span class="k">Grand total</span><span class="v">KES '.number_format((float) $summary['grand_total'], 2).'</span></div>'
+            .'</div>';
+
+        $tableRows = '';
+        foreach ($built['rows'] as $a) {
+            $tableRows .= '<tr>'
+                .'<td>'.e((string) ($a['event_name'] ?? '—')).'</td>'
+                .'<td>'.e((string) ($a['meal_grant_date'] ?? $a['event_date'] ?? '—')).'</td>'
+                .'<td>'.e((string) ($a['crew_name'] ?? '—')).'</td>'
+                .'<td>'.e((string) ($a['allowance_type'] ?? '—')).'</td>'
+                .'<td>'.e((string) ($a['meal_slot'] ?? '—')).'</td>'
+                .'<td style="text-align:right;">'.number_format((float) ($a['amount'] ?? 0), 2).'</td>'
+                .'<td>'.e((string) ($a['status'] ?? '—')).'</td>'
+                .'<td>'.e((string) ($a['source'] ?? '—')).'</td>'
+                .'</tr>';
+        }
+        if ($tableRows === '') {
+            $tableRows = '<tr><td colspan="8">No allowances for the selected filters.</td></tr>';
+        }
+
+        $tableHeader = '<tr><th>Event</th><th>Date</th><th>Crew</th><th>Type</th><th>Slot</th><th style="text-align:right;">Amount</th><th>Status</th><th>Source</th></tr>';
+        $signatureHtml = $this->buildProjectLeadSignatureHtml($confirmedBy, $signature);
+
+        return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'.e($title).'</title><style>
+@page{size:A4 landscape;margin:10mm;}
+body{font-family:"Segoe UI",Arial,Helvetica,sans-serif;margin:0;color:#111;font-size:11px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+h1{font-size:16px;margin:0 0 4px;color:#0f1838;}
+.meta{color:#555;font-size:10px;margin:0 0 10px;}
+table{border-collapse:collapse;width:100%;margin-top:8px;table-layout:fixed;}
+thead{display:table-header-group;}
+th,td{border:1px solid #333;padding:4px 6px;text-align:left;vertical-align:top;font-size:10px;word-wrap:break-word;}
+th{background:#eceff4;font-weight:700;}
+tr{page-break-inside:avoid;break-inside:avoid;}
+.kpi-grid{display:grid;grid-template-columns:repeat(6,minmax(100px,1fr));gap:8px;margin-bottom:10px;}
+.kpi{border:1px solid #ccc;padding:8px 10px;background:#f8fafc;}
+.kpi .k{display:block;color:#555;font-size:9px;margin-bottom:2px;}
+.kpi .v{display:block;font-size:12px;font-weight:700;color:#0f1838;}
+'.$this->signatureCss().'
+@media print{body{margin:0;} .no-print{display:none!important;}}
+@media screen{body{margin:16px;}}
+</style></head><body>
+<h1>'.e($title).'</h1>
+<p class="meta">Period: '.e($period).' · Generated: '.e($generatedAt).'</p>
+'.$summaryHtml.'
+<table><thead>'.$tableHeader.'</thead><tbody>'.$tableRows.'</tbody></table>
+'.$signatureHtml.'
+<p class="meta" style="margin-top:12px;">Stagepass Allowances Report – '.e($generatedAt).'</p>
+</body></html>';
     }
 
     private function buildFullEventExportHtml(

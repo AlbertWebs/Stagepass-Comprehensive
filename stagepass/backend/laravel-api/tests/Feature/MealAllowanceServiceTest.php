@@ -282,4 +282,42 @@ class MealAllowanceServiceTest extends TestCase
         $this->assertSame(0, $granted);
         $this->assertFalse(EventAllowance::query()->where('crew_id', $crew->id)->where('meal_slot', 'lunch')->exists());
     }
+
+    public function test_dinner_granted_when_still_checked_in_at_dinner_time(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-30 20:00:00', 'Africa/Nairobi'));
+
+        $event = $this->activeEvent();
+        $crew = User::factory()->create();
+        EventUser::create([
+            'event_id' => $event->id,
+            'user_id' => $crew->id,
+            'checkin_time' => '2026-06-30 09:00:00',
+            'checkout_time' => null,
+        ]);
+
+        $granted = $this->meals->processScheduledSlot(MealAllowanceService::SLOT_DINNER, now());
+
+        $this->assertSame(1, $granted);
+        $this->assertTrue(EventAllowance::query()->where('crew_id', $crew->id)->where('meal_slot', 'dinner')->exists());
+    }
+
+    public function test_dinner_granted_with_explicit_checkin_after_pivot_cleared(): void
+    {
+        $event = $this->activeEvent();
+        $crew = User::factory()->create();
+        $assignment = EventUser::create([
+            'event_id' => $event->id,
+            'user_id' => $crew->id,
+            'checkin_time' => null,
+            'checkout_time' => null,
+        ]);
+
+        $checkin = Carbon::parse('2026-06-30 09:00:00', 'Africa/Nairobi');
+        $checkout = Carbon::parse('2026-06-30 20:15:00', 'Africa/Nairobi');
+        $granted = $this->meals->tryGrantDinnerOnCheckout($event, $assignment, $checkout, $checkin);
+
+        $this->assertTrue($granted);
+        $this->assertTrue(EventAllowance::query()->where('crew_id', $crew->id)->where('meal_slot', 'dinner')->exists());
+    }
 }
