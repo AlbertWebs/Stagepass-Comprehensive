@@ -810,8 +810,10 @@ export interface ReportCrewAttendanceResponse {
   by_day: { date: string; checkins: number; hours: number; extra_hours?: number }[];
   data: Array<{
     id: number;
+    source?: 'session' | 'assignment' | 'missed';
     event_id: number;
     user_id: number;
+    work_date?: string | null;
     checkin_time: string | null;
     checkout_time: string | null;
     total_hours?: number | null;

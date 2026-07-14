@@ -227,13 +227,15 @@ export default function Reports() {
     } else if (activeTab === 'crew-attendance' && attendanceReport?.data) {
       downloadCsv(
         `crew-attendance-${dateFrom}-${dateTo}.csv`,
-        ['Crew', 'Event', 'Check-in', 'Check-out', 'Hours'],
+        ['Crew', 'Event', 'Work date', 'Check-in', 'Check-out', 'Hours', 'Extra hours'],
         attendanceReport.data.map((a) => [
           a.user?.name ?? '',
           a.event?.name ?? '',
+          a.work_date ?? '',
           a.checkin_time ?? '',
           a.checkout_time ?? '',
           a.total_hours ?? '',
+          a.extra_hours ?? '',
         ])
       );
     }
@@ -724,6 +726,15 @@ function FullEventReportView({
 }
 
 
+function formatAttendanceDateTime(value: string | null | undefined, formatDate: (d: string) => string): string {
+  if (!value) return '—';
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+  const datePart = normalized.slice(0, 10);
+  const timePart = normalized.slice(11, 16);
+  if (!datePart) return value;
+  return `${formatDate(datePart)}${timePart ? ` ${timePart}` : ''}`;
+}
+
 function CrewAttendanceReportView({
   data,
   formatDate: fd,
@@ -763,19 +774,26 @@ function CrewAttendanceReportView({
               <tr className="bg-slate-100">
                 <th className="text-left p-2">Crew</th>
                 <th className="text-left p-2">Event</th>
+                <th className="text-left p-2">Work date</th>
                 <th className="text-left p-2">Check-in</th>
                 <th className="text-left p-2">Check-out</th>
-                <th className="text-left p-2">Hours</th>
+                <th className="text-right p-2">Hours</th>
               </tr>
             </thead>
             <tbody>
               {list.map((a) => (
-                <tr key={a.id} className="border-t border-slate-100">
+                <tr key={`${a.source ?? 'row'}-${a.id}-${a.work_date ?? ''}-${a.checkin_time ?? ''}`} className="border-t border-slate-100">
                   <td className="p-2">{a.user?.name ?? '—'}</td>
                   <td className="p-2">{a.event?.name ?? '—'}</td>
-                  <td className="p-2">{a.checkin_time ? fd(a.checkin_time.slice(0, 10)) + ' ' + (a.checkin_time.slice(11, 16) ?? '') : '—'}</td>
-                  <td className="p-2">{a.checkout_time ? fd(a.checkout_time.slice(0, 10)) + ' ' + (a.checkout_time.slice(11, 16) ?? '') : '—'}</td>
-                  <td className="p-2">{a.total_hours ?? '—'}</td>
+                  <td className="p-2">{a.work_date ? fd(a.work_date) : '—'}</td>
+                  <td className="p-2 whitespace-nowrap">{formatAttendanceDateTime(a.checkin_time, fd)}</td>
+                  <td className="p-2 whitespace-nowrap">{formatAttendanceDateTime(a.checkout_time, fd)}</td>
+                  <td className="p-2 text-right tabular-nums">
+                    {a.total_hours != null ? a.total_hours : '—'}
+                    {a.extra_hours != null && a.extra_hours > 0 ? (
+                      <span className="ml-1 text-xs text-slate-500">(+{a.extra_hours} OT)</span>
+                    ) : null}
+                  </td>
                 </tr>
               ))}
             </tbody>

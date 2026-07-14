@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\DailyOfficeCheckin;
 use App\Models\Event;
+use App\Models\EventAttendanceSession;
 use App\Models\EventExpense;
 use App\Models\EventAllowance;
 use App\Models\EventMeal;
@@ -12,6 +13,7 @@ use App\Models\EventPayment;
 use App\Models\EventEquipment;
 use App\Models\EventUser;
 use App\Models\Task;
+use App\Services\AttendanceOvertimeService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -128,6 +130,9 @@ class ReportsController extends Controller
 
     /**
      * GET /reports/crew-attendance - Crew attendance (check-ins, missed, participation).
+     *
+     * Completed multi-day shifts live in event_attendance_sessions (pivot is cleared after checkout).
+     * Single-day / open shifts still live on event_user.
      */
     public function crewAttendance(Request $request): JsonResponse
     {
@@ -139,76 +144,234 @@ class ReportsController extends Controller
         $eventId = $request->filled('event_id') ? (int) $request->event_id : null;
         $userId = $request->filled('user_id') ? (int) $request->user_id : null;
 
-        $baseQuery = EventUser::query()
-            ->with(['event:id,name,date,start_time', 'user:id,name,email'])
-            ->whereHas('event', fn ($q) => $q->spansRange($from->toDateString(), $to->toDateString()));
-        if ($eventId) {
-            $baseQuery->where('event_id', $eventId);
-        }
-        if ($userId) {
-            $baseQuery->where('user_id', $userId);
-        }
+        $built = $this->buildCrewAttendanceReport($from, $to, $eventId, $userId);
+        $rows = $built['rows'];
+        $summary = $built['summary'];
+        $byDay = $built['by_day'];
 
-        $withCheckin = (clone $baseQuery)->whereNotNull('checkin_time')->get();
-        $allAssignments = (clone $baseQuery)->get();
-        $missed = $allAssignments->filter(fn ($a) => $a->checkin_time === null)->count();
-        $totalHours = $withCheckin->sum(fn ($a) => (float) ($a->total_hours ?? 0));
-        $totalExtraHours = $withCheckin->sum(fn ($a) => (float) ($a->extra_hours ?? 0));
-        $totalPauseMinutes = (int) $withCheckin->sum(fn ($a) => (int) ($a->pause_duration ?? 0));
-        $transportCostTotal = $allAssignments->sum(fn ($a) => (float) ($a->transport_amount ?? 0));
-
-        $byDay = [];
-        foreach ($withCheckin as $a) {
-            $date = $a->event?->date?->format('Y-m-d');
-            if ($date) {
-                if (! isset($byDay[$date])) {
-                    $byDay[$date] = ['date' => $date, 'checkins' => 0, 'hours' => 0.0, 'extra_hours' => 0.0];
-                }
-                $byDay[$date]['checkins']++;
-                $byDay[$date]['hours'] += (float) ($a->total_hours ?? 0);
-                $byDay[$date]['extra_hours'] += (float) ($a->extra_hours ?? 0);
-            }
-        }
-        ksort($byDay);
-
-        $summary = [
-            'total_assignments' => $allAssignments->count(),
-            'total_checkins' => $withCheckin->count(),
-            'missed_checkins' => $missed,
-            'participation_rate' => $allAssignments->count() > 0
-                ? round(100 * $withCheckin->count() / $allAssignments->count(), 1)
-                : 0,
-            'total_hours' => round($totalHours, 2),
-            'total_extra_hours' => round($totalExtraHours, 2),
-            'total_pause_minutes' => $totalPauseMinutes,
-            'active_hours' => round(max(0, $totalHours - ($totalPauseMinutes / 60)), 2),
-            'transport_cost_total' => round($transportCostTotal, 2),
-        ];
-
-        $listQuery = EventUser::query()
-            ->with(['event:id,name,date', 'user:id,name'])
-            ->whereHas('event', fn ($q) => $q->spansRange($from->toDateString(), $to->toDateString()));
-        if ($eventId) {
-            $listQuery->where('event_id', $eventId);
-        }
-        if ($userId) {
-            $listQuery->where('user_id', $userId);
-        }
-        $listQuery->orderByDesc('checkin_time');
         $perPage = min((int) $request->input('per_page', 50), 100);
-        $paginator = $listQuery->paginate($perPage);
+        $page = max(1, (int) $request->input('page', 1));
+        $total = $rows->count();
+        $lastPage = max(1, (int) ceil($total / $perPage));
+        if ($page > $lastPage) {
+            $page = $lastPage;
+        }
+        $pageRows = $rows->forPage($page, $perPage)->values()->all();
 
         return response()->json([
             'summary' => $summary,
-            'by_day' => array_values($byDay),
-            'data' => $paginator->items(),
+            'by_day' => $byDay,
+            'data' => $pageRows,
             'pagination' => [
-                'current_page' => $paginator->currentPage(),
-                'last_page' => $paginator->lastPage(),
-                'per_page' => $paginator->perPage(),
-                'total' => $paginator->total(),
+                'current_page' => $page,
+                'last_page' => $lastPage,
+                'per_page' => $perPage,
+                'total' => $total,
             ],
         ]);
+    }
+
+    /**
+     * Merge attendance sessions + open/legacy event_user check-ins for reporting.
+     *
+     * @return array{rows: Collection<int, array<string, mixed>>, summary: array<string, mixed>, by_day: list<array<string, mixed>>}
+     */
+    private function buildCrewAttendanceReport(
+        Carbon $from,
+        Carbon $to,
+        ?int $eventId = null,
+        ?int $userId = null
+    ): array {
+        $assignments = EventUser::query()
+            ->with(['event:id,name,date,end_date,start_time', 'user:id,name,email'])
+            ->whereHas('event', fn ($q) => $q->spansRange($from->toDateString(), $to->toDateString()))
+            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
+            ->when($userId, fn ($q) => $q->where('user_id', $userId))
+            ->get();
+
+        $eventIds = $assignments->pluck('event_id')->unique()->filter()->values();
+
+        $sessions = $eventIds->isEmpty()
+            ? collect()
+            : EventAttendanceSession::query()
+                ->with(['event:id,name,date,end_date', 'user:id,name'])
+                ->whereIn('event_id', $eventIds)
+                ->when($userId, fn ($q) => $q->where('user_id', $userId))
+                ->orderByDesc('checkin_time')
+                ->get();
+
+        $overtime = app(AttendanceOvertimeService::class);
+        $rows = collect();
+        $attendedKeys = [];
+
+        foreach ($sessions as $session) {
+            /** @var EventAttendanceSession $session */
+            $key = $session->event_id.'-'.$session->user_id;
+            $attendedKeys[$key] = true;
+            $workDate = $session->work_date?->format('Y-m-d');
+            $rows->push([
+                'id' => (int) $session->id,
+                'source' => 'session',
+                'event_id' => (int) $session->event_id,
+                'user_id' => (int) $session->user_id,
+                'work_date' => $workDate,
+                'checkin_time' => $session->checkin_time?->timezone('Africa/Nairobi')->format('Y-m-d H:i'),
+                'checkout_time' => $session->checkout_time?->timezone('Africa/Nairobi')->format('Y-m-d H:i'),
+                'total_hours' => $session->total_hours !== null ? (float) $session->total_hours : null,
+                'extra_hours' => $session->extra_hours !== null ? (float) $session->extra_hours : null,
+                'pause_duration' => $session->pause_duration !== null ? (int) $session->pause_duration : null,
+                'is_sunday' => (bool) $session->is_sunday,
+                'is_holiday' => (bool) $session->is_holiday,
+                'holiday_name' => $session->holiday_name,
+                'event' => $session->event ? [
+                    'id' => $session->event->id,
+                    'name' => $session->event->name,
+                    'date' => $session->event->date?->format('Y-m-d'),
+                ] : null,
+                'user' => $session->user ? [
+                    'id' => $session->user->id,
+                    'name' => $session->user->name,
+                ] : null,
+            ]);
+        }
+
+        foreach ($assignments as $assignment) {
+            /** @var EventUser $assignment */
+            if (! $assignment->checkin_time) {
+                continue;
+            }
+
+            $key = $assignment->event_id.'-'.$assignment->user_id;
+            $attendedKeys[$key] = true;
+
+            $totalHours = $assignment->total_hours !== null ? (float) $assignment->total_hours : null;
+            $extraHours = $assignment->extra_hours !== null ? (float) $assignment->extra_hours : null;
+            $pause = (int) ($assignment->pause_duration ?? 0);
+            if ($assignment->checkin_time && ! $assignment->checkout_time) {
+                if ($assignment->is_paused && $assignment->pause_start_time) {
+                    $pause += (int) Carbon::parse($assignment->pause_start_time)->diffInMinutes(now());
+                }
+                $calc = $overtime->calculate(
+                    Carbon::parse($assignment->checkin_time),
+                    now(),
+                    null,
+                    $pause
+                );
+                $totalHours = (float) $calc['total_hours'];
+                $extraHours = (float) $calc['extra_hours'];
+            }
+
+            $workDate = Carbon::parse($assignment->checkin_time)
+                ->timezone('Africa/Nairobi')
+                ->format('Y-m-d');
+
+            $rows->push([
+                'id' => (int) $assignment->id,
+                'source' => 'assignment',
+                'event_id' => (int) $assignment->event_id,
+                'user_id' => (int) $assignment->user_id,
+                'work_date' => $workDate,
+                'checkin_time' => $assignment->checkin_time->timezone('Africa/Nairobi')->format('Y-m-d H:i'),
+                'checkout_time' => $assignment->checkout_time
+                    ? $assignment->checkout_time->timezone('Africa/Nairobi')->format('Y-m-d H:i')
+                    : null,
+                'total_hours' => $totalHours,
+                'extra_hours' => $extraHours,
+                'pause_duration' => $pause,
+                'transport_type' => $assignment->transport_type,
+                'transport_amount' => $assignment->transport_amount !== null ? (float) $assignment->transport_amount : null,
+                'is_sunday' => (bool) $assignment->is_sunday,
+                'is_holiday' => (bool) $assignment->is_holiday,
+                'holiday_name' => $assignment->holiday_name,
+                'event' => $assignment->event ? [
+                    'id' => $assignment->event->id,
+                    'name' => $assignment->event->name,
+                    'date' => $assignment->event->date?->format('Y-m-d'),
+                ] : null,
+                'user' => $assignment->user ? [
+                    'id' => $assignment->user->id,
+                    'name' => $assignment->user->name,
+                ] : null,
+            ]);
+        }
+
+        foreach ($assignments as $assignment) {
+            $key = $assignment->event_id.'-'.$assignment->user_id;
+            if (isset($attendedKeys[$key])) {
+                continue;
+            }
+            $rows->push([
+                'id' => (int) $assignment->id,
+                'source' => 'missed',
+                'event_id' => (int) $assignment->event_id,
+                'user_id' => (int) $assignment->user_id,
+                'work_date' => $assignment->event?->date?->format('Y-m-d'),
+                'checkin_time' => null,
+                'checkout_time' => null,
+                'total_hours' => null,
+                'extra_hours' => null,
+                'pause_duration' => null,
+                'transport_type' => $assignment->transport_type,
+                'transport_amount' => $assignment->transport_amount !== null ? (float) $assignment->transport_amount : null,
+                'event' => $assignment->event ? [
+                    'id' => $assignment->event->id,
+                    'name' => $assignment->event->name,
+                    'date' => $assignment->event->date?->format('Y-m-d'),
+                ] : null,
+                'user' => $assignment->user ? [
+                    'id' => $assignment->user->id,
+                    'name' => $assignment->user->name,
+                ] : null,
+            ]);
+        }
+
+        $rows = $rows->sortByDesc(function (array $row) {
+            return $row['checkin_time'] ?? ($row['work_date'] ?? '').' 00:00';
+        })->values();
+
+        $checkedInRows = $rows->filter(fn (array $r) => ! empty($r['checkin_time']));
+        $missedCount = $assignments->filter(
+            fn (EventUser $a) => ! isset($attendedKeys[$a->event_id.'-'.$a->user_id])
+        )->count();
+        $attendedAssignmentCount = $assignments->count() - $missedCount;
+
+        $totalHours = (float) $checkedInRows->sum(fn (array $r) => (float) ($r['total_hours'] ?? 0));
+        $totalExtraHours = (float) $checkedInRows->sum(fn (array $r) => (float) ($r['extra_hours'] ?? 0));
+        $totalPauseMinutes = (int) $checkedInRows->sum(fn (array $r) => (int) ($r['pause_duration'] ?? 0));
+        $transportCostTotal = (float) $assignments->sum(fn (EventUser $a) => (float) ($a->transport_amount ?? 0));
+
+        $byDay = [];
+        foreach ($checkedInRows as $row) {
+            $date = $row['work_date'] ?? ($row['event']['date'] ?? null);
+            if (! $date) {
+                continue;
+            }
+            if (! isset($byDay[$date])) {
+                $byDay[$date] = ['date' => $date, 'checkins' => 0, 'hours' => 0.0, 'extra_hours' => 0.0];
+            }
+            $byDay[$date]['checkins']++;
+            $byDay[$date]['hours'] += (float) ($row['total_hours'] ?? 0);
+            $byDay[$date]['extra_hours'] += (float) ($row['extra_hours'] ?? 0);
+        }
+        ksort($byDay);
+
+        return [
+            'rows' => $rows,
+            'summary' => [
+                'total_assignments' => $assignments->count(),
+                'total_checkins' => $checkedInRows->count(),
+                'missed_checkins' => $missedCount,
+                'participation_rate' => $assignments->count() > 0
+                    ? round(100 * $attendedAssignmentCount / $assignments->count(), 1)
+                    : 0,
+                'total_hours' => round($totalHours, 2),
+                'total_extra_hours' => round($totalExtraHours, 2),
+                'total_pause_minutes' => $totalPauseMinutes,
+                'active_hours' => round(max(0, $totalHours - ($totalPauseMinutes / 60)), 2),
+                'transport_cost_total' => round($transportCostTotal, 2),
+            ],
+            'by_day' => array_values($byDay),
+        ];
     }
 
     /**
@@ -483,14 +646,29 @@ class ReportsController extends Controller
                 $tableRows = $tableRows ?: '<tr><td colspan="3">No events</td></tr>';
                 break;
             case 'crew-attendance':
-                $baseQuery = EventUser::query()->with(['event', 'user'])->whereHas('event', fn ($q) => $q->spansRange($from->toDateString(), $to->toDateString()))->when($eventId, fn ($q) => $q->where('event_id', $eventId))->when($userId, fn ($q) => $q->where('user_id', $userId));
-                $all = (clone $baseQuery)->get();
-                $checkedIn = $all->whereNotNull('checkin_time');
-                $summaryHtml = '<p>Total assignments: <strong>' . $all->count() . '</strong> | Check-ins: <strong>' . $checkedIn->count() . '</strong> | Missed: <strong>' . ($all->count() - $checkedIn->count()) . '</strong> | Total hours: <strong>' . round($checkedIn->sum(fn ($a) => (float) ($a->total_hours ?? 0)), 2) . '</strong> | Extra hours: <strong>' . round($checkedIn->sum(fn ($a) => (float) ($a->extra_hours ?? 0)), 2) . '</strong></p>';
-                foreach ($baseQuery->orderByDesc('checkin_time')->get() as $a) {
-                    $tableRows .= '<tr><td>' . e($a->user?->name ?? '—') . '</td><td>' . e($a->event?->name ?? '—') . '</td><td>' . ($a->checkin_time ? $a->checkin_time->format('Y-m-d H:i') : '—') . '</td><td>' . ($a->checkout_time ? $a->checkout_time->format('Y-m-d H:i') : '—') . '</td><td>' . ($a->total_hours ?? '—') . '</td><td>' . ($a->extra_hours ?? '—') . '</td></tr>';
+                $built = $this->buildCrewAttendanceReport($from, $to, $eventId, $userId);
+                $summary = $built['summary'];
+                $summaryHtml = '<div class="kpi-grid">'
+                    .'<div class="kpi"><span class="k">Assignments</span><span class="v">'.$summary['total_assignments'].'</span></div>'
+                    .'<div class="kpi"><span class="k">Check-ins</span><span class="v">'.$summary['total_checkins'].'</span></div>'
+                    .'<div class="kpi"><span class="k">Missed</span><span class="v">'.$summary['missed_checkins'].'</span></div>'
+                    .'<div class="kpi"><span class="k">Hours</span><span class="v">'.$summary['total_hours'].'</span></div>'
+                    .'</div>'
+                    .'<p>Participation: <strong>'.$summary['participation_rate'].'%</strong>'
+                    .' · Extra hours: <strong>'.$summary['total_extra_hours'].'</strong></p>';
+                foreach ($built['rows'] as $a) {
+                    $tableRows .= '<tr>'
+                        .'<td>'.e((string) ($a['user']['name'] ?? '—')).'</td>'
+                        .'<td>'.e((string) ($a['event']['name'] ?? '—')).'</td>'
+                        .'<td>'.e((string) ($a['work_date'] ?? '—')).'</td>'
+                        .'<td>'.e((string) ($a['checkin_time'] ?? '—')).'</td>'
+                        .'<td>'.e((string) ($a['checkout_time'] ?? '—')).'</td>'
+                        .'<td style="text-align:right;">'.e($a['total_hours'] !== null ? (string) $a['total_hours'] : '—').'</td>'
+                        .'<td style="text-align:right;">'.e($a['extra_hours'] !== null ? (string) $a['extra_hours'] : '—').'</td>'
+                        .'</tr>';
                 }
-                $tableRows = $tableRows ?: '<tr><td colspan="6">No records</td></tr>';
+                $tableRows = $tableRows ?: '<tr><td colspan="7">No records</td></tr>';
+                $tableHeader = '<tr><th>Crew</th><th>Event</th><th>Work date</th><th>Check-in</th><th>Check-out</th><th style="text-align:right;">Hours</th><th style="text-align:right;">Extra</th></tr>';
                 break;
             case 'crew-payments':
                 $data = $this->financialReportData($from, $to, $eventId, $userId);
@@ -549,7 +727,7 @@ class ReportsController extends Controller
         if (! isset($tableHeader)) {
             $tableHeader = match ($type) {
                 'events' => '<tr><th>Event</th><th>Date</th><th>Status</th></tr>',
-                'crew-attendance' => '<tr><th>Crew</th><th>Event</th><th>Check-in</th><th>Check-out</th><th>Hours</th><th>Extra Hours</th></tr>',
+                'crew-attendance' => '<tr><th>Crew</th><th>Event</th><th>Work date</th><th>Check-in</th><th>Check-out</th><th style="text-align:right;">Hours</th><th style="text-align:right;">Extra</th></tr>',
                 'tasks' => '<tr><th>Task</th><th>Event</th><th>Due date</th><th>Status</th><th>Assignees</th></tr>',
                 default => '<tr><th>Item</th><th>Details</th></tr>',
             };
@@ -802,6 +980,13 @@ tr{page-break-inside:avoid;break-inside:avoid;}
             ->groupBy('crew_id');
 
         $mealsByUser = $mealRows->groupBy('user_id');
+        $userIds = $crewRows->pluck('user_id')->unique()->filter()->values();
+        $sessionsByUserDate = EventAttendanceSession::query()
+            ->where('event_id', $event->id)
+            ->when($userIds->isNotEmpty(), fn ($q) => $q->whereIn('user_id', $userIds))
+            ->get()
+            ->groupBy(fn (EventAttendanceSession $s) => $s->user_id.'|'.($s->work_date?->format('Y-m-d') ?? ''));
+
         $rows = [];
 
         foreach ($crewRows as $assignment) {
@@ -834,29 +1019,72 @@ tr{page-break-inside:avoid;break-inside:avoid;}
                 ];
             };
 
-            $timeIn = $assignment->checkin_time?->format('H:i');
-            $timeOut = $assignment->checkout_time?->format('H:i');
-            $checkinDate = $assignment->checkin_time
-                ? $assignment->checkin_time->copy()->timezone('Africa/Nairobi')->format('Y-m-d')
-                : null;
+            $timesForDate = function (?string $workDate) use ($assignment, $sessionsByUserDate, $userId): array {
+                $session = $workDate
+                    ? $sessionsByUserDate->get($userId.'|'.$workDate)?->first()
+                    : null;
+                if ($session instanceof EventAttendanceSession) {
+                    return [
+                        'time_in' => $session->checkin_time?->timezone('Africa/Nairobi')->format('H:i'),
+                        'time_out' => $session->checkout_time?->timezone('Africa/Nairobi')->format('H:i'),
+                    ];
+                }
+
+                $pivotDate = $assignment->checkin_time
+                    ? $assignment->checkin_time->copy()->timezone('Africa/Nairobi')->format('Y-m-d')
+                    : null;
+                if ($assignment->checkin_time && ($workDate === null || $pivotDate === $workDate)) {
+                    return [
+                        'time_in' => $assignment->checkin_time->timezone('Africa/Nairobi')->format('H:i'),
+                        'time_out' => $assignment->checkout_time
+                            ? $assignment->checkout_time->timezone('Africa/Nairobi')->format('H:i')
+                            : null,
+                    ];
+                }
+
+                return ['time_in' => null, 'time_out' => null];
+            };
 
             if ($userMeals->isEmpty()) {
-                $workDate = $checkinDate ?? $event->date?->format('Y-m-d');
-                $slots = $slotFlagsForDate($workDate);
-                $rows[] = [
-                    'date' => $workDate,
-                    'user_id' => $userId,
-                    'name' => $name,
-                    'breakfast' => $slots['breakfast'],
-                    'lunch' => $slots['lunch'],
-                    'dinner' => $slots['dinner'],
-                    'fare_to' => $fareTo,
-                    'fare_from' => $fareFrom,
-                    'fare_total' => $displayFareTotal,
-                    'transport_type' => $assignment->transport_type,
-                    'time_in' => $timeIn,
-                    'time_out' => $timeOut,
-                ];
+                $workDates = $sessionsByUserDate
+                    ->keys()
+                    ->map(function ($k) use ($userId) {
+                        if (! str_starts_with((string) $k, $userId.'|')) {
+                            return null;
+                        }
+
+                        return substr((string) $k, strlen((string) $userId) + 1) ?: null;
+                    })
+                    ->filter()
+                    ->values();
+                if ($assignment->checkin_time) {
+                    $workDates->push(
+                        $assignment->checkin_time->copy()->timezone('Africa/Nairobi')->format('Y-m-d')
+                    );
+                }
+                $workDates = $workDates->unique()->values();
+                if ($workDates->isEmpty()) {
+                    $workDates = collect([$event->date?->format('Y-m-d')]);
+                }
+
+                foreach ($workDates as $workDate) {
+                    $slots = $slotFlagsForDate($workDate);
+                    $times = $timesForDate($workDate);
+                    $rows[] = [
+                        'date' => $workDate,
+                        'user_id' => $userId,
+                        'name' => $name,
+                        'breakfast' => $slots['breakfast'],
+                        'lunch' => $slots['lunch'],
+                        'dinner' => $slots['dinner'],
+                        'fare_to' => $fareTo,
+                        'fare_from' => $fareFrom,
+                        'fare_total' => $displayFareTotal,
+                        'transport_type' => $assignment->transport_type,
+                        'time_in' => $times['time_in'],
+                        'time_out' => $times['time_out'],
+                    ];
+                }
 
                 continue;
             }
@@ -865,7 +1093,7 @@ tr{page-break-inside:avoid;break-inside:avoid;}
                 /** @var EventMeal $meal */
                 $workDate = Carbon::parse($meal->work_date)->format('Y-m-d');
                 $slots = $slotFlagsForDate($workDate);
-                $sameDayTimes = $checkinDate === $workDate;
+                $times = $timesForDate($workDate);
                 $rows[] = [
                     'date' => $workDate,
                     'user_id' => $userId,
@@ -877,8 +1105,8 @@ tr{page-break-inside:avoid;break-inside:avoid;}
                     'fare_from' => $fareFrom,
                     'fare_total' => $displayFareTotal,
                     'transport_type' => $assignment->transport_type,
-                    'time_in' => $sameDayTimes ? $timeIn : null,
-                    'time_out' => $sameDayTimes ? $timeOut : null,
+                    'time_in' => $times['time_in'],
+                    'time_out' => $times['time_out'],
                 ];
             }
         }
@@ -989,20 +1217,51 @@ tr{page-break-inside:avoid;break-inside:avoid;}
             $equipmentRows = $equipmentByEvent->get($eid, collect());
             $mealRows = $mealsByEvent->get($eid, collect());
 
-            $crew = $crewRows->map(function (EventUser $a) {
+            $sessionsForEvent = EventAttendanceSession::query()
+                ->where('event_id', $eid)
+                ->when($userId, fn ($q) => $q->where('user_id', $userId))
+                ->orderBy('work_date')
+                ->get()
+                ->groupBy('user_id');
+
+            $crew = $crewRows->map(function (EventUser $a) use ($sessionsForEvent) {
+                $userSessions = $sessionsForEvent->get($a->user_id, collect());
+                $firstSession = $userSessions->first();
+                $checkin = $a->checkin_time
+                    ? $a->checkin_time->timezone('Africa/Nairobi')->format('Y-m-d H:i')
+                    : ($firstSession?->checkin_time?->timezone('Africa/Nairobi')->format('Y-m-d H:i'));
+                $checkout = $a->checkout_time
+                    ? $a->checkout_time->timezone('Africa/Nairobi')->format('Y-m-d H:i')
+                    : ($userSessions->last()?->checkout_time?->timezone('Africa/Nairobi')->format('Y-m-d H:i'));
+                $sessionHours = (float) $userSessions->sum(fn (EventAttendanceSession $s) => (float) ($s->total_hours ?? 0));
+                $sessionExtra = (float) $userSessions->sum(fn (EventAttendanceSession $s) => (float) ($s->extra_hours ?? 0));
+                $pivotHours = $a->total_hours !== null ? (float) $a->total_hours : 0.0;
+                $pivotExtra = $a->extra_hours !== null ? (float) $a->extra_hours : 0.0;
+
                 return [
                     'user_id' => $a->user_id,
                     'name' => $a->user?->name ?? ('User #'.$a->user_id),
                     'email' => $a->user?->email,
                     'role_in_event' => $a->role_in_event,
-                    'checkin_time' => $a->checkin_time?->format('Y-m-d H:i'),
-                    'checkout_time' => $a->checkout_time?->format('Y-m-d H:i'),
-                    'total_hours' => $a->total_hours !== null ? (float) $a->total_hours : null,
+                    'checkin_time' => $checkin,
+                    'checkout_time' => $checkout,
+                    'total_hours' => ($sessionHours + $pivotHours) > 0
+                        ? round($sessionHours + $pivotHours, 2)
+                        : ($a->checkin_time || $userSessions->isNotEmpty() ? 0.0 : null),
                     'standard_hours' => $a->standard_hours !== null ? (float) $a->standard_hours : null,
-                    'extra_hours' => $a->extra_hours !== null ? (float) $a->extra_hours : null,
+                    'extra_hours' => ($sessionExtra + $pivotExtra) > 0
+                        ? round($sessionExtra + $pivotExtra, 2)
+                        : null,
                     'pause_duration' => $a->pause_duration !== null ? (float) $a->pause_duration : null,
                     'transport_type' => $a->transport_type,
                     'transport_amount' => $a->transport_amount !== null ? (float) $a->transport_amount : null,
+                    'sessions' => $userSessions->map(fn (EventAttendanceSession $s) => [
+                        'work_date' => $s->work_date?->format('Y-m-d'),
+                        'checkin_time' => $s->checkin_time?->timezone('Africa/Nairobi')->format('Y-m-d H:i'),
+                        'checkout_time' => $s->checkout_time?->timezone('Africa/Nairobi')->format('Y-m-d H:i'),
+                        'total_hours' => $s->total_hours !== null ? (float) $s->total_hours : null,
+                        'extra_hours' => $s->extra_hours !== null ? (float) $s->extra_hours : null,
+                    ])->values()->all(),
                 ];
             })->values()->all();
 
@@ -1476,44 +1735,16 @@ h3 {
 
     private function attendanceReport(Carbon $from, Carbon $to, ?int $eventId = null, ?int $userId = null): array
     {
-        $query = EventUser::query()
-            ->whereNotNull('checkin_time')
-            ->whereHas('event', fn ($q) => $q->spansRange($from->toDateString(), $to->toDateString()));
-        if ($eventId) {
-            $query->where('event_id', $eventId);
-        }
-        if ($userId) {
-            $query->where('user_id', $userId);
-        }
-        $assignments = $query->get();
-
-        $totalHours = 0;
-        $totalExtraHours = 0;
-        $byDay = [];
-        foreach ($assignments as $a) {
-            $hours = (float) ($a->total_hours ?? 0);
-            $extraHours = (float) ($a->extra_hours ?? 0);
-            $totalHours += $hours;
-            $totalExtraHours += $extraHours;
-            $date = $a->event?->date?->format('Y-m-d');
-            if ($date) {
-                if (! isset($byDay[$date])) {
-                    $byDay[$date] = ['date' => $date, 'checkins' => 0, 'hours' => 0, 'extra_hours' => 0];
-                }
-                $byDay[$date]['checkins']++;
-                $byDay[$date]['hours'] += $hours;
-                $byDay[$date]['extra_hours'] += $extraHours;
-            }
-        }
-        ksort($byDay);
+        $built = $this->buildCrewAttendanceReport($from, $to, $eventId, $userId);
+        $summary = $built['summary'];
 
         return [
             'summary' => [
-                'total_checkins' => $assignments->count(),
-                'total_hours' => round($totalHours, 2),
-                'total_extra_hours' => round($totalExtraHours, 2),
+                'total_checkins' => $summary['total_checkins'],
+                'total_hours' => $summary['total_hours'],
+                'total_extra_hours' => $summary['total_extra_hours'],
             ],
-            'by_day' => array_values($byDay),
+            'by_day' => $built['by_day'],
         ];
     }
 
