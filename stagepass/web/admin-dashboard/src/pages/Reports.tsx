@@ -564,15 +564,34 @@ function FullEventReportView({
   return (
     <SectionCard sectionLabel="Comprehensive allowance report">
       <div className="p-6 space-y-6">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
           <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
             <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Events</p>
             <p className="mt-1 text-2xl font-bold text-slate-900">{summary.events_count}</p>
           </div>
-          <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-amber-700">Earned allowances</p>
-            <p className="mt-1 text-xl font-bold text-amber-900">{money(summary.earned_allowances_total)}</p>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Breakfast</p>
+            <p className="mt-1 text-xl font-bold text-slate-900">{money(summary.meal_breakfast_total ?? 0)}</p>
           </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Lunch</p>
+            <p className="mt-1 text-xl font-bold text-slate-900">{money(summary.meal_lunch_total ?? 0)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Dinner</p>
+            <p className="mt-1 text-xl font-bold text-slate-900">{money(summary.meal_dinner_total ?? 0)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Other allowances</p>
+            <p className="mt-1 text-xl font-bold text-slate-900">{money(summary.other_allowances_total ?? 0)}</p>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-amber-700">Earned total</p>
+            <p className="mt-1 text-xl font-bold text-amber-900">{money(summary.earned_allowances_total)}</p>
+            <p className="mt-1 text-[11px] text-amber-800/80">B+L+D+Other (not lunch alone)</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <div className="rounded-xl border border-green-200 bg-green-50/80 p-4">
             <p className="text-xs font-medium uppercase tracking-wider text-green-700">Approved / paid</p>
             <p className="mt-1 text-xl font-bold text-green-900">{money(summary.earned_allowances_approved_paid)}</p>
@@ -687,8 +706,8 @@ function FullEventReportView({
                                 <td className="border border-slate-300 p-2 text-right tabular-nums font-medium">
                                   {amountCell(r.fare_total)}
                                 </td>
-                                <td className="border border-slate-300 p-2 whitespace-nowrap">{r.time_in ?? ''}</td>
-                                <td className="border border-slate-300 p-2 whitespace-nowrap">{r.time_out ?? ''}</td>
+                                <td className="border border-slate-300 p-2 whitespace-nowrap">{formatTime24(r.time_in)}</td>
+                                <td className="border border-slate-300 p-2 whitespace-nowrap">{formatTime24(r.time_out)}</td>
                               </tr>
                             ))}
                             <tr className="bg-slate-100 font-semibold">
@@ -795,12 +814,38 @@ function FullEventReportView({
 }
 
 
+function formatTime24(value: string | null | undefined): string {
+  if (!value) return '';
+  const trimmed = String(value).trim();
+  const bare = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (bare) {
+    return `${bare[1].padStart(2, '0')}:${bare[2]}`;
+  }
+  const embedded = trimmed.match(/(?:T| )(\d{2}):(\d{2})(?::\d{2})?/);
+  if (embedded) {
+    return `${embedded[1]}:${embedded[2]}`;
+  }
+  try {
+    const d = new Date(trimmed);
+    if (Number.isNaN(d.getTime())) return trimmed;
+    return d.toLocaleTimeString('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  } catch {
+    return trimmed;
+  }
+}
+
 function formatAttendanceDateTime(value: string | null | undefined, formatDate: (d: string) => string): string {
   if (!value) return '—';
   const normalized = value.includes('T') ? value : value.replace(' ', 'T');
   const datePart = normalized.slice(0, 10);
-  const timePart = normalized.slice(11, 16);
-  if (!datePart) return value;
+  const timePart = formatTime24(value);
+  if (!datePart || !/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+    return timePart || value;
+  }
   return `${formatDate(datePart)}${timePart ? ` ${timePart}` : ''}`;
 }
 

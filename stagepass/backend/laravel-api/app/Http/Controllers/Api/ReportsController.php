@@ -1194,6 +1194,12 @@ tr{page-break-inside:avoid;break-inside:avoid;}
                         $assignment->checkin_time->copy()->timezone('Africa/Nairobi')->format('Y-m-d')
                     );
                 }
+                foreach ($crewMealAllowances as $allowance) {
+                    $grantDate = $allowance->meal_grant_date?->format('Y-m-d');
+                    if ($grantDate) {
+                        $workDates->push($grantDate);
+                    }
+                }
                 $workDates = $workDates->unique()->values();
                 if ($workDates->isEmpty()) {
                     $workDates = collect([$event->date?->format('Y-m-d')]);
@@ -1240,6 +1246,36 @@ tr{page-break-inside:avoid;break-inside:avoid;}
                     'time_in' => $times['time_in'],
                     'time_out' => $times['time_out'],
                 ];
+            }
+
+            // Any meal grant dates not covered by EventMeal rows still need a register line.
+            $coveredDates = collect($rows)
+                ->where('user_id', $userId)
+                ->pluck('date')
+                ->filter()
+                ->unique();
+            foreach ($crewMealAllowances as $allowance) {
+                $grantDate = $allowance->meal_grant_date?->format('Y-m-d');
+                if (! $grantDate || $coveredDates->contains($grantDate)) {
+                    continue;
+                }
+                $slots = $slotAmountsForDate($grantDate);
+                $times = $timesForDate($grantDate);
+                $rows[] = [
+                    'date' => $grantDate,
+                    'user_id' => $userId,
+                    'name' => $name,
+                    'breakfast' => $slots['breakfast'],
+                    'lunch' => $slots['lunch'],
+                    'dinner' => $slots['dinner'],
+                    'fare_to' => $fareTo,
+                    'fare_from' => $fareFrom,
+                    'fare_total' => $displayFareTotal,
+                    'transport_type' => $assignment->transport_type,
+                    'time_in' => $times['time_in'],
+                    'time_out' => $times['time_out'],
+                ];
+                $coveredDates->push($grantDate);
             }
         }
 
@@ -1332,6 +1368,10 @@ tr{page-break-inside:avoid;break-inside:avoid;}
             'crew_count' => 0,
             'earned_allowances_total' => 0.0,
             'earned_allowances_approved_paid' => 0.0,
+            'meal_breakfast_total' => 0.0,
+            'meal_lunch_total' => 0.0,
+            'meal_dinner_total' => 0.0,
+            'other_allowances_total' => 0.0,
             'payment_allowances_total' => 0.0,
             'payment_per_diem_total' => 0.0,
             'payment_grand_total' => 0.0,
@@ -1467,10 +1507,15 @@ tr{page-break-inside:avoid;break-inside:avoid;}
                 ];
             })->values()->all();
 
-            $earnedTotal = round($allowanceRows->sum(fn ($a) => (float) $a->amount), 2);
+            $earnedActive = $allowanceRows->where('status', '!=', EventAllowance::STATUS_REJECTED);
+            $earnedTotal = round($earnedActive->sum(fn ($a) => (float) $a->amount), 2);
             $earnedApprovedPaid = round($allowanceRows
                 ->whereIn('status', [EventAllowance::STATUS_APPROVED, EventAllowance::STATUS_PAID])
                 ->sum(fn ($a) => (float) $a->amount), 2);
+            $mealBreakfastTotal = round($earnedActive->where('meal_slot', 'breakfast')->sum(fn ($a) => (float) $a->amount), 2);
+            $mealLunchTotal = round($earnedActive->where('meal_slot', 'lunch')->sum(fn ($a) => (float) $a->amount), 2);
+            $mealDinnerTotal = round($earnedActive->where('meal_slot', 'dinner')->sum(fn ($a) => (float) $a->amount), 2);
+            $otherAllowancesTotal = round($earnedActive->filter(fn ($a) => empty($a->meal_slot))->sum(fn ($a) => (float) $a->amount), 2);
             $paymentAllowances = round($paymentRows->sum(fn ($p) => (float) ($p->allowances ?? 0)), 2);
             $paymentPerDiem = round($paymentRows->sum(fn ($p) => (float) ($p->per_diem ?? 0)), 2);
             $paymentGrand = round($paymentRows->sum(fn ($p) => (float) ($p->total_amount ?? 0)), 2);
@@ -1514,6 +1559,10 @@ tr{page-break-inside:avoid;break-inside:avoid;}
                     'crew_count' => count($crew),
                     'earned_allowances_total' => $earnedTotal,
                     'earned_allowances_approved_paid' => $earnedApprovedPaid,
+                    'meal_breakfast_total' => $mealBreakfastTotal,
+                    'meal_lunch_total' => $mealLunchTotal,
+                    'meal_dinner_total' => $mealDinnerTotal,
+                    'other_allowances_total' => $otherAllowancesTotal,
                     'earned_status_breakdown' => $statusBreakdown,
                     'payment_allowances_total' => $paymentAllowances,
                     'payment_per_diem_total' => $paymentPerDiem,
@@ -1528,6 +1577,10 @@ tr{page-break-inside:avoid;break-inside:avoid;}
             $totals['crew_count'] += count($crew);
             $totals['earned_allowances_total'] += $earnedTotal;
             $totals['earned_allowances_approved_paid'] += $earnedApprovedPaid;
+            $totals['meal_breakfast_total'] = ($totals['meal_breakfast_total'] ?? 0) + $mealBreakfastTotal;
+            $totals['meal_lunch_total'] = ($totals['meal_lunch_total'] ?? 0) + $mealLunchTotal;
+            $totals['meal_dinner_total'] = ($totals['meal_dinner_total'] ?? 0) + $mealDinnerTotal;
+            $totals['other_allowances_total'] = ($totals['other_allowances_total'] ?? 0) + $otherAllowancesTotal;
             $totals['payment_allowances_total'] += $paymentAllowances;
             $totals['payment_per_diem_total'] += $paymentPerDiem;
             $totals['payment_grand_total'] += $paymentGrand;
@@ -1535,8 +1588,20 @@ tr{page-break-inside:avoid;break-inside:avoid;}
             $totals['transport_total'] += $transportTotal;
         }
 
-        foreach (['earned_allowances_total', 'earned_allowances_approved_paid', 'payment_allowances_total', 'payment_per_diem_total', 'payment_grand_total', 'expenses_total', 'transport_total'] as $key) {
-            $totals[$key] = round($totals[$key], 2);
+        foreach ([
+            'earned_allowances_total',
+            'earned_allowances_approved_paid',
+            'meal_breakfast_total',
+            'meal_lunch_total',
+            'meal_dinner_total',
+            'other_allowances_total',
+            'payment_allowances_total',
+            'payment_per_diem_total',
+            'payment_grand_total',
+            'expenses_total',
+            'transport_total',
+        ] as $key) {
+            $totals[$key] = round((float) ($totals[$key] ?? 0), 2);
         }
         $totals['combined_outflow'] = round(
             $totals['earned_allowances_approved_paid'] + $totals['expenses_total'] + $totals['transport_total'],

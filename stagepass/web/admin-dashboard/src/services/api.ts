@@ -948,6 +948,10 @@ export interface ReportFullEventResponse {
     crew_count: number;
     earned_allowances_total: number;
     earned_allowances_approved_paid: number;
+    meal_breakfast_total?: number;
+    meal_lunch_total?: number;
+    meal_dinner_total?: number;
+    other_allowances_total?: number;
     payment_allowances_total: number;
     payment_per_diem_total: number;
     payment_grand_total: number;
@@ -1059,6 +1063,10 @@ export interface ReportFullEventResponse {
       crew_count: number;
       earned_allowances_total: number;
       earned_allowances_approved_paid: number;
+      meal_breakfast_total?: number;
+      meal_lunch_total?: number;
+      meal_dinner_total?: number;
+      other_allowances_total?: number;
       earned_status_breakdown: {
         pending: number;
         approved: number;

@@ -395,11 +395,27 @@ export default function EventDetail() {
 
   const formatTime = (iso: string | null | undefined) => {
     if (!iso) return '';
+    const trimmed = String(iso).trim();
+    // Already HH:mm (or H:mm)
+    const bare = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (bare) {
+      return `${bare[1].padStart(2, '0')}:${bare[2]}`;
+    }
+    // Datetime / ISO — prefer embedded clock, else Date with forced 24h
+    const embedded = trimmed.match(/(?:T| )(\d{2}):(\d{2})(?::\d{2})?/);
+    if (embedded) {
+      return `${embedded[1]}:${embedded[2]}`;
+    }
     try {
-      const d = new Date(iso);
-      return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      const d = new Date(trimmed);
+      if (Number.isNaN(d.getTime())) return trimmed;
+      return d.toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
     } catch {
-      return iso;
+      return trimmed;
     }
   };
 
@@ -1132,8 +1148,8 @@ export default function EventDetail() {
                         <td className="border border-slate-300 p-2 text-right tabular-nums font-medium">
                           {amountCell(r.fare_total)}
                         </td>
-                        <td className="border border-slate-300 p-2 whitespace-nowrap">{r.time_in ?? ''}</td>
-                        <td className="border border-slate-300 p-2 whitespace-nowrap">{r.time_out ?? ''}</td>
+                        <td className="border border-slate-300 p-2 whitespace-nowrap">{formatTime(r.time_in)}</td>
+                        <td className="border border-slate-300 p-2 whitespace-nowrap">{formatTime(r.time_out)}</td>
                       </tr>
                     ))}
                     <tr className="bg-slate-100 font-semibold">
