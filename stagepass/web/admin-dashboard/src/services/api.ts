@@ -327,6 +327,51 @@ export interface EarnedAllowanceEventGroup {
   details: EarnedAllowanceDetail[];
 }
 
+export interface B2cPayoutLine {
+  user_id: number;
+  crew_name: string;
+  phone: string | null;
+  phone_display?: string | null;
+  phone_ok: boolean;
+  amount: number;
+  allowance_ids: number[];
+  allowance_count: number;
+  lines: Array<{
+    id: number;
+    type: string;
+    amount: number;
+    event_name?: string | null;
+    meal_slot?: string | null;
+  }>;
+}
+
+export interface B2cPayoutPreviewResponse {
+  dry_run: boolean;
+  configured: boolean;
+  total_amount: number;
+  payment_count: number;
+  blocked_count: number;
+  payments: B2cPayoutLine[];
+  eligible: B2cPayoutLine[];
+  blocked: B2cPayoutLine[];
+}
+
+export interface B2cPayoutProcessResponse {
+  message: string;
+  dry_run: boolean;
+  payout: { id: number; status: string; total_amount: number; line_count: number };
+  items: Array<{
+    id: number;
+    user_id: number;
+    crew_name?: string | null;
+    phone: string;
+    amount: number;
+    status: string;
+    conversation_id?: string | null;
+    result_desc?: string | null;
+  }>;
+}
+
 export const api = {
   locationCache: {
     lookup: (params: { place_id?: string; address?: string }) => requestLocationCacheLookup(params),
@@ -538,6 +583,15 @@ export const api = {
       }),
     exportEarnedAllowances: (format: 'csv' | 'pdf' | 'excel') =>
       request<Blob | unknown>(`/payments/earned-allowances/export`, { params: { format } }),
+    b2cPreview: (params?: { event_id?: number }) =>
+      request<B2cPayoutPreviewResponse>('/payments/earned-allowances/b2c-preview', {
+        params: (params?.event_id ? { event_id: params.event_id } : {}) as Record<string, string | number>,
+      }),
+    b2cProcess: (body: { event_id?: number; user_ids: number[]; allowance_ids?: number[] }) =>
+      request<B2cPayoutProcessResponse>('/payments/earned-allowances/b2c-process', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
     allowanceTypes: () => request<{ data: AllowanceTypeItem[] }>('/payments/allowance-types'),
     createAllowanceType: (name: string, isActive = true) =>
       request<AllowanceTypeItem>('/payments/allowance-types', { method: 'POST', body: JSON.stringify({ name, is_active: isActive }) }),

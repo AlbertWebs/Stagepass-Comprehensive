@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   api,
   PAYMENT_PURPOSES,
   type AllowanceTypeItem,
+  type B2cPayoutLine,
+  type B2cPayoutPreviewResponse,
   type EarnedAllowanceEventGroup,
   type Event,
   type Paginated,
   type PaymentItem,
-  type User,
 } from '@/services/api';
 import { FormModal } from '@/components/FormModal';
 import { PageHeader } from '@/components/PageHeader';
@@ -21,6 +22,13 @@ const STATUS_OPTIONS = [
   { value: 'approved', label: 'Approved' },
   { value: 'rejected', label: 'Rejected' },
 ];
+
+type PaymentSegment = 'payments' | 'history' | 'pending' | 'allowances';
+
+function segmentFromTab(tab: string | null): PaymentSegment {
+  if (tab === 'allowances' || tab === 'history' || tab === 'pending' || tab === 'payments') return tab;
+  return 'payments';
+}
 
 type PaymentFormState = {
   event_id: string;
@@ -71,7 +79,8 @@ function formatDate(d: string) {
 }
 
 export default function Payments() {
-  const [segment, setSegment] = useState<'payments' | 'history' | 'pending' | 'allowances'>('payments');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [segment, setSegment] = useState<PaymentSegment>(() => segmentFromTab(searchParams.get('tab')));
   const [data, setData] = useState<Paginated<PaymentItem> | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
   const [status, setStatus] = useState('');
@@ -94,6 +103,25 @@ export default function Payments() {
   const [allowanceSearch, setAllowanceSearch] = useState('');
   const [allowanceForm, setAllowanceForm] = useState<EarnedAllowanceFormState>(emptyEarnedAllowanceForm());
   const [allocatingAllowance, setAllocatingAllowance] = useState(false);
+
+  const [b2cOpen, setB2cOpen] = useState(false);
+  const [b2cEventId, setB2cEventId] = useState<number | null>(null);
+  const [b2cPreview, setB2cPreview] = useState<B2cPayoutPreviewResponse | null>(null);
+  const [b2cLoading, setB2cLoading] = useState(false);
+  const [b2cProcessing, setB2cProcessing] = useState(false);
+  const [b2cSelected, setB2cSelected] = useState<number[]>([]);
+  const [b2cResultMessage, setB2cResultMessage] = useState<string | null>(null);
+
+  const setSegmentAndUrl = (next: PaymentSegment) => {
+    setSegment(next);
+    setSearchParams(next === 'payments' ? {} : { tab: next }, { replace: true });
+  };
+
+  useEffect(() => {
+    const fromUrl = segmentFromTab(searchParams.get('tab'));
+    if (fromUrl !== segment) setSegment(fromUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync URL → state only when tab changes
+  }, [searchParams]);
 
   const fetchPayments = useCallback(() => {
     api.payments
@@ -151,6 +179,61 @@ export default function Payments() {
     setRejectReason('');
     setError(null);
   };
+
+  const openB2cModal = async (eventId?: number | null) => {
+    setB2cOpen(true);
+    setB2cEventId(eventId ?? (eventFilter ? Number(eventFilter) : null));
+    setB2cPreview(null);
+    setB2cSelected([]);
+    setB2cResultMessage(null);
+    setError(null);
+    setB2cLoading(true);
+    try {
+      const preview = await api.payments.b2cPreview(
+        eventId || eventFilter ? { event_id: eventId ?? Number(eventFilter) } : undefined
+      );
+      setB2cPreview(preview);
+      setB2cSelected(preview.eligible.map((p) => p.user_id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load B2C preview');
+      setB2cOpen(false);
+    } finally {
+      setB2cLoading(false);
+    }
+  };
+
+  const toggleB2cUser = (userId: number, phoneOk: boolean) => {
+    if (!phoneOk) return;
+    setB2cSelected((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const handleB2cProcess = async () => {
+    if (!b2cPreview || b2cSelected.length === 0) return;
+    const selectedLines = b2cPreview.eligible.filter((p) => b2cSelected.includes(p.user_id));
+    const allowanceIds = selectedLines.flatMap((p) => p.allowance_ids);
+    setB2cProcessing(true);
+    setError(null);
+    setB2cResultMessage(null);
+    try {
+      const res = await api.payments.b2cProcess({
+        event_id: b2cEventId ?? undefined,
+        user_ids: b2cSelected,
+        allowance_ids: allowanceIds,
+      });
+      setB2cResultMessage(res.message);
+      fetchAllowances();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to process B2C payments');
+    } finally {
+      setB2cProcessing(false);
+    }
+  };
+
+  const selectedB2cTotal = (b2cPreview?.eligible ?? [])
+    .filter((p) => b2cSelected.includes(p.user_id))
+    .reduce((s, p) => s + Number(p.amount), 0);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -262,7 +345,7 @@ export default function Payments() {
             key={id}
             type="button"
             className={`rounded-xl px-4 py-2 text-sm font-medium ${segment === id ? 'bg-brand-600 text-white' : 'bg-white text-slate-700 border border-slate-200'}`}
-            onClick={() => setSegment(id as 'payments' | 'history' | 'pending' | 'allowances')}
+            onClick={() => setSegmentAndUrl(id as PaymentSegment)}
           >
             {label}
           </button>
@@ -277,17 +360,29 @@ export default function Payments() {
               : 'Payment requests from crew (mobile app) or allocated by team leaders. Approve or reject pending requests.'
           }
         />
-        <button
-          type="button"
-          onClick={segment === 'allowances' ? handleAllocateAllowance : openCreate}
-          className="btn-brand inline-flex items-center gap-2 rounded-xl px-5 py-2.5 shadow-sm"
-          disabled={segment === 'allowances' ? allocatingAllowance : false}
-        >
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-          {segment === 'allowances' ? (allocatingAllowance ? 'Allocating…' : 'Allocate allowance') : 'Create payment request'}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {segment === 'allowances' && (
+            <button
+              type="button"
+              onClick={() => openB2cModal(eventFilter ? Number(eventFilter) : null)}
+              className="btn-secondary inline-flex items-center gap-2 rounded-xl px-5 py-2.5"
+              disabled={b2cLoading}
+            >
+              {b2cLoading ? 'Loading…' : 'Process allowances'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={segment === 'allowances' ? handleAllocateAllowance : openCreate}
+            className="btn-brand inline-flex items-center gap-2 rounded-xl px-5 py-2.5 shadow-sm"
+            disabled={segment === 'allowances' ? allocatingAllowance : false}
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            {segment === 'allowances' ? (allocatingAllowance ? 'Allocating…' : 'Allocate allowance') : 'Create payment request'}
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-shrink-0 flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm">
@@ -342,7 +437,7 @@ export default function Payments() {
         )}
       </div>
 
-      {error && !createOpen && !rejectModal && (
+      {error && !createOpen && !rejectModal && !b2cOpen && (
         <div className="form-error-banner flex-shrink-0">{error}</div>
       )}
 
@@ -618,8 +713,8 @@ export default function Payments() {
                   </thead>
                   <tbody>
                     {allowancesData.map((g) => (
-                      <>
-                        <tr key={g.event_id} className="border-b border-slate-100">
+                      <Fragment key={g.event_id}>
+                        <tr className="border-b border-slate-100">
                           <td className="px-6 py-4">{g.event_name}</td>
                           <td className="px-6 py-4">{g.event_date ? formatDate(g.event_date) : '—'}</td>
                           <td className="px-6 py-4">{g.team_lead ?? '—'}</td>
@@ -629,8 +724,17 @@ export default function Payments() {
                             P:{g.status_breakdown.pending} A:{g.status_breakdown.approved} Pd:{g.status_breakdown.paid}
                           </td>
                           <td className="px-6 py-4 text-right space-x-2">
-                            <button className="link-brand" onClick={() => setExpandedEventId(expandedEventId === g.event_id ? null : g.event_id)}>View Details</button>
+                            <button type="button" className="link-brand" onClick={() => setExpandedEventId(expandedEventId === g.event_id ? null : g.event_id)}>View Details</button>
                             <button
+                              type="button"
+                              className="link-brand text-emerald-700"
+                              onClick={() => openB2cModal(g.event_id)}
+                              disabled={b2cLoading || (g.status_breakdown.approved ?? 0) < 1}
+                            >
+                              Process B2C
+                            </button>
+                            <button
+                              type="button"
                               className="link-brand text-blue-700"
                               onClick={async () => {
                                 await Promise.all(
@@ -644,6 +748,7 @@ export default function Payments() {
                               Approve Allowances
                             </button>
                             <button
+                              type="button"
                               className="link-brand"
                               onClick={() => window.open(`${window.location.origin.replace(/\/$/, '')}/api/payments/earned-allowances/export?format=csv`, '_blank')}
                             >
@@ -652,7 +757,7 @@ export default function Payments() {
                           </td>
                         </tr>
                         {expandedEventId === g.event_id && (
-                          <tr key={`${g.event_id}-details`} className="bg-slate-50/70">
+                          <tr className="bg-slate-50/70">
                             <td colSpan={7} className="px-4 py-4">
                               <div className="overflow-x-auto">
                                 <table className="min-w-full text-sm">
@@ -698,7 +803,7 @@ export default function Payments() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -858,6 +963,140 @@ export default function Payments() {
                 {saving ? 'Rejecting…' : 'Reject'}
               </button>
             </div>
+          </div>
+        </FormModal>
+      )}
+
+      {b2cOpen && (
+        <FormModal
+          title="Process allowances (M-Pesa B2C)"
+          onClose={() => {
+            setB2cOpen(false);
+            setB2cResultMessage(null);
+            setError(null);
+          }}
+          wide
+        >
+          <div className="px-6 py-4">
+            {error && <div className="form-error-banner mb-4">{error}</div>}
+            {b2cLoading && <p className="text-sm text-slate-500">Loading approved payouts…</p>}
+            {!b2cLoading && b2cPreview && (
+              <>
+                <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${b2cPreview.dry_run ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900'}`}>
+                    {b2cPreview.dry_run ? 'Dry run (no real M-Pesa charge)' : 'Live B2C'}
+                  </span>
+                  {!b2cPreview.configured && !b2cPreview.dry_run && (
+                    <span className="text-xs text-red-600">M-Pesa credentials not configured</span>
+                  )}
+                  <span className="text-slate-600">
+                    {b2cPreview.payment_count} payable · {b2cPreview.blocked_count} blocked · Selected total:{' '}
+                    <strong>KES {selectedB2cTotal.toFixed(2)}</strong>
+                  </span>
+                </div>
+                <p className="mb-3 text-sm text-slate-600">
+                  Only <strong>approved</strong> unpaid allowances are listed, grouped by crew phone. Confirm to trigger B2C.
+                </p>
+                {b2cPreview.payments.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-slate-500">
+                    No approved unpaid allowances to pay{b2cEventId ? ' for this event' : ''}.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50 text-left text-slate-500">
+                          <th className="px-3 py-2 w-10">
+                            <input
+                              type="checkbox"
+                              aria-label="Select all eligible"
+                              checked={
+                                b2cPreview.eligible.length > 0 &&
+                                b2cPreview.eligible.every((p) => b2cSelected.includes(p.user_id))
+                              }
+                              onChange={(e) => {
+                                setB2cSelected(
+                                  e.target.checked ? b2cPreview.eligible.map((p) => p.user_id) : []
+                                );
+                              }}
+                            />
+                          </th>
+                          <th className="px-3 py-2">Crew</th>
+                          <th className="px-3 py-2">Phone</th>
+                          <th className="px-3 py-2">Allowances</th>
+                          <th className="px-3 py-2 text-right">Amount (KES)</th>
+                          <th className="px-3 py-2">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {b2cPreview.payments.map((p: B2cPayoutLine) => (
+                          <tr key={p.user_id} className={`border-b border-slate-100 ${!p.phone_ok ? 'bg-red-50/50' : ''}`}>
+                            <td className="px-3 py-2">
+                              <input
+                                type="checkbox"
+                                disabled={!p.phone_ok}
+                                checked={b2cSelected.includes(p.user_id)}
+                                onChange={() => toggleB2cUser(p.user_id, p.phone_ok)}
+                                aria-label={`Select ${p.crew_name}`}
+                              />
+                            </td>
+                            <td className="px-3 py-2 font-medium text-slate-900">{p.crew_name}</td>
+                            <td className="px-3 py-2 tabular-nums text-slate-700">
+                              {p.phone ?? p.phone_display ?? '—'}
+                            </td>
+                            <td className="px-3 py-2 text-slate-600">
+                              {p.allowance_count} line{p.allowance_count === 1 ? '' : 's'}
+                              {p.lines[0]?.event_name ? (
+                                <span className="block text-xs text-slate-400">{p.lines[0].event_name}</span>
+                              ) : null}
+                            </td>
+                            <td className="px-3 py-2 text-right font-semibold tabular-nums">
+                              {Number(p.amount).toFixed(2)}
+                            </td>
+                            <td className="px-3 py-2 text-xs">
+                              {p.phone_ok ? (
+                                <span className="text-emerald-700">Ready</span>
+                              ) : (
+                                <span className="text-red-600">Missing / invalid phone</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {b2cResultMessage && (
+                  <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                    {b2cResultMessage}
+                  </div>
+                )}
+                <div className="mt-6 flex justify-end gap-2 border-t border-slate-200 pt-4">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      setB2cOpen(false);
+                      setB2cResultMessage(null);
+                    }}
+                  >
+                    {b2cResultMessage ? 'Close' : 'Cancel'}
+                  </button>
+                  {!b2cResultMessage && (
+                    <button
+                      type="button"
+                      className="btn-brand"
+                      disabled={b2cProcessing || b2cSelected.length === 0}
+                      onClick={handleB2cProcess}
+                    >
+                      {b2cProcessing
+                        ? 'Processing…'
+                        : `Confirm B2C (${b2cSelected.length}) · KES ${selectedB2cTotal.toFixed(2)}`}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </FormModal>
       )}

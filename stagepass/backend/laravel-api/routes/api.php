@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\EquipmentController;
 use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\EventCrewController;
 use App\Http\Controllers\Api\EarnedAllowanceController;
+use App\Http\Controllers\Api\MpesaCallbackController;
 use App\Http\Controllers\Api\HolidayController;
 use App\Http\Controllers\Api\EventEquipmentController;
 use App\Http\Controllers\Api\EventNoteController;
@@ -31,6 +32,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
 Route::get('/health/db', DbHealthController::class);
+Route::post('/mpesa/b2c/result', [MpesaCallbackController::class, 'b2cResult']);
+Route::post('/mpesa/b2c/timeout', [MpesaCallbackController::class, 'b2cTimeout']);
 Route::get('/settings/public-app', [SettingsController::class, 'publicAppConfig']);
 Route::get('/login-display-name', [AuthController::class, 'loginDisplayName']);
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
@@ -128,6 +131,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('payments/approve', [PaymentController::class, 'approve']);
     Route::post('payments/reject', [PaymentController::class, 'reject']);
     Route::get('payments/earned-allowances/export', [EarnedAllowanceController::class, 'export']);
+    Route::get('payments/earned-allowances/b2c-preview', [EarnedAllowanceController::class, 'b2cPreview']);
+    Route::post('payments/earned-allowances/b2c-process', [EarnedAllowanceController::class, 'b2cProcess']);
     Route::get('payments/earned-allowances', [EarnedAllowanceController::class, 'index']);
     Route::post('payments/allowance-requests', [EarnedAllowanceController::class, 'crewRequest']);
     Route::post('payments/earned-allowances', [EarnedAllowanceController::class, 'store']);

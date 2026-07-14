@@ -4,15 +4,19 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AllowanceType;
+use App\Models\B2cPayout;
+use App\Models\B2cPayoutItem;
 use App\Models\Event;
 use App\Models\EventAllowance;
 use App\Models\User;
 use App\Notifications\AllowanceRequestDecisionNotification;
 use App\Notifications\AllowanceRequestSubmittedNotification;
+use App\Services\MpesaB2cService;
 use App\Support\EventTeamLeaderGate;
 use App\Support\EventTeamLeaderResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -417,5 +421,191 @@ class EarnedAllowanceController extends Controller
             'Content-Type' => 'text/csv',
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
         ]);
+    }
+
+    /**
+     * Preview approved (unpaid) allowances grouped by crew for M-Pesa B2C disbursement.
+     */
+    public function b2cPreview(Request $request, MpesaB2cService $mpesa): JsonResponse
+    {
+        if (! $this->canManage($request)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'event_id' => 'nullable|exists:events,id',
+            'user_ids' => 'nullable|array',
+            'user_ids.*' => 'integer|exists:users,id',
+        ]);
+
+        $allowances = $this->approvedUnpaidQuery($validated)->get();
+        $payments = $mpesa->buildPayoutPreview($allowances);
+        $eligible = array_values(array_filter($payments, fn ($p) => $p['phone_ok'] && $p['amount'] > 0));
+        $blocked = array_values(array_filter($payments, fn ($p) => ! $p['phone_ok'] || $p['amount'] <= 0));
+
+        return response()->json([
+            'dry_run' => $mpesa->isDryRun(),
+            'configured' => $mpesa->isConfigured(),
+            'total_amount' => round(array_sum(array_column($eligible, 'amount')), 2),
+            'payment_count' => count($eligible),
+            'blocked_count' => count($blocked),
+            'payments' => $payments,
+            'eligible' => $eligible,
+            'blocked' => $blocked,
+        ]);
+    }
+
+    /**
+     * Process selected approved allowances via M-Pesa B2C (or dry-run when configured).
+     */
+    public function b2cProcess(Request $request, MpesaB2cService $mpesa): JsonResponse
+    {
+        if (! $this->canManage($request)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'event_id' => 'nullable|exists:events,id',
+            'user_ids' => 'required|array|min:1',
+            'user_ids.*' => 'integer|exists:users,id',
+            'allowance_ids' => 'nullable|array',
+            'allowance_ids.*' => 'integer|exists:event_allowances,id',
+        ]);
+
+        if (! $mpesa->isDryRun() && ! $mpesa->isConfigured()) {
+            return response()->json([
+                'message' => 'M-Pesa B2C is not configured. Set MPESA_* credentials or enable MPESA_B2C_DRY_RUN.',
+            ], 422);
+        }
+
+        $allowances = $this->approvedUnpaidQuery($validated)->get();
+        if ($allowances->isEmpty()) {
+            return response()->json(['message' => 'No approved unpaid allowances match the selection.'], 422);
+        }
+
+        $preview = $mpesa->buildPayoutPreview($allowances);
+        $selectedUserIds = array_map('intval', $validated['user_ids']);
+        $toPay = array_values(array_filter(
+            $preview,
+            fn ($p) => in_array((int) $p['user_id'], $selectedUserIds, true) && $p['phone_ok'] && $p['amount'] > 0
+        ));
+
+        if ($toPay === []) {
+            return response()->json([
+                'message' => 'No payable lines selected. Ensure each crew member has a valid phone and approved amount.',
+            ], 422);
+        }
+
+        $payout = DB::transaction(function () use ($request, $toPay, $validated, $mpesa) {
+            $total = round(array_sum(array_column($toPay, 'amount')), 2);
+            $payout = B2cPayout::create([
+                'initiated_by' => $request->user()->id,
+                'event_id' => $validated['event_id'] ?? null,
+                'total_amount' => $total,
+                'line_count' => count($toPay),
+                'status' => B2cPayout::STATUS_PROCESSING,
+                'dry_run' => $mpesa->isDryRun(),
+                'notes' => $mpesa->isDryRun() ? 'Dry-run B2C disbursement' : null,
+            ]);
+
+            foreach ($toPay as $line) {
+                $item = B2cPayoutItem::create([
+                    'b2c_payout_id' => $payout->id,
+                    'user_id' => $line['user_id'],
+                    'phone' => $line['phone'],
+                    'amount' => $line['amount'],
+                    'event_allowance_ids' => $line['allowance_ids'],
+                    'status' => B2cPayoutItem::STATUS_QUEUED,
+                ]);
+
+                $result = $mpesa->sendPayment(
+                    $line['phone'],
+                    (float) $line['amount'],
+                    'Stagepass allowance payout #'.$payout->id,
+                    'Allowances'
+                );
+
+                if (! $result['ok']) {
+                    $item->update([
+                        'status' => B2cPayoutItem::STATUS_FAILED,
+                        'result_desc' => $result['message'],
+                        'raw_response' => $result['raw'],
+                    ]);
+
+                    continue;
+                }
+
+                $item->update([
+                    'status' => $mpesa->isDryRun() ? B2cPayoutItem::STATUS_COMPLETED : B2cPayoutItem::STATUS_ACCEPTED,
+                    'conversation_id' => $result['conversation_id'],
+                    'originator_conversation_id' => $result['originator_conversation_id'],
+                    'raw_response' => $result['raw'],
+                    'result_desc' => $result['message'],
+                ]);
+
+                if ($mpesa->isDryRun()) {
+                    EventAllowance::query()
+                        ->whereIn('id', $line['allowance_ids'])
+                        ->where('status', EventAllowance::STATUS_APPROVED)
+                        ->update([
+                            'status' => EventAllowance::STATUS_PAID,
+                            'paid_at' => now(),
+                        ]);
+                }
+            }
+
+            $mpesa->refreshPayoutStatus($payout->id);
+
+            return $payout->fresh(['items.user']);
+        });
+
+        $items = $payout->items->map(fn (B2cPayoutItem $i) => [
+            'id' => $i->id,
+            'user_id' => $i->user_id,
+            'crew_name' => $i->user?->name,
+            'phone' => $i->phone,
+            'amount' => (float) $i->amount,
+            'status' => $i->status,
+            'conversation_id' => $i->conversation_id,
+            'result_desc' => $i->result_desc,
+        ])->values()->all();
+
+        return response()->json([
+            'message' => $payout->dry_run
+                ? 'Dry-run B2C completed. Allowances marked as paid.'
+                : 'B2C payment requests submitted. Final status will update via callback.',
+            'dry_run' => (bool) $payout->dry_run,
+            'payout' => [
+                'id' => $payout->id,
+                'status' => $payout->status,
+                'total_amount' => (float) $payout->total_amount,
+                'line_count' => $payout->line_count,
+            ],
+            'items' => $items,
+        ]);
+    }
+
+    /**
+     * @param  array{event_id?:int|null,user_ids?:list<int>,allowance_ids?:list<int>}  $filters
+     * @return \Illuminate\Database\Eloquent\Builder<\App\Models\EventAllowance>
+     */
+    private function approvedUnpaidQuery(array $filters)
+    {
+        $query = EventAllowance::query()
+            ->with(['crew:id,name,phone', 'type:id,name', 'event:id,name'])
+            ->where('status', EventAllowance::STATUS_APPROVED)
+            ->whereNull('paid_at');
+
+        if (! empty($filters['event_id'])) {
+            $query->where('event_id', (int) $filters['event_id']);
+        }
+        if (! empty($filters['user_ids']) && is_array($filters['user_ids'])) {
+            $query->whereIn('crew_id', array_map('intval', $filters['user_ids']));
+        }
+        if (! empty($filters['allowance_ids']) && is_array($filters['allowance_ids'])) {
+            $query->whereIn('id', array_map('intval', $filters['allowance_ids']));
+        }
+
+        return $query->orderBy('crew_id')->orderBy('id');
     }
 }
