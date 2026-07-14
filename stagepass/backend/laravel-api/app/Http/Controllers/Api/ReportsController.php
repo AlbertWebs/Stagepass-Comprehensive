@@ -7,6 +7,7 @@ use App\Models\DailyOfficeCheckin;
 use App\Models\Event;
 use App\Models\EventExpense;
 use App\Models\EventAllowance;
+use App\Models\EventMeal;
 use App\Models\EventPayment;
 use App\Models\EventEquipment;
 use App\Models\EventUser;
@@ -14,6 +15,7 @@ use App\Models\Task;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 class ReportsController extends Controller
 {
@@ -771,6 +773,124 @@ th{background:#f5f5f5;font-weight:600;}
     }
 
     /**
+     * Paper-style technical crew register rows: meals (B/L/D) + fare to/from/total + time in/out.
+     *
+     * @param  Collection<int, EventUser>  $crewRows
+     * @param  Collection<int, EventAllowance>  $allowanceRows
+     * @param  Collection<int, EventMeal>  $mealRows
+     * @return list<array<string, mixed>>
+     */
+    private function buildTechnicalCrewRegisterRows(
+        Event $event,
+        Collection $crewRows,
+        Collection $allowanceRows,
+        Collection $mealRows
+    ): array {
+        $mealAllowancesByCrew = $allowanceRows
+            ->filter(function (EventAllowance $a) {
+                if (! in_array($a->meal_slot, ['breakfast', 'lunch', 'dinner'], true)) {
+                    return false;
+                }
+
+                return $a->status !== EventAllowance::STATUS_REJECTED;
+            })
+            ->groupBy('crew_id');
+
+        $mealsByUser = $mealRows->groupBy('user_id');
+        $rows = [];
+
+        foreach ($crewRows as $assignment) {
+            /** @var EventUser $assignment */
+            $userId = (int) $assignment->user_id;
+            $name = $assignment->user?->name ?? ('User #'.$userId);
+            $userMeals = $mealsByUser->get($userId, collect());
+            $crewMealAllowances = $mealAllowancesByCrew->get($userId, collect());
+
+            $fareTotal = $assignment->transport_amount !== null ? (float) $assignment->transport_amount : null;
+            // Fare to / Fare from are not stored separately yet — report Total from recorded cab amount.
+            $fareTo = null;
+            $fareFrom = null;
+            $displayFareTotal = $fareTotal;
+
+            $slotFlagsForDate = function (?string $workDate) use ($crewMealAllowances): array {
+                $relevant = $crewMealAllowances->filter(function (EventAllowance $a) use ($workDate) {
+                    if ($workDate === null) {
+                        return true;
+                    }
+                    $grantDate = $a->meal_grant_date?->format('Y-m-d');
+
+                    return $grantDate === null || $grantDate === $workDate;
+                });
+
+                return [
+                    'breakfast' => $relevant->contains(fn (EventAllowance $a) => $a->meal_slot === 'breakfast'),
+                    'lunch' => $relevant->contains(fn (EventAllowance $a) => $a->meal_slot === 'lunch'),
+                    'dinner' => $relevant->contains(fn (EventAllowance $a) => $a->meal_slot === 'dinner'),
+                ];
+            };
+
+            $timeIn = $assignment->checkin_time?->format('H:i');
+            $timeOut = $assignment->checkout_time?->format('H:i');
+            $checkinDate = $assignment->checkin_time
+                ? $assignment->checkin_time->copy()->timezone('Africa/Nairobi')->format('Y-m-d')
+                : null;
+
+            if ($userMeals->isEmpty()) {
+                $workDate = $checkinDate ?? $event->date?->format('Y-m-d');
+                $slots = $slotFlagsForDate($workDate);
+                $rows[] = [
+                    'date' => $workDate,
+                    'user_id' => $userId,
+                    'name' => $name,
+                    'breakfast' => $slots['breakfast'],
+                    'lunch' => $slots['lunch'],
+                    'dinner' => $slots['dinner'],
+                    'fare_to' => $fareTo,
+                    'fare_from' => $fareFrom,
+                    'fare_total' => $displayFareTotal,
+                    'transport_type' => $assignment->transport_type,
+                    'time_in' => $timeIn,
+                    'time_out' => $timeOut,
+                ];
+
+                continue;
+            }
+
+            foreach ($userMeals as $meal) {
+                /** @var EventMeal $meal */
+                $workDate = Carbon::parse($meal->work_date)->format('Y-m-d');
+                $slots = $slotFlagsForDate($workDate);
+                $sameDayTimes = $checkinDate === $workDate;
+                $rows[] = [
+                    'date' => $workDate,
+                    'user_id' => $userId,
+                    'name' => $name,
+                    'breakfast' => (bool) $meal->breakfast || $slots['breakfast'],
+                    'lunch' => (bool) $meal->lunch || $slots['lunch'],
+                    'dinner' => (bool) $meal->dinner || $slots['dinner'],
+                    'fare_to' => $fareTo,
+                    'fare_from' => $fareFrom,
+                    'fare_total' => $displayFareTotal,
+                    'transport_type' => $assignment->transport_type,
+                    'time_in' => $sameDayTimes ? $timeIn : null,
+                    'time_out' => $sameDayTimes ? $timeOut : null,
+                ];
+            }
+        }
+
+        usort($rows, function (array $a, array $b) {
+            $dateCmp = strcmp((string) ($a['date'] ?? ''), (string) ($b['date'] ?? ''));
+            if ($dateCmp !== 0) {
+                return $dateCmp;
+            }
+
+            return strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+        });
+
+        return $rows;
+    }
+
+    /**
      * Full event dossier: event details, crew/attendance, earned allowances, payments, expenses.
      *
      * @return array{summary: array<string, mixed>, events: array<int, array<string, mixed>>}
@@ -834,6 +954,13 @@ th{background:#f5f5f5;font-weight:600;}
             ->get()
             ->groupBy('event_id');
 
+        $mealsByEvent = EventMeal::query()
+            ->whereIn('event_id', $eventIds)
+            ->when($userId, fn ($q) => $q->where('user_id', $userId))
+            ->orderBy('work_date')
+            ->get()
+            ->groupBy('event_id');
+
         $dossier = [];
         $totals = [
             'events_count' => 0,
@@ -855,6 +982,7 @@ th{background:#f5f5f5;font-weight:600;}
             $expenseRows = $expensesByEvent->get($eid, collect());
             $taskRows = $tasksByEvent->get($eid, collect());
             $equipmentRows = $equipmentByEvent->get($eid, collect());
+            $mealRows = $mealsByEvent->get($eid, collect());
 
             $crew = $crewRows->map(function (EventUser $a) {
                 return [
@@ -872,6 +1000,8 @@ th{background:#f5f5f5;font-weight:600;}
                     'transport_amount' => $a->transport_amount !== null ? (float) $a->transport_amount : null,
                 ];
             })->values()->all();
+
+            $crewRegister = $this->buildTechnicalCrewRegisterRows($event, $crewRows, $allowanceRows, $mealRows);
 
             $allowances = $allowanceRows->map(function (EventAllowance $a) {
                 return [
@@ -978,6 +1108,7 @@ th{background:#f5f5f5;font-weight:600;}
                     'ended_by' => $event->endedBy?->name,
                 ],
                 'crew' => $crew,
+                'crew_register' => $crewRegister,
                 'earned_allowances' => $allowances,
                 'payments' => $payments,
                 'expenses' => $expenses,
@@ -1067,28 +1198,40 @@ th{background:#f5f5f5;font-weight:600;}
             }
 
             $crewRowsHtml = '';
-            foreach ($item['crew'] as $c) {
+            foreach (($item['crew_register'] ?? []) as $c) {
+                $mark = static fn (bool $yes): string => $yes ? '✓' : '';
+                $moneyOrBlank = static function ($n): string {
+                    if ($n === null || $n === '') {
+                        return '';
+                    }
+
+                    return number_format((float) $n, 2);
+                };
                 $crewRowsHtml .= '<tr>'
+                    .'<td>'.e((string) ($c['date'] ?? '—')).'</td>'
                     .'<td>'.e((string) ($c['name'] ?? '—')).'</td>'
-                    .'<td>'.e((string) ($c['role_in_event'] ?? '—')).'</td>'
-                    .'<td>'.e((string) ($c['checkin_time'] ?? '—')).'</td>'
-                    .'<td>'.e((string) ($c['checkout_time'] ?? '—')).'</td>'
-                    .'<td style="text-align:right;">'.e($c['total_hours'] !== null ? (string) $c['total_hours'] : '—').'</td>'
-                    .'<td style="text-align:right;">'.e($c['extra_hours'] !== null ? (string) $c['extra_hours'] : '—').'</td>'
-                    .'<td>'.e((string) ($c['transport_type'] ?? '—')).'</td>'
-                    .'<td style="text-align:right;">'.($c['transport_amount'] !== null ? number_format((float) $c['transport_amount'], 2) : '—').'</td>'
+                    .'<td style="text-align:center;">'.$mark((bool) ($c['breakfast'] ?? false)).'</td>'
+                    .'<td style="text-align:center;">'.$mark((bool) ($c['lunch'] ?? false)).'</td>'
+                    .'<td style="text-align:center;">'.$mark((bool) ($c['dinner'] ?? false)).'</td>'
+                    .'<td style="text-align:right;">'.$moneyOrBlank($c['fare_to'] ?? null).'</td>'
+                    .'<td style="text-align:right;">'.$moneyOrBlank($c['fare_from'] ?? null).'</td>'
+                    .'<td style="text-align:right;">'.$moneyOrBlank($c['fare_total'] ?? null).'</td>'
+                    .'<td>'.e((string) ($c['time_in'] ?? '')).'</td>'
+                    .'<td>'.e((string) ($c['time_out'] ?? '')).'</td>'
+                    .'<td></td>'
                     .'</tr>';
             }
             if ($crewRowsHtml === '') {
-                $crewRowsHtml = '<tr><td colspan="8">No crew assigned.</td></tr>';
+                $crewRowsHtml = '<tr><td colspan="11">No crew assigned.</td></tr>';
             }
 
+            $otherAllowances = array_values(array_filter(
+                $item['earned_allowances'] ?? [],
+                static fn ($a) => empty($a['meal_slot'])
+            ));
             $allowanceRowsHtml = '';
-            foreach ($item['earned_allowances'] as $a) {
+            foreach ($otherAllowances as $a) {
                 $desc = trim((string) ($a['description'] ?? ''));
-                if (! empty($a['meal_slot'])) {
-                    $desc = trim($desc.' ['.$a['meal_slot'].($a['meal_grant_date'] ? ' '.$a['meal_grant_date'] : '').']');
-                }
                 $allowanceRowsHtml .= '<tr>'
                     .'<td>'.e((string) ($a['crew_name'] ?? '—')).'</td>'
                     .'<td>'.e((string) ($a['allowance_type'] ?? '—')).'</td>'
@@ -1100,7 +1243,7 @@ th{background:#f5f5f5;font-weight:600;}
                     .'</tr>';
             }
             if ($allowanceRowsHtml === '') {
-                $allowanceRowsHtml = '<tr><td colspan="7">No earned allowances recorded.</td></tr>';
+                $allowanceRowsHtml = '<tr><td colspan="7">No other (non-meal) allowances recorded.</td></tr>';
             }
 
             $paymentRowsHtml = '';
@@ -1171,9 +1314,21 @@ th{background:#f5f5f5;font-weight:600;}
                 .'</div>'
                 .'<h3>Event details</h3>'
                 .'<table class="meta-table"><tbody>'.$metaHtml.'</tbody></table>'
-                .'<h3>Crew & attendance</h3>'
-                .'<table><thead><tr><th>Crew</th><th>Role</th><th>Check-in</th><th>Check-out</th><th style="text-align:right;">Hours</th><th style="text-align:right;">Extra</th><th>Transport</th><th style="text-align:right;">Transport (KES)</th></tr></thead><tbody>'.$crewRowsHtml.'</tbody></table>'
-                .'<h3>Earned allowances (full breakdown)</h3>'
+                .'<h3>Technical crew register</h3>'
+                .'<table class="register">'
+                .'<thead>'
+                .'<tr>'
+                .'<th rowspan="2">Date</th><th rowspan="2">Name</th>'
+                .'<th colspan="3" style="text-align:center;">Meals</th>'
+                .'<th colspan="3" style="text-align:center;">Transport</th>'
+                .'<th rowspan="2">Time In</th><th rowspan="2">Time Out</th><th rowspan="2">Sign</th>'
+                .'</tr>'
+                .'<tr>'
+                .'<th style="text-align:center;">Breakfast</th><th style="text-align:center;">Lunch</th><th style="text-align:center;">Dinner</th>'
+                .'<th style="text-align:center;">Fare to</th><th style="text-align:center;">Fare From</th><th style="text-align:center;">Total</th>'
+                .'</tr>'
+                .'</thead><tbody>'.$crewRowsHtml.'</tbody></table>'
+                .'<h3>Other allowances (non-meal)</h3>'
                 .'<table><thead><tr><th>Crew</th><th>Type</th><th style="text-align:right;">Amount (KES)</th><th>Status</th><th>Source</th><th>Description</th><th>Recorded</th></tr></thead><tbody>'.$allowanceRowsHtml.'</tbody></table>'
                 .'<h3>Payment requests</h3>'
                 .'<table><thead><tr><th>Crew</th><th>Purpose</th><th>Date</th><th style="text-align:right;">Allowances</th><th style="text-align:right;">Per diem</th><th style="text-align:right;">Total</th><th>Status</th></tr></thead><tbody>'.$paymentRowsHtml.'</tbody></table>'
@@ -1201,6 +1356,8 @@ h3{font-size:1rem;margin:18px 0 8px;color:#1e2d5c;}
 table{border-collapse:collapse;width:100%;margin-top:8px;margin-bottom:12px;font-size:13px;}
 th,td{border:1px solid #ddd;padding:6px 10px;text-align:left;vertical-align:top;}
 th{background:#f5f5f5;font-weight:600;}
+table.register th{text-align:center;font-size:12px;}
+table.register td{font-size:12px;}
 .meta-table th{width:180px;}
 .kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;margin:12px 0 16px;}
 .kpi{border:1px solid #ddd;border-radius:10px;padding:10px 12px;background:#fbfbfb;}

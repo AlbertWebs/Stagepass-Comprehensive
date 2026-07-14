@@ -1,52 +1,20 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Bar,
-  BarChart,
-  Cell,
-  Legend,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import {
   api,
   type Event,
   type ReportCrewAttendanceResponse,
-  type ReportCrewPaymentsResponse,
-  type ReportEventsResponse,
-  type ReportFinancialResponse,
   type ReportFilters,
   type ReportFullEventResponse,
-  type ReportTasksResponse,
   type ReportType,
-  type ReportsData,
 } from '@/services/api';
 import { PageHeader } from '@/components/PageHeader';
-import { Preloader } from '@/components/Preloader';
 import { SectionCard } from '@/components/SectionCard';
 
-const CHART_COLORS = ['#ca8a04', '#1e2d5c', '#3a5092', '#22c55e', '#ef4444', '#8b5cf6'];
-
 const REPORT_TABS: { id: ReportType; label: string }[] = [
-  { id: 'full-event', label: 'Comprehensive' },
-  { id: 'events', label: 'Events' },
-  { id: 'crew-attendance', label: 'Crew attendance' },
-  { id: 'crew-payments', label: 'Crew payments' },
-  { id: 'tasks', label: 'Tasks' },
-  { id: 'financial', label: 'Financials' },
+  { id: 'full-event', label: 'Comprehensive allowances' },
+  { id: 'crew-attendance', label: 'Attendance' },
 ];
-
-function formatDateShort(d: string) {
-  const [y, m, day] = d.split('-');
-  const date = new Date(Number(y), Number(m) - 1, Number(day));
-  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-}
 
 function formatDate(d: string) {
   try {
@@ -100,18 +68,9 @@ export default function Reports() {
   const [events, setEvents] = useState<Event[]>([]);
   const [users, setUsers] = useState<{ id: number; name: string }[]>([]);
 
-  const [legacyData, setLegacyData] = useState<ReportsData | null>(null);
-  const [legacyFrom, setLegacyFrom] = useState(firstDayOfMonth.toISOString().slice(0, 10));
-  const [legacyTo, setLegacyTo] = useState(today.toISOString().slice(0, 10));
-  const [legacyLoading, setLegacyLoading] = useState(false);
-
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
-  const [eventsReport, setEventsReport] = useState<ReportEventsResponse | null>(null);
   const [attendanceReport, setAttendanceReport] = useState<ReportCrewAttendanceResponse | null>(null);
-  const [paymentsReport, setPaymentsReport] = useState<ReportCrewPaymentsResponse | null>(null);
-  const [tasksReport, setTasksReport] = useState<ReportTasksResponse | null>(null);
-  const [financialReport, setFinancialReport] = useState<ReportFinancialResponse | null>(null);
   const [fullEventReport, setFullEventReport] = useState<ReportFullEventResponse | null>(null);
   const [exporting, setExporting] = useState(false);
   const [projectLeadName, setProjectLeadName] = useState('');
@@ -144,55 +103,12 @@ export default function Reports() {
 
     const run = async () => {
       try {
-        switch (activeTab) {
-          case 'full-event':
-            setFullEventReport(await api.reports.fullEvent(fPage));
-            setEventsReport(null);
-            setAttendanceReport(null);
-            setPaymentsReport(null);
-            setTasksReport(null);
-            setFinancialReport(null);
-            break;
-          case 'events':
-            setEventsReport(await api.reports.events(fPage));
-            setFullEventReport(null);
-            setAttendanceReport(null);
-            setPaymentsReport(null);
-            setTasksReport(null);
-            setFinancialReport(null);
-            break;
-          case 'crew-attendance':
-            setAttendanceReport(await api.reports.crewAttendance(fPage));
-            setFullEventReport(null);
-            setEventsReport(null);
-            setPaymentsReport(null);
-            setTasksReport(null);
-            setFinancialReport(null);
-            break;
-          case 'crew-payments':
-            setPaymentsReport(await api.reports.crewPayments(fPage));
-            setFullEventReport(null);
-            setEventsReport(null);
-            setAttendanceReport(null);
-            setTasksReport(null);
-            setFinancialReport(null);
-            break;
-          case 'tasks':
-            setTasksReport(await api.reports.tasks(fPage));
-            setFullEventReport(null);
-            setEventsReport(null);
-            setAttendanceReport(null);
-            setPaymentsReport(null);
-            setFinancialReport(null);
-            break;
-          case 'financial':
-            setFinancialReport(await api.reports.financial(fPage));
-            setFullEventReport(null);
-            setEventsReport(null);
-            setAttendanceReport(null);
-            setPaymentsReport(null);
-            setTasksReport(null);
-            break;
+        if (activeTab === 'full-event') {
+          setFullEventReport(await api.reports.fullEvent(fPage));
+          setAttendanceReport(null);
+        } else {
+          setAttendanceReport(await api.reports.crewAttendance(fPage));
+          setFullEventReport(null);
         }
       } catch (e) {
         setReportError(e instanceof Error ? e.message : 'Failed to load report');
@@ -236,7 +152,7 @@ export default function Reports() {
   const handleExportPdf = useCallback(async () => {
     setExporting(true);
     try {
-      const { html, title } = await api.reports.exportHtml(activeTab, buildFilters());
+      const { html } = await api.reports.exportHtml(activeTab, buildFilters());
       const w = window.open('', '_blank');
       if (w) {
         w.document.write(html);
@@ -254,11 +170,35 @@ export default function Reports() {
   }, [activeTab, buildFilters]);
 
   const handleExportCsv = useCallback(() => {
-    const f = activeTab;
-    if (f === 'full-event' && fullEventReport?.events) {
+    if (activeTab === 'full-event' && fullEventReport?.events) {
+      const registerRows: (string | number)[][] = [];
+      for (const item of fullEventReport.events) {
+        for (const r of item.crew_register ?? []) {
+          registerRows.push([
+            item.event.name,
+            r.date ?? '',
+            r.name,
+            r.breakfast ? 'Yes' : '',
+            r.lunch ? 'Yes' : '',
+            r.dinner ? 'Yes' : '',
+            r.fare_to ?? '',
+            r.fare_from ?? '',
+            r.fare_total ?? '',
+            r.time_in ?? '',
+            r.time_out ?? '',
+          ]);
+        }
+      }
+      downloadCsv(
+        `technical-crew-register-${dateFrom}-${dateTo}.csv`,
+        ['Event', 'Date', 'Name', 'Breakfast', 'Lunch', 'Dinner', 'Fare to', 'Fare From', 'Total', 'Time In', 'Time Out'],
+        registerRows
+      );
+
       const allowanceRows: (string | number)[][] = [];
       for (const item of fullEventReport.events) {
         for (const a of item.earned_allowances) {
+          if (a.meal_slot) continue;
           allowanceRows.push([
             item.event.name,
             item.event.date ?? '',
@@ -268,45 +208,18 @@ export default function Reports() {
             a.status,
             a.source,
             a.description ?? '',
-            a.meal_slot ?? '',
-            a.meal_grant_date ?? '',
             a.recorded_at ?? '',
           ]);
         }
       }
-      downloadCsv(
-        `full-event-allowances-${dateFrom}-${dateTo}.csv`,
-        ['Event', 'Date', 'Crew', 'Allowance type', 'Amount', 'Status', 'Source', 'Description', 'Meal slot', 'Meal date', 'Recorded at'],
-        allowanceRows
-      );
-
-      const paymentRows: (string | number)[][] = [];
-      for (const item of fullEventReport.events) {
-        for (const p of item.payments) {
-          paymentRows.push([
-            item.event.name,
-            p.crew_name,
-            p.purpose ?? '',
-            p.payment_date ?? '',
-            p.allowances,
-            p.per_diem,
-            p.total_amount,
-            p.status,
-          ]);
-        }
+      if (allowanceRows.length > 0) {
+        downloadCsv(
+          `full-event-other-allowances-${dateFrom}-${dateTo}.csv`,
+          ['Event', 'Date', 'Crew', 'Allowance type', 'Amount', 'Status', 'Source', 'Description', 'Recorded at'],
+          allowanceRows
+        );
       }
-      downloadCsv(
-        `full-event-payments-${dateFrom}-${dateTo}.csv`,
-        ['Event', 'Crew', 'Purpose', 'Date', 'Allowances', 'Per diem', 'Total', 'Status'],
-        paymentRows
-      );
-    } else if (f === 'events' && eventsReport?.data) {
-      downloadCsv(
-        `events-report-${dateFrom}-${dateTo}.csv`,
-        ['Event', 'Date', 'Status'],
-        eventsReport.data.map((e) => [e.name, e.date, e.status ?? ''])
-      );
-    } else if (f === 'crew-attendance' && attendanceReport?.data) {
+    } else if (activeTab === 'crew-attendance' && attendanceReport?.data) {
       downloadCsv(
         `crew-attendance-${dateFrom}-${dateTo}.csv`,
         ['Crew', 'Event', 'Check-in', 'Check-out', 'Hours'],
@@ -318,78 +231,18 @@ export default function Reports() {
           a.total_hours ?? '',
         ])
       );
-    } else if (f === 'crew-payments' && paymentsReport?.data) {
-      downloadCsv(
-        `crew-payments-${dateFrom}-${dateTo}.csv`,
-        ['Crew', 'Event', 'Date', 'Allowances', 'Per diem', 'Total', 'Status'],
-        paymentsReport.data.map((p) => [
-          p.user?.name ?? '',
-          p.event?.name ?? '',
-          p.payment_date ?? '',
-          p.allowances ?? '',
-          p.per_diem ?? '',
-          p.total_amount,
-          p.status,
-        ])
-      );
-    } else if (f === 'tasks' && tasksReport?.data) {
-      downloadCsv(
-        `tasks-${dateFrom}-${dateTo}.csv`,
-        ['Task', 'Event', 'Due date', 'Status', 'Assignees'],
-        tasksReport.data.map((t) => [
-          t.title,
-          t.event?.name ?? '',
-          t.due_date ?? '',
-          t.status,
-          (t.assignees ?? []).map((a) => a.name).join('; '),
-        ])
-      );
-    } else if (f === 'financial' && financialReport?.data) {
-      downloadCsv(
-        `financial-${dateFrom}-${dateTo}.csv`,
-        ['Crew', 'Event', 'Date', 'Allowances', 'Per diem', 'Total', 'Status'],
-        financialReport.data.map((p) => [
-          p.user?.name ?? '',
-          p.event?.name ?? '',
-          p.payment_date ?? '',
-          p.allowances ?? '',
-          p.per_diem ?? '',
-          p.total_amount,
-          p.status,
-        ])
-      );
     }
-  }, [activeTab, fullEventReport, eventsReport, attendanceReport, paymentsReport, tasksReport, financialReport, dateFrom, dateTo]);
+  }, [activeTab, fullEventReport, attendanceReport, dateFrom, dateTo]);
 
-  const fetchLegacy = useCallback(() => {
-    setLegacyLoading(true);
-    api.reports
-      .get(legacyFrom, legacyTo)
-      .then(setLegacyData)
-      .catch(() => setLegacyData(null))
-      .finally(() => setLegacyLoading(false));
-  }, [legacyFrom, legacyTo]);
-
-  useEffect(() => {
-    fetchLegacy();
-  }, [fetchLegacy]);
-
-  const hasReportData =
-    fullEventReport ||
-    eventsReport ||
-    attendanceReport ||
-    paymentsReport ||
-    tasksReport ||
-    financialReport;
+  const hasReportData = fullEventReport || attendanceReport;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Reports"
-        subtitle="Comprehensive event dossiers with allowance line items, attendance, payments, tasks, equipment, and expenses. Filters auto-apply; export PDF or CSV."
+        subtitle="Comprehensive allowance dossiers and crew attendance. Filters auto-apply; export PDF or CSV."
       />
 
-      {/* Tabs */}
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
         {REPORT_TABS.map((tab) => (
           <button
@@ -411,7 +264,6 @@ export default function Reports() {
         ))}
       </div>
 
-      {/* Filters */}
       <SectionCard sectionLabel="Filters">
         <div className="flex flex-wrap items-end gap-4 p-6">
           <label className="flex items-center gap-2">
@@ -503,24 +355,22 @@ export default function Reports() {
               ))}
             </select>
           </div>
-          {(activeTab === 'full-event' || activeTab === 'crew-attendance' || activeTab === 'crew-payments' || activeTab === 'tasks' || activeTab === 'financial') && (
-            <div className="form-field">
-              <label className="form-label" htmlFor="report-user">Crew member</label>
-              <select
-                id="report-user"
-                value={userId === '' ? '' : userId}
-                onChange={(e) => setUserId(e.target.value === '' ? '' : Number(e.target.value))}
-                className="form-input w-auto min-w-[10rem]"
-              >
-                <option value="">All crew</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div className="form-field">
+            <label className="form-label" htmlFor="report-user">Crew member</label>
+            <select
+              id="report-user"
+              value={userId === '' ? '' : userId}
+              onChange={(e) => setUserId(e.target.value === '' ? '' : Number(e.target.value))}
+              className="form-input w-auto min-w-[10rem]"
+            >
+              <option value="">All crew</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+          </div>
           {activeTab === 'full-event' && eventId === '' && (
             <p className="w-full text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
               Tip: select a specific event for a single-event dossier, or leave as All events to export every event in the date range (includes full allowance breakdown).
@@ -592,19 +442,8 @@ export default function Reports() {
         <div className="form-error-banner">{reportError}</div>
       )}
 
-      {/* Report summary + table per tab */}
       {activeTab === 'full-event' && fullEventReport && (
         <FullEventReportView data={fullEventReport} formatDate={formatDate} />
-      )}
-      {activeTab === 'events' && eventsReport && (
-        <>
-          <EventsReportView data={eventsReport} formatDate={formatDate} />
-          <ReportPagination
-            pagination={eventsReport.pagination}
-            loading={reportLoading}
-            onPage={(p) => { setPage(p); fetchReport(p); }}
-          />
-        </>
       )}
       {activeTab === 'crew-attendance' && attendanceReport && (
         <>
@@ -616,77 +455,16 @@ export default function Reports() {
           />
         </>
       )}
-      {activeTab === 'crew-payments' && paymentsReport && (
-        <>
-          <CrewPaymentsReportView data={paymentsReport} formatDate={formatDate} />
-          <ReportPagination
-            pagination={paymentsReport.pagination}
-            loading={reportLoading}
-            onPage={(p) => { setPage(p); fetchReport(p); }}
-          />
-        </>
-      )}
-      {activeTab === 'tasks' && tasksReport && (
-        <>
-          <TasksReportView data={tasksReport} formatDate={formatDate} />
-          <ReportPagination
-            pagination={tasksReport.pagination}
-            loading={reportLoading}
-            onPage={(p) => { setPage(p); fetchReport(p); }}
-          />
-        </>
-      )}
-      {activeTab === 'financial' && financialReport && (
-        <>
-          <FinancialReportView data={financialReport} formatDate={formatDate} />
-          <ReportPagination
-            pagination={financialReport.pagination}
-            loading={reportLoading}
-            onPage={(p) => { setPage(p); fetchReport(p); }}
-          />
-        </>
-      )}
 
       {!hasReportData && !reportLoading && (
         <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-6 py-12 text-center text-slate-600">
           Set filters and click &quot;Generate report&quot; to load data.
         </div>
       )}
-
-      {/* Legacy overview (collapsible or separate section) */}
-      <SectionCard sectionLabel="Overview (combined period)">
-        <div className="flex flex-wrap items-end gap-4 p-6">
-          <div className="form-field">
-            <label className="form-label" htmlFor="legacy-from">From</label>
-            <input
-              id="legacy-from"
-              type="date"
-              value={legacyFrom}
-              onChange={(e) => setLegacyFrom(e.target.value)}
-              className="form-input w-auto min-w-[10rem]"
-            />
-          </div>
-          <div className="form-field">
-            <label className="form-label" htmlFor="legacy-to">To</label>
-            <input
-              id="legacy-to"
-              type="date"
-              value={legacyTo}
-              onChange={(e) => setLegacyTo(e.target.value)}
-              className="form-input w-auto min-w-[10rem]"
-            />
-          </div>
-          <button type="button" onClick={fetchLegacy} disabled={legacyLoading} className="btn-brand disabled:opacity-50">
-            {legacyLoading ? 'Loading…' : 'Apply'}
-          </button>
-        </div>
-        {legacyData && !legacyLoading && (
-          <LegacyCharts data={legacyData} formatDateShort={formatDateShort} />
-        )}
-      </SectionCard>
     </div>
   );
 }
+
 
 function ReportPagination({
   pagination,
@@ -726,104 +504,6 @@ function ReportPagination({
   );
 }
 
-function LegacyCharts({
-  data,
-  formatDateShort,
-}: {
-  data: ReportsData;
-  formatDateShort: (d: string) => string;
-}) {
-  return (
-    <div className="p-6 space-y-6">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Total payments</p>
-          <p className="mt-1 text-2xl font-bold text-slate-900">{data.financial.summary.total_payments}</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Total amount</p>
-          <p className="mt-1 text-2xl font-bold text-slate-900">
-            {Number(data.financial.summary.total_amount).toLocaleString('en-GB', { minimumFractionDigits: 2 })}
-          </p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Check-ins</p>
-          <p className="mt-1 text-2xl font-bold text-slate-900">{data.attendance.summary.total_checkins}</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Events</p>
-          <p className="mt-1 text-2xl font-bold text-slate-900">{data.events.summary.total_events}</p>
-        </div>
-      </div>
-      {data.financial.by_day.length > 0 && (
-        <div className="h-72">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data.financial.by_day.map((d) => ({ ...d, label: formatDateShort(d.date) }))}>
-              <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip formatter={(value: number) => [Number(value).toFixed(2), 'Amount']} />
-              <Bar dataKey="total" name="Amount" fill="#ca8a04" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-      {data.attendance.by_day.length > 0 && (
-        <div className="h-72">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data.attendance.by_day.map((d) => ({ ...d, label: formatDateShort(d.date) }))}>
-              <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="checkins" name="Check-ins" stroke="#ca8a04" strokeWidth={2} dot={{ r: 4 }} />
-              <Line type="monotone" dataKey="hours" name="Hours" stroke="#1e2d5c" strokeWidth={2} dot={{ r: 4 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-      {data.events.by_day.length > 0 && (
-        <div className="h-72">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data.events.by_day.map((d) => ({ ...d, label: formatDateShort(d.date) }))}>
-              <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip />
-              <Bar dataKey="count" name="Events" fill="#3a5092" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-      {Object.keys(data.financial.summary.by_status).length > 0 && (
-        <div className="h-64 max-w-xs">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={Object.entries(data.financial.summary.by_status).map(([name, v]) => ({
-                  name: name.charAt(0).toUpperCase() + name.slice(1),
-                  value: v.count,
-                }))}
-                cx="50%"
-                cy="50%"
-                innerRadius={50}
-                outerRadius={80}
-                paddingAngle={2}
-                dataKey="value"
-                nameKey="name"
-                label={({ name, value }) => `${name}: ${value}`}
-              >
-                {Object.keys(data.financial.summary.by_status).map((_, i) => (
-                  <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function FullEventReportView({
   data,
@@ -835,9 +515,12 @@ function FullEventReportView({
   const { summary, events: list } = data;
   const money = (n: number) =>
     Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const mealMark = (yes: boolean) => (yes ? '✓' : '');
+  const fareCell = (n: number | null | undefined) =>
+    n == null || Number.isNaN(Number(n)) ? '' : money(Number(n));
 
   return (
-    <SectionCard sectionLabel="Comprehensive event report">
+    <SectionCard sectionLabel="Comprehensive allowance report">
       <div className="p-6 space-y-6">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-5">
           <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
@@ -873,136 +556,119 @@ function FullEventReportView({
                 : ev.date
                   ? fd(ev.date)
                   : '—';
+            const register = item.crew_register ?? [];
+            const otherAllowances = item.earned_allowances.filter((a) => !a.meal_slot);
             return (
               <div key={ev.id} className="rounded-2xl border border-slate-200 overflow-hidden">
                 <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
-                  <h3 className="text-base font-semibold text-slate-900">{ev.name}</h3>
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        Stagepass Audio Visual · Technical crew register
+                      </p>
+                      <h3 className="text-base font-semibold text-slate-900">{ev.name}</h3>
+                    </div>
+                    <p className="text-sm text-slate-600">{dateLabel}</p>
+                  </div>
                   <p className="mt-1 text-sm text-slate-600">
-                    {[dateLabel, ev.location_name || 'No location', ev.status, ev.team_leader ? `TL: ${ev.team_leader}` : null]
+                    {[
+                      ev.location_name ? `Venue: ${ev.location_name}` : null,
+                      ev.start_time ? `Call time: ${String(ev.start_time).slice(0, 5)}` : null,
+                      ev.team_leader ? `Project team leader: ${ev.team_leader}` : null,
+                      ev.status,
+                    ]
                       .filter(Boolean)
                       .join(' · ')}
                   </p>
                 </div>
                 <div className="p-4 space-y-4">
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 text-sm">
-                    <div>
-                      <p className="text-xs uppercase tracking-wider text-slate-500">Earned allowances</p>
-                      <p className="font-semibold">{money(item.totals.earned_allowances_total)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wider text-slate-500">Approved / paid</p>
-                      <p className="font-semibold">{money(item.totals.earned_allowances_approved_paid)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wider text-slate-500">Payments</p>
-                      <p className="font-semibold">{money(item.totals.payment_grand_total)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wider text-slate-500">Expenses + transport</p>
-                      <p className="font-semibold">
-                        {money(item.totals.expenses_total + item.totals.transport_total)}
-                      </p>
-                    </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[720px] border border-slate-300 text-sm">
+                      <thead>
+                        <tr className="bg-slate-100">
+                          <th className="border border-slate-300 p-2 text-left" rowSpan={2}>
+                            Date
+                          </th>
+                          <th className="border border-slate-300 p-2 text-left" rowSpan={2}>
+                            Name
+                          </th>
+                          <th className="border border-slate-300 p-2 text-center" colSpan={3}>
+                            Meals
+                          </th>
+                          <th className="border border-slate-300 p-2 text-center" colSpan={3}>
+                            Transport
+                          </th>
+                          <th className="border border-slate-300 p-2 text-left" rowSpan={2}>
+                            Time In
+                          </th>
+                          <th className="border border-slate-300 p-2 text-left" rowSpan={2}>
+                            Time Out
+                          </th>
+                        </tr>
+                        <tr className="bg-slate-50">
+                          <th className="border border-slate-300 p-2 text-center font-medium">Breakfast</th>
+                          <th className="border border-slate-300 p-2 text-center font-medium">Lunch</th>
+                          <th className="border border-slate-300 p-2 text-center font-medium">Dinner</th>
+                          <th className="border border-slate-300 p-2 text-center font-medium">Fare to</th>
+                          <th className="border border-slate-300 p-2 text-center font-medium">Fare From</th>
+                          <th className="border border-slate-300 p-2 text-center font-medium">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {register.length === 0 ? (
+                          <tr>
+                            <td className="border border-slate-300 p-3 text-slate-500" colSpan={10}>
+                              No crew register rows for this event.
+                            </td>
+                          </tr>
+                        ) : (
+                          register.map((r, idx) => (
+                            <tr key={`${r.user_id}-${r.date ?? 'na'}-${idx}`} className="bg-white">
+                              <td className="border border-slate-300 p-2 whitespace-nowrap">
+                                {r.date ? fd(r.date) : '—'}
+                              </td>
+                              <td className="border border-slate-300 p-2 font-medium text-slate-900">{r.name}</td>
+                              <td className="border border-slate-300 p-2 text-center">{mealMark(r.breakfast)}</td>
+                              <td className="border border-slate-300 p-2 text-center">{mealMark(r.lunch)}</td>
+                              <td className="border border-slate-300 p-2 text-center">{mealMark(r.dinner)}</td>
+                              <td className="border border-slate-300 p-2 text-right">{fareCell(r.fare_to)}</td>
+                              <td className="border border-slate-300 p-2 text-right">{fareCell(r.fare_from)}</td>
+                              <td className="border border-slate-300 p-2 text-right font-medium">
+                                {fareCell(r.fare_total)}
+                              </td>
+                              <td className="border border-slate-300 p-2 whitespace-nowrap">{r.time_in ?? ''}</td>
+                              <td className="border border-slate-300 p-2 whitespace-nowrap">{r.time_out ?? ''}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
                   </div>
 
-                  <div>
-                    <h4 className="mb-2 text-sm font-semibold text-slate-800">Earned allowances</h4>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm border border-slate-200">
-                        <thead>
-                          <tr className="bg-slate-100">
-                            <th className="text-left p-2">Crew</th>
-                            <th className="text-left p-2">Type</th>
-                            <th className="text-right p-2">Amount</th>
-                            <th className="text-left p-2">Status</th>
-                            <th className="text-left p-2">Source</th>
-                            <th className="text-left p-2">Description</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {item.earned_allowances.length === 0 ? (
-                            <tr>
-                              <td className="p-2 text-slate-500" colSpan={6}>
-                                No earned allowances
-                              </td>
+                  {otherAllowances.length > 0 && (
+                    <div>
+                      <h4 className="mb-2 text-sm font-semibold text-slate-800">Other allowances (non-meal)</h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm border border-slate-200">
+                          <thead>
+                            <tr className="bg-slate-100">
+                              <th className="text-left p-2">Crew</th>
+                              <th className="text-left p-2">Type</th>
+                              <th className="text-right p-2">Amount</th>
+                              <th className="text-left p-2">Status</th>
+                              <th className="text-left p-2">Source</th>
+                              <th className="text-left p-2">Description</th>
                             </tr>
-                          ) : (
-                            item.earned_allowances.map((a) => (
+                          </thead>
+                          <tbody>
+                            {otherAllowances.map((a) => (
                               <tr key={a.id} className="border-t border-slate-100">
                                 <td className="p-2">{a.crew_name}</td>
                                 <td className="p-2">{a.allowance_type}</td>
                                 <td className="p-2 text-right">{money(a.amount)}</td>
                                 <td className="p-2 capitalize">{a.status}</td>
                                 <td className="p-2">{a.source}</td>
-                                <td className="p-2">{a.description || a.meal_slot || '—'}</td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 className="mb-2 text-sm font-semibold text-slate-800">Payment requests</h4>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm border border-slate-200">
-                        <thead>
-                          <tr className="bg-slate-100">
-                            <th className="text-left p-2">Crew</th>
-                            <th className="text-left p-2">Purpose</th>
-                            <th className="text-right p-2">Allowances</th>
-                            <th className="text-right p-2">Per diem</th>
-                            <th className="text-right p-2">Total</th>
-                            <th className="text-left p-2">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {item.payments.length === 0 ? (
-                            <tr>
-                              <td className="p-2 text-slate-500" colSpan={6}>
-                                No payment requests
-                              </td>
-                            </tr>
-                          ) : (
-                            item.payments.map((p) => (
-                              <tr key={p.id} className="border-t border-slate-100">
-                                <td className="p-2">{p.crew_name}</td>
-                                <td className="p-2 capitalize">{p.purpose ?? '—'}</td>
-                                <td className="p-2 text-right">{money(p.allowances)}</td>
-                                <td className="p-2 text-right">{money(p.per_diem)}</td>
-                                <td className="p-2 text-right">{money(p.total_amount)}</td>
-                                <td className="p-2 capitalize">{p.status}</td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {(item.tasks?.length ?? 0) > 0 && (
-                    <div>
-                      <h4 className="mb-2 text-sm font-semibold text-slate-800">Tasks</h4>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm border border-slate-200">
-                          <thead>
-                            <tr className="bg-slate-100">
-                              <th className="text-left p-2">Task</th>
-                              <th className="text-left p-2">Status</th>
-                              <th className="text-left p-2">Priority</th>
-                              <th className="text-left p-2">Due</th>
-                              <th className="text-left p-2">Assignees</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {item.tasks!.map((t) => (
-                              <tr key={t.id} className="border-t border-slate-100">
-                                <td className="p-2">{t.title}</td>
-                                <td className="p-2 capitalize">{t.status}</td>
-                                <td className="p-2 capitalize">{t.priority}</td>
-                                <td className="p-2">{t.due_date ? fd(t.due_date) : '—'}</td>
-                                <td className="p-2">{t.assignees.join(', ') || '—'}</td>
+                                <td className="p-2">{a.description || '—'}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -1011,26 +677,30 @@ function FullEventReportView({
                     </div>
                   )}
 
-                  {(item.equipment?.length ?? 0) > 0 && (
+                  {(item.payments?.length ?? 0) > 0 && (
                     <div>
-                      <h4 className="mb-2 text-sm font-semibold text-slate-800">Equipment</h4>
+                      <h4 className="mb-2 text-sm font-semibold text-slate-800">Payment requests</h4>
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm border border-slate-200">
                           <thead>
                             <tr className="bg-slate-100">
-                              <th className="text-left p-2">Name</th>
-                              <th className="text-left p-2">Serial</th>
-                              <th className="text-left p-2">Condition</th>
-                              <th className="text-left p-2">Notes</th>
+                              <th className="text-left p-2">Crew</th>
+                              <th className="text-left p-2">Purpose</th>
+                              <th className="text-right p-2">Allowances</th>
+                              <th className="text-right p-2">Per diem</th>
+                              <th className="text-right p-2">Total</th>
+                              <th className="text-left p-2">Status</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {item.equipment!.map((eq) => (
-                              <tr key={eq.id} className="border-t border-slate-100">
-                                <td className="p-2">{eq.name}</td>
-                                <td className="p-2">{eq.serial_number ?? '—'}</td>
-                                <td className="p-2">{eq.condition ?? '—'}</td>
-                                <td className="p-2">{eq.notes ?? '—'}</td>
+                            {item.payments.map((p) => (
+                              <tr key={p.id} className="border-t border-slate-100">
+                                <td className="p-2">{p.crew_name}</td>
+                                <td className="p-2 capitalize">{p.purpose ?? '—'}</td>
+                                <td className="p-2 text-right">{money(p.allowances)}</td>
+                                <td className="p-2 text-right">{money(p.per_diem)}</td>
+                                <td className="p-2 text-right">{money(p.total_amount)}</td>
+                                <td className="p-2 capitalize">{p.status}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -1048,56 +718,6 @@ function FullEventReportView({
   );
 }
 
-function EventsReportView({
-  data,
-  formatDate: fd,
-}: {
-  data: ReportEventsResponse;
-  formatDate: (d: string) => string;
-}) {
-  const { summary, data: list, pagination } = data;
-  return (
-    <SectionCard sectionLabel="Event report">
-      <div className="p-6 space-y-4">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Total events</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">{summary.total_events}</p>
-          </div>
-          {Object.entries(summary.by_status).map(([status, count]) => (
-            <div key={status} className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-500 capitalize">{status}</p>
-              <p className="mt-1 text-xl font-bold text-slate-900">{count}</p>
-            </div>
-          ))}
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border border-slate-200">
-            <thead>
-              <tr className="bg-slate-100">
-                <th className="text-left p-2">Event</th>
-                <th className="text-left p-2">Date</th>
-                <th className="text-left p-2">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((e) => (
-                <tr key={e.id} className="border-t border-slate-100">
-                  <td className="p-2">{e.name}</td>
-                  <td className="p-2">{fd(e.date)}</td>
-                  <td className="p-2">{e.status ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="text-slate-500 text-sm">
-          Showing {list.length} of {pagination.total}
-        </p>
-      </div>
-    </SectionCard>
-  );
-}
 
 function CrewAttendanceReportView({
   data,
@@ -1164,203 +784,3 @@ function CrewAttendanceReportView({
   );
 }
 
-function CrewPaymentsReportView({
-  data,
-  formatDate: fd,
-}: {
-  data: ReportCrewPaymentsResponse;
-  formatDate: (d: string) => string;
-}) {
-  const { summary, data: list, pagination } = data;
-  return (
-    <SectionCard sectionLabel="Crew payments report">
-      <div className="p-6 space-y-4">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Total</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">{summary.total_count}</p>
-          </div>
-          <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-amber-700">Pending</p>
-            <p className="mt-1 text-xl font-bold text-amber-800">{summary.pending_count} / {Number(summary.pending_total).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</p>
-          </div>
-          <div className="rounded-xl border border-green-200 bg-green-50/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-green-700">Approved</p>
-            <p className="mt-1 text-xl font-bold text-green-800">{summary.approved_count} / {Number(summary.approved_total).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Grand total</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">{Number(summary.grand_total).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</p>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border border-slate-200">
-            <thead>
-              <tr className="bg-slate-100">
-                <th className="text-left p-2">Crew</th>
-                <th className="text-left p-2">Event</th>
-                <th className="text-left p-2">Date</th>
-                <th className="text-right p-2">Allowances</th>
-                <th className="text-right p-2">Per diem</th>
-                <th className="text-right p-2">Total</th>
-                <th className="text-left p-2">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((p) => (
-                <tr key={p.id} className="border-t border-slate-100">
-                  <td className="p-2">{p.user?.name ?? '—'}</td>
-                  <td className="p-2">{p.event?.name ?? '—'}</td>
-                  <td className="p-2">{p.payment_date ? fd(String(p.payment_date).slice(0, 10)) : '—'}</td>
-                  <td className="p-2 text-right">{Number(p.allowances ?? 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
-                  <td className="p-2 text-right">{Number(p.per_diem ?? 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
-                  <td className="p-2 text-right">{Number(p.total_amount).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
-                  <td className="p-2">{p.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="text-slate-500 text-sm">
-          Showing {list.length} of {pagination.total}
-        </p>
-      </div>
-    </SectionCard>
-  );
-}
-
-function TasksReportView({
-  data,
-  formatDate: fd,
-}: {
-  data: ReportTasksResponse;
-  formatDate: (d: string) => string;
-}) {
-  const { summary, data: list, pagination } = data;
-  return (
-    <SectionCard sectionLabel="Task report">
-      <div className="p-6 space-y-4">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Total</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">{summary.total}</p>
-          </div>
-          <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-amber-700">Pending</p>
-            <p className="mt-1 text-xl font-bold text-amber-800">{summary.pending}</p>
-          </div>
-          <div className="rounded-xl border border-blue-200 bg-blue-50/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-blue-700">In progress</p>
-            <p className="mt-1 text-xl font-bold text-blue-800">{summary.in_progress}</p>
-          </div>
-          <div className="rounded-xl border border-green-200 bg-green-50/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-green-700">Completed</p>
-            <p className="mt-1 text-xl font-bold text-green-800">{summary.completed}</p>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border border-slate-200">
-            <thead>
-              <tr className="bg-slate-100">
-                <th className="text-left p-2">Task</th>
-                <th className="text-left p-2">Event</th>
-                <th className="text-left p-2">Due date</th>
-                <th className="text-left p-2">Status</th>
-                <th className="text-left p-2">Assignees</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((t) => (
-                <tr key={t.id} className="border-t border-slate-100">
-                  <td className="p-2">{t.title}</td>
-                  <td className="p-2">{t.event?.name ?? '—'}</td>
-                  <td className="p-2">{t.due_date ? fd(t.due_date) : '—'}</td>
-                  <td className="p-2">{t.status}</td>
-                  <td className="p-2">{(t.assignees ?? []).map((a) => a.name).join(', ') || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="text-slate-500 text-sm">
-          Showing {list.length} of {pagination.total}
-        </p>
-      </div>
-    </SectionCard>
-  );
-}
-
-function FinancialReportView({
-  data,
-  formatDate: fd,
-}: {
-  data: ReportFinancialResponse;
-  formatDate: (d: string) => string;
-}) {
-  const { summary, by_day, data: list, pagination } = data;
-  return (
-    <SectionCard sectionLabel="Financial summary">
-      <div className="p-6 space-y-4">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Total payments</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">{summary.total_payments}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Total amount</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">{Number(summary.total_amount).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</p>
-          </div>
-          {Object.entries(summary.by_status).map(([status, v]) => (
-            <div key={status} className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-500 capitalize">{status}</p>
-              <p className="mt-1 text-xl font-bold text-slate-900">{v.count} / {Number(v.total).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</p>
-            </div>
-          ))}
-        </div>
-        {by_day.length > 0 && (
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={by_day.map((d) => ({ ...d, label: formatDateShort(d.date) }))}>
-                <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip formatter={(value: number) => [Number(value).toFixed(2), 'Amount']} />
-                <Bar dataKey="total" name="Amount" fill="#ca8a04" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border border-slate-200">
-            <thead>
-              <tr className="bg-slate-100">
-                <th className="text-left p-2">Crew</th>
-                <th className="text-left p-2">Event</th>
-                <th className="text-left p-2">Date</th>
-                <th className="text-right p-2">Allowances</th>
-                <th className="text-right p-2">Per diem</th>
-                <th className="text-right p-2">Total</th>
-                <th className="text-left p-2">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((p) => (
-                <tr key={p.id} className="border-t border-slate-100">
-                  <td className="p-2">{p.user?.name ?? '—'}</td>
-                  <td className="p-2">{p.event?.name ?? '—'}</td>
-                  <td className="p-2">{p.payment_date ? fd(String(p.payment_date).slice(0, 10)) : '—'}</td>
-                  <td className="p-2 text-right">{Number(p.allowances ?? 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
-                  <td className="p-2 text-right">{Number(p.per_diem ?? 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
-                  <td className="p-2 text-right">{Number(p.total_amount).toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
-                  <td className="p-2">{p.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="text-slate-500 text-sm">
-          Showing {list.length} of {pagination.total}
-        </p>
-      </div>
-    </SectionCard>
-  );
-}

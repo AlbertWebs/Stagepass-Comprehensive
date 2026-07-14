@@ -949,6 +949,20 @@ export interface ReportFullEventResponse {
       transport_type?: string | null;
       transport_amount?: number | null;
     }>;
+    crew_register?: Array<{
+      date?: string | null;
+      user_id: number;
+      name: string;
+      breakfast: boolean;
+      lunch: boolean;
+      dinner: boolean;
+      fare_to?: number | null;
+      fare_from?: number | null;
+      fare_total?: number | null;
+      transport_type?: string | null;
+      time_in?: string | null;
+      time_out?: string | null;
+    }>;
     earned_allowances: Array<{
       id: number;
       crew_id: number;
