@@ -9,6 +9,7 @@ import {
   type EquipmentItem,
   type PaymentItem,
   type ReportFilters,
+  type ReportFullEventResponse,
   type ReportType,
   type User,
 } from '@/services/api';
@@ -118,6 +119,7 @@ export default function EventDetail() {
   const [payAllowances, setPayAllowances] = useState('');
   const [paymentSaving, setPaymentSaving] = useState(false);
   const [earnedAllowances, setEarnedAllowances] = useState<EarnedAllowanceDetail[]>([]);
+  const [crewRegister, setCrewRegister] = useState<NonNullable<ReportFullEventResponse['events'][number]['crew_register']>>([]);
   const [allEvents, setAllEvents] = useState<Event[]>([]);
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferUserId, setTransferUserId] = useState('');
@@ -178,10 +180,20 @@ export default function EventDetail() {
 
   const fetchEarnedAllowances = useCallback(() => {
     if (!id) return;
-    api.payments
-      .earnedAllowances({ event_id: Number(id), per_page: 500 })
-      .then((r) => setEarnedAllowances(r.flat ?? r.data?.[0]?.details ?? []))
-      .catch(() => setEarnedAllowances([]));
+    const eventId = Number(id);
+    Promise.all([
+      api.payments.earnedAllowances({ event_id: eventId, per_page: 500 }),
+      api.reports.fullEvent({ event_id: eventId }),
+    ])
+      .then(([earnedRes, fullRes]) => {
+        setEarnedAllowances(earnedRes.flat ?? earnedRes.data?.[0]?.details ?? []);
+        const item = fullRes.events?.find((e) => e.event.id === eventId) ?? fullRes.events?.[0];
+        setCrewRegister(item?.crew_register ?? []);
+      })
+      .catch(() => {
+        setEarnedAllowances([]);
+        setCrewRegister([]);
+      });
   }, [id]);
 
   useEffect(() => {
@@ -450,19 +462,36 @@ export default function EventDetail() {
       const dateLabel = dateOnly(event.date) || 'report';
 
       downloadCsv(
-        `${slug}-allowances-${dateLabel}.csv`,
-        ['Crew', 'Type', 'Amount', 'Status', 'Source', 'Description', 'Meal slot', 'Meal date', 'Recorded at'],
-        (item?.earned_allowances ?? []).map((a) => [
-          a.crew_name,
-          a.allowance_type,
-          a.amount,
-          a.status,
-          a.source,
-          a.description ?? '',
-          a.meal_slot ?? '',
-          a.meal_grant_date ?? '',
-          a.recorded_at ?? '',
+        `${slug}-crew-register-${dateLabel}.csv`,
+        ['Date', 'Name', 'Breakfast', 'Lunch', 'Dinner', 'Fare to', 'Fare From', 'Total', 'Time In', 'Time Out'],
+        (item?.crew_register ?? []).map((r) => [
+          r.date ?? '',
+          r.name,
+          r.breakfast ? 'Yes' : '',
+          r.lunch ? 'Yes' : '',
+          r.dinner ? 'Yes' : '',
+          r.fare_to ?? '',
+          r.fare_from ?? '',
+          r.fare_total ?? '',
+          r.time_in ?? '',
+          r.time_out ?? '',
         ])
+      );
+
+      downloadCsv(
+        `${slug}-other-allowances-${dateLabel}.csv`,
+        ['Crew', 'Type', 'Amount', 'Status', 'Source', 'Description', 'Recorded at'],
+        (item?.earned_allowances ?? [])
+          .filter((a) => !a.meal_slot)
+          .map((a) => [
+            a.crew_name,
+            a.allowance_type,
+            a.amount,
+            a.status,
+            a.source,
+            a.description ?? '',
+            a.recorded_at ?? '',
+          ])
       );
 
       downloadCsv(
@@ -988,54 +1017,120 @@ export default function EventDetail() {
         </div>
       </SectionCard>
 
-      <SectionCard sectionLabel="Earned allowances">
+      <SectionCard sectionLabel="Technical crew register">
         <div className="flex flex-col">
           <div
             className="flex flex-shrink-0 items-center justify-between border-b px-6 py-3.5"
             style={{ borderColor: '#b3c1e1', background: 'linear-gradient(90deg, #fef9ee 0%, #f8f9fc 100%)' }}
           >
             <span className="text-sm font-medium" style={{ color: '#1e2d5c' }}>
-              Meal and manual allowance lines recorded for this event (from check-in rules or approvals).
+              Meals (Breakfast / Lunch / Dinner) and transport (Fare to / Fare From / Total), matching the paper crew register.
             </span>
             <Link to="/payments?tab=allowances" className="link-brand text-sm">
               Manage on Payments
             </Link>
           </div>
-          <div className="overflow-x-auto">
-            {earnedAllowances.length > 0 ? (
-              <table className="w-full table-header-brand">
-                <thead>
+          <div className="overflow-x-auto p-4 sm:p-6">
+            <table className="w-full min-w-[720px] border border-slate-300 text-sm">
+              <thead>
+                <tr className="bg-slate-100">
+                  <th className="border border-slate-300 p-2 text-left" rowSpan={2}>
+                    Date
+                  </th>
+                  <th className="border border-slate-300 p-2 text-left" rowSpan={2}>
+                    Name
+                  </th>
+                  <th className="border border-slate-300 p-2 text-center" colSpan={3}>
+                    Meals
+                  </th>
+                  <th className="border border-slate-300 p-2 text-center" colSpan={3}>
+                    Transport
+                  </th>
+                  <th className="border border-slate-300 p-2 text-left" rowSpan={2}>
+                    Time In
+                  </th>
+                  <th className="border border-slate-300 p-2 text-left" rowSpan={2}>
+                    Time Out
+                  </th>
+                </tr>
+                <tr className="bg-slate-50">
+                  <th className="border border-slate-300 p-2 text-center font-medium">Breakfast</th>
+                  <th className="border border-slate-300 p-2 text-center font-medium">Lunch</th>
+                  <th className="border border-slate-300 p-2 text-center font-medium">Dinner</th>
+                  <th className="border border-slate-300 p-2 text-center font-medium">Fare to</th>
+                  <th className="border border-slate-300 p-2 text-center font-medium">Fare From</th>
+                  <th className="border border-slate-300 p-2 text-center font-medium">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {crewRegister.length === 0 ? (
                   <tr>
-                    <th>Crew</th>
-                    <th>Type</th>
-                    <th>Amount</th>
-                    <th>Status</th>
-                    <th>Source</th>
-                    <th>Description</th>
-                    <th>Recorded</th>
+                    <td className="border border-slate-300 p-4 text-center text-slate-500" colSpan={10}>
+                      No crew register rows yet. Meals appear after automatic grants; transport after it is recorded.
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {earnedAllowances.map((a) => (
-                    <tr key={a.id} className="border-b border-slate-100 transition hover:bg-slate-50/60">
-                      <td className="px-6 py-4 font-medium text-slate-900">{a.crew_name}</td>
-                      <td className="px-6 py-4 text-slate-700">{a.allowance_type}</td>
-                      <td className="px-6 py-4 text-slate-700">{Number(a.amount).toFixed(2)}</td>
-                      <td className="px-6 py-4 capitalize text-slate-700">{a.status}</td>
-                      <td className="px-6 py-4 text-slate-600">{a.source ?? '—'}</td>
-                      <td className="px-6 py-4 text-slate-600">
-                        {a.description || a.meal_slot || '—'}
-                        {a.meal_grant_date ? ` (${a.meal_grant_date})` : ''}
+                ) : (
+                  crewRegister.map((r, idx) => (
+                    <tr key={`${r.user_id}-${r.date ?? 'na'}-${idx}`} className="bg-white">
+                      <td className="border border-slate-300 p-2 whitespace-nowrap">
+                        {r.date ? formatDate(r.date) : '—'}
                       </td>
-                      <td className="px-6 py-4 text-slate-600">{a.recorded_at ?? '—'}</td>
+                      <td className="border border-slate-300 p-2 font-medium text-slate-900">{r.name}</td>
+                      <td className="border border-slate-300 p-2 text-center">{r.breakfast ? '✓' : ''}</td>
+                      <td className="border border-slate-300 p-2 text-center">{r.lunch ? '✓' : ''}</td>
+                      <td className="border border-slate-300 p-2 text-center">{r.dinner ? '✓' : ''}</td>
+                      <td className="border border-slate-300 p-2 text-right">
+                        {r.fare_to == null ? '' : Number(r.fare_to).toFixed(2)}
+                      </td>
+                      <td className="border border-slate-300 p-2 text-right">
+                        {r.fare_from == null ? '' : Number(r.fare_from).toFixed(2)}
+                      </td>
+                      <td className="border border-slate-300 p-2 text-right font-medium">
+                        {r.fare_total == null ? '' : Number(r.fare_total).toFixed(2)}
+                      </td>
+                      <td className="border border-slate-300 p-2 whitespace-nowrap">{r.time_in ?? ''}</td>
+                      <td className="border border-slate-300 p-2 whitespace-nowrap">{r.time_out ?? ''}</td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p className="px-6 py-10 text-center text-sm text-slate-500">No earned allowances recorded for this event yet.</p>
-            )}
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
+          {earnedAllowances.some((a) => !a.meal_slot) ? (
+            <div className="border-t border-slate-200">
+              <div className="px-6 py-3 text-sm font-medium text-slate-800">Other allowances (non-meal)</div>
+              <div className="overflow-x-auto">
+                <table className="w-full table-header-brand">
+                  <thead>
+                    <tr>
+                      <th>Crew</th>
+                      <th>Type</th>
+                      <th>Amount</th>
+                      <th>Status</th>
+                      <th>Source</th>
+                      <th>Description</th>
+                      <th>Recorded</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {earnedAllowances
+                      .filter((a) => !a.meal_slot)
+                      .map((a) => (
+                        <tr key={a.id} className="border-b border-slate-100 transition hover:bg-slate-50/60">
+                          <td className="px-6 py-4 font-medium text-slate-900">{a.crew_name}</td>
+                          <td className="px-6 py-4 text-slate-700">{a.allowance_type}</td>
+                          <td className="px-6 py-4 text-slate-700">{Number(a.amount).toFixed(2)}</td>
+                          <td className="px-6 py-4 capitalize text-slate-700">{a.status}</td>
+                          <td className="px-6 py-4 text-slate-600">{a.source ?? '—'}</td>
+                          <td className="px-6 py-4 text-slate-600">{a.description || '—'}</td>
+                          <td className="px-6 py-4 text-slate-600">{a.recorded_at ?? '—'}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
         </div>
       </SectionCard>
 
