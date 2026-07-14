@@ -861,6 +861,8 @@ export interface ReportAllowancesResponse {
     description?: string | null;
     meal_slot?: string | null;
     meal_grant_date?: string | null;
+    time_in?: string | null;
+    time_out?: string | null;
     recorded_by?: string | null;
     recorded_at?: string | null;
   }>;

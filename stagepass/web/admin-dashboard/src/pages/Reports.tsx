@@ -236,7 +236,7 @@ export default function Reports() {
     } else if (activeTab === 'allowances' && allowancesReport?.data) {
       downloadCsv(
         `allowances-${dateFrom}-${dateTo}.csv`,
-        ['Event', 'Date', 'Crew', 'Type', 'Slot', 'Amount', 'Status', 'Source', 'Description', 'Recorded at'],
+        ['Event', 'Date', 'Crew', 'Type', 'Slot', 'Amount', 'Time In', 'Time Out', 'Status', 'Source', 'Description', 'Recorded at'],
         allowancesReport.data.map((a) => [
           a.event_name,
           a.meal_grant_date ?? a.event_date ?? '',
@@ -244,6 +244,8 @@ export default function Reports() {
           a.allowance_type,
           a.meal_slot ?? '',
           a.amount,
+          a.time_in ?? '',
+          a.time_out ?? '',
           a.status,
           a.source,
           a.description ?? '',
@@ -899,6 +901,8 @@ function AllowancesReportView({
                 <th className="text-left p-2">Type</th>
                 <th className="text-left p-2">Slot</th>
                 <th className="text-right p-2">Amount</th>
+                <th className="text-left p-2">Time In</th>
+                <th className="text-left p-2">Time Out</th>
                 <th className="text-left p-2">Status</th>
                 <th className="text-left p-2">Source</th>
               </tr>
@@ -914,6 +918,8 @@ function AllowancesReportView({
                   <td className="p-2">{a.allowance_type}</td>
                   <td className="p-2 capitalize">{a.meal_slot ?? '—'}</td>
                   <td className="p-2 text-right tabular-nums">{money(a.amount)}</td>
+                  <td className="p-2 whitespace-nowrap">{formatTime24(a.time_in) || '—'}</td>
+                  <td className="p-2 whitespace-nowrap">{formatTime24(a.time_out) || '—'}</td>
                   <td className="p-2 capitalize">{a.status}</td>
                   <td className="p-2">{a.source}</td>
                 </tr>

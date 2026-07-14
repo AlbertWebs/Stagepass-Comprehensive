@@ -607,6 +607,65 @@ class ReportsController extends Controller
             ->orderByDesc('id');
 
         $all = $query->get();
+        $eventIds = $all->pluck('event_id')->unique()->filter()->values();
+        $crewIds = $all->pluck('crew_id')->unique()->filter()->values();
+
+        $sessions = ($eventIds->isEmpty() || $crewIds->isEmpty())
+            ? collect()
+            : EventAttendanceSession::query()
+                ->whereIn('event_id', $eventIds)
+                ->whereIn('user_id', $crewIds)
+                ->get();
+
+        $openAssignments = ($eventIds->isEmpty() || $crewIds->isEmpty())
+            ? collect()
+            : EventUser::query()
+                ->whereIn('event_id', $eventIds)
+                ->whereIn('user_id', $crewIds)
+                ->whereNotNull('checkin_time')
+                ->get();
+
+        $timesLookup = static function (int $eventId, int $userId, ?string $workDate) use ($sessions, $openAssignments): array {
+            $fmt = static function ($dt): ?string {
+                if ($dt === null) {
+                    return null;
+                }
+
+                return Carbon::parse($dt)->timezone('Africa/Nairobi')->format('H:i');
+            };
+
+            if ($workDate) {
+                $session = $sessions->first(function (EventAttendanceSession $s) use ($eventId, $userId, $workDate) {
+                    return (int) $s->event_id === $eventId
+                        && (int) $s->user_id === $userId
+                        && $s->work_date?->format('Y-m-d') === $workDate;
+                });
+                if ($session) {
+                    return ['time_in' => $fmt($session->checkin_time), 'time_out' => $fmt($session->checkout_time)];
+                }
+            }
+
+            $session = $sessions
+                ->filter(fn (EventAttendanceSession $s) => (int) $s->event_id === $eventId && (int) $s->user_id === $userId)
+                ->sortByDesc(fn (EventAttendanceSession $s) => $s->checkin_time?->timestamp ?? 0)
+                ->first();
+            if ($session) {
+                return ['time_in' => $fmt($session->checkin_time), 'time_out' => $fmt($session->checkout_time)];
+            }
+
+            $assignment = $openAssignments->first(
+                fn (EventUser $a) => (int) $a->event_id === $eventId && (int) $a->user_id === $userId
+            );
+            if ($assignment?->checkin_time) {
+                return [
+                    'time_in' => $fmt($assignment->checkin_time),
+                    'time_out' => $fmt($assignment->checkout_time),
+                ];
+            }
+
+            return ['time_in' => null, 'time_out' => null];
+        };
+
         $active = $all->where('status', '!=', EventAllowance::STATUS_REJECTED);
         $meals = $active->filter(fn (EventAllowance $a) => ! empty($a->meal_slot));
         $other = $active->filter(fn (EventAllowance $a) => empty($a->meal_slot));
@@ -626,7 +685,10 @@ class ReportsController extends Controller
             'total' => round((float) $other->sum(fn (EventAllowance $a) => (float) $a->amount), 2),
         ];
 
-        $rows = $all->map(function (EventAllowance $a) {
+        $rows = $all->map(function (EventAllowance $a) use ($timesLookup) {
+            $workDate = $a->meal_grant_date?->format('Y-m-d') ?? $a->event?->date?->format('Y-m-d');
+            $times = $timesLookup((int) $a->event_id, (int) $a->crew_id, $workDate);
+
             return [
                 'id' => $a->id,
                 'event_id' => $a->event_id,
@@ -641,6 +703,8 @@ class ReportsController extends Controller
                 'description' => $a->description,
                 'meal_slot' => $a->meal_slot,
                 'meal_grant_date' => $a->meal_grant_date?->format('Y-m-d'),
+                'time_in' => $times['time_in'],
+                'time_out' => $times['time_out'],
                 'recorded_by' => $a->recorder?->name,
                 'recorded_at' => $a->recorded_at?->format('Y-m-d H:i'),
             ];
@@ -1152,13 +1216,21 @@ tr{page-break-inside:avoid;break-inside:avoid;}
             };
 
             $timesForDate = function (?string $workDate) use ($assignment, $sessionsByUserDate, $userId): array {
+                $fmt = static function ($dt): ?string {
+                    if ($dt === null) {
+                        return null;
+                    }
+
+                    return Carbon::parse($dt)->timezone('Africa/Nairobi')->format('H:i');
+                };
+
                 $session = $workDate
                     ? $sessionsByUserDate->get($userId.'|'.$workDate)?->first()
                     : null;
                 if ($session instanceof EventAttendanceSession) {
                     return [
-                        'time_in' => $session->checkin_time?->timezone('Africa/Nairobi')->format('H:i'),
-                        'time_out' => $session->checkout_time?->timezone('Africa/Nairobi')->format('H:i'),
+                        'time_in' => $fmt($session->checkin_time),
+                        'time_out' => $fmt($session->checkout_time),
                     ];
                 }
 
@@ -1167,10 +1239,43 @@ tr{page-break-inside:avoid;break-inside:avoid;}
                     : null;
                 if ($assignment->checkin_time && ($workDate === null || $pivotDate === $workDate)) {
                     return [
-                        'time_in' => $assignment->checkin_time->timezone('Africa/Nairobi')->format('H:i'),
-                        'time_out' => $assignment->checkout_time
-                            ? $assignment->checkout_time->timezone('Africa/Nairobi')->format('H:i')
-                            : null,
+                        'time_in' => $fmt($assignment->checkin_time),
+                        'time_out' => $fmt($assignment->checkout_time),
+                    ];
+                }
+
+                // Fallback: any session for this crew on the event (nearest / latest).
+                $anySessions = $sessionsByUserDate
+                    ->filter(fn ($group, $key) => str_starts_with((string) $key, $userId.'|'))
+                    ->flatten(1)
+                    ->sortByDesc(fn (EventAttendanceSession $s) => $s->checkin_time?->timestamp ?? 0)
+                    ->values();
+                if ($workDate) {
+                    $sameDay = $anySessions->first(function (EventAttendanceSession $s) use ($workDate) {
+                        $d = $s->work_date?->format('Y-m-d')
+                            ?? $s->checkin_time?->timezone('Africa/Nairobi')->format('Y-m-d');
+
+                        return $d === $workDate;
+                    });
+                    if ($sameDay) {
+                        return [
+                            'time_in' => $fmt($sameDay->checkin_time),
+                            'time_out' => $fmt($sameDay->checkout_time),
+                        ];
+                    }
+                }
+                $latest = $anySessions->first();
+                if ($latest) {
+                    return [
+                        'time_in' => $fmt($latest->checkin_time),
+                        'time_out' => $fmt($latest->checkout_time),
+                    ];
+                }
+
+                if ($assignment->checkin_time) {
+                    return [
+                        'time_in' => $fmt($assignment->checkin_time),
+                        'time_out' => $fmt($assignment->checkout_time),
                     ];
                 }
 
@@ -1638,23 +1743,25 @@ tr{page-break-inside:avoid;break-inside:avoid;}
             .'</div>';
 
         $tableRows = '';
-        foreach ($built['rows'] as $a) {
-            $tableRows .= '<tr>'
-                .'<td>'.e((string) ($a['event_name'] ?? '—')).'</td>'
-                .'<td>'.e((string) ($a['meal_grant_date'] ?? $a['event_date'] ?? '—')).'</td>'
-                .'<td>'.e((string) ($a['crew_name'] ?? '—')).'</td>'
-                .'<td>'.e((string) ($a['allowance_type'] ?? '—')).'</td>'
-                .'<td>'.e((string) ($a['meal_slot'] ?? '—')).'</td>'
-                .'<td style="text-align:right;">'.number_format((float) ($a['amount'] ?? 0), 2).'</td>'
-                .'<td>'.e((string) ($a['status'] ?? '—')).'</td>'
-                .'<td>'.e((string) ($a['source'] ?? '—')).'</td>'
-                .'</tr>';
-        }
+                foreach ($built['rows'] as $a) {
+                    $tableRows .= '<tr>'
+                        .'<td>'.e((string) ($a['event_name'] ?? '—')).'</td>'
+                        .'<td>'.e((string) ($a['meal_grant_date'] ?? $a['event_date'] ?? '—')).'</td>'
+                        .'<td>'.e((string) ($a['crew_name'] ?? '—')).'</td>'
+                        .'<td>'.e((string) ($a['allowance_type'] ?? '—')).'</td>'
+                        .'<td>'.e((string) ($a['meal_slot'] ?? '—')).'</td>'
+                        .'<td style="text-align:right;">'.number_format((float) ($a['amount'] ?? 0), 2).'</td>'
+                        .'<td>'.e((string) ($a['time_in'] ?? '—')).'</td>'
+                        .'<td>'.e((string) ($a['time_out'] ?? '—')).'</td>'
+                        .'<td>'.e((string) ($a['status'] ?? '—')).'</td>'
+                        .'<td>'.e((string) ($a['source'] ?? '—')).'</td>'
+                        .'</tr>';
+                }
         if ($tableRows === '') {
-            $tableRows = '<tr><td colspan="8">No allowances for the selected filters.</td></tr>';
+            $tableRows = '<tr><td colspan="10">No allowances for the selected filters.</td></tr>';
         }
 
-        $tableHeader = '<tr><th>Event</th><th>Date</th><th>Crew</th><th>Type</th><th>Slot</th><th style="text-align:right;">Amount</th><th>Status</th><th>Source</th></tr>';
+        $tableHeader = '<tr><th>Event</th><th>Date</th><th>Crew</th><th>Type</th><th>Slot</th><th style="text-align:right;">Amount</th><th>Time In</th><th>Time Out</th><th>Status</th><th>Source</th></tr>';
         $signatureHtml = $this->buildProjectLeadSignatureHtml($confirmedBy, $signature);
 
         return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'.e($title).'</title><style>

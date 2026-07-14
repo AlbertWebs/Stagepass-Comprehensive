@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Event;
+use App\Models\EventAttendanceSession;
 use App\Models\EventUser;
 use App\Models\ReminderLog;
 use App\Models\User;
@@ -189,11 +190,24 @@ class EventCrewController extends Controller
         }
 
         $assignments = EventUser::where('event_id', $event->id)->get()->keyBy('user_id');
+        $sessionsByUser = EventAttendanceSession::query()
+            ->where('event_id', $event->id)
+            ->orderByDesc('work_date')
+            ->orderByDesc('checkin_time')
+            ->get()
+            ->groupBy('user_id');
         $crew = $event->crew()->get();
-        $data = $crew->map(function (User $user) use ($assignments) {
+        $data = $crew->map(function (User $user) use ($assignments, $sessionsByUser) {
             $pivot = $user->pivot;
             $checkinTime = $pivot->checkin_time ?? null;
             $checkoutTime = $pivot->checkout_time ?? null;
+            $latestSession = $sessionsByUser->get($user->id)?->first();
+            if (! $checkinTime && $latestSession?->checkin_time) {
+                $checkinTime = $latestSession->checkin_time;
+            }
+            if (! $checkoutTime && $latestSession?->checkout_time) {
+                $checkoutTime = $latestSession->checkout_time;
+            }
             if ($checkoutTime) {
                 $status = 'checked_out';
             } elseif ($checkinTime) {
@@ -208,16 +222,23 @@ class EventCrewController extends Controller
                     : Carbon::parse($checkinTime);
                 $checkinFormatted = ApiDateTime::toIso($carbon);
             }
+            $checkoutFormatted = null;
+            if ($checkoutTime) {
+                $carbon = $checkoutTime instanceof Carbon
+                    ? $checkoutTime->copy()
+                    : Carbon::parse($checkoutTime);
+                $checkoutFormatted = ApiDateTime::toIso($carbon);
+            }
             $pausedForMinutes = (int) ($pivot->pause_duration ?? 0);
             if ($pivot->is_paused && $pivot->pause_start_time) {
                 $pausedForMinutes += Carbon::parse($pivot->pause_start_time)->diffInMinutes(now());
             }
             $eu = $assignments->get($user->id);
             $snap = $eu ? $this->overtime->snapshotForEventAssignment($eu) : null;
-            $totalHours = $snap ? (float) $snap['total_hours'] : (float) ($pivot->total_hours ?? 0);
-            $standardHours = $snap ? (float) $snap['standard_hours'] : (float) ($pivot->standard_hours ?? 0);
-            $extraHours = $snap ? (float) $snap['extra_hours'] : (float) ($pivot->extra_hours ?? 0);
-            $hoursStatus = $snap ? $snap['hours_status'] : 'not_checked_in';
+            $totalHours = $snap ? (float) $snap['total_hours'] : (float) ($pivot->total_hours ?? ($latestSession->total_hours ?? 0));
+            $standardHours = $snap ? (float) $snap['standard_hours'] : (float) ($pivot->standard_hours ?? ($latestSession->standard_hours ?? 0));
+            $extraHours = $snap ? (float) $snap['extra_hours'] : (float) ($pivot->extra_hours ?? ($latestSession->extra_hours ?? 0));
+            $hoursStatus = $snap ? $snap['hours_status'] : ($checkinTime ? ($checkoutTime ? 'checked_out' : 'checked_in') : 'not_checked_in');
 
             return [
                 'user_id' => $user->id,
@@ -225,6 +246,7 @@ class EventCrewController extends Controller
                 'status' => $status,
                 'hours_status' => $hoursStatus,
                 'checkin_time' => $checkinFormatted,
+                'checkout_time' => $checkoutFormatted,
                 'total_hours' => $totalHours,
                 'standard_hours' => $standardHours,
                 'extra_hours' => $extraHours,
