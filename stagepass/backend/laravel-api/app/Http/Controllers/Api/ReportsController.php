@@ -558,25 +558,29 @@ class ReportsController extends Controller
         $signatureHtml = $this->buildProjectLeadSignatureHtml($confirmedBy, $signature);
 
         return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' . e($title) . '</title><style>
-body{font-family:system-ui,sans-serif;margin:24px;color:#111;}
-h1{font-size:1.5rem;margin-bottom:4px;}
-.meta{color:#666;font-size:0.875rem;margin-bottom:20px;}
-table{border-collapse:collapse;width:100%;margin-top:16px;}
-th,td{border:1px solid #ddd;padding:8px 12px;text-align:left;}
-th{background:#f5f5f5;font-weight:600;}
-.kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;margin-bottom:8px;}
-.kpi{border:1px solid #ddd;border-radius:10px;padding:10px 12px;background:#fbfbfb;}
-.kpi .k{display:block;color:#555;font-size:12px;margin-bottom:4px;}
-.kpi .v{display:block;font-size:18px;font-weight:700;color:#0f1838;}
+@page{size:A4 portrait;margin:12mm;}
+body{font-family:"Segoe UI",Arial,Helvetica,sans-serif;margin:0;color:#111;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+h1{font-size:18px;margin:0 0 4px;color:#0f1838;}
+.meta{color:#555;font-size:11px;margin:0 0 12px;}
+table{border-collapse:collapse;width:100%;margin-top:10px;table-layout:fixed;}
+thead{display:table-header-group;}
+th,td{border:1px solid #333;padding:5px 7px;text-align:left;vertical-align:top;font-size:11px;word-wrap:break-word;}
+th{background:#eceff4;font-weight:700;}
+tr{page-break-inside:avoid;break-inside:avoid;}
+.kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:8px;margin-bottom:10px;}
+.kpi{border:1px solid #ccc;border-radius:8px;padding:8px 10px;background:#f8fafc;}
+.kpi .k{display:block;color:#555;font-size:10px;margin-bottom:2px;}
+.kpi .v{display:block;font-size:14px;font-weight:700;color:#0f1838;}
 '.$this->signatureCss().'
-@media print{body{margin:12px;} .no-print{display:none;}}
+@media print{body{margin:0;} .no-print{display:none!important;}}
+@media screen{body{margin:16px;}}
 </style></head><body>
 <h1>' . e($title) . '</h1>
 <p class="meta">Period: ' . e($period) . ' | Generated: ' . e($generatedAt) . '</p>
 <div class="summary">' . $summaryHtml . '</div>
 <table><thead>' . $tableHeader . '</thead><tbody>' . $tableRows . '</tbody></table>
 ' . $signatureHtml . '
-<p class="meta" style="margin-top:24px;">Stagepass Reports – ' . e($generatedAt) . '</p>
+<p class="meta" style="margin-top:16px;">Stagepass Reports – ' . e($generatedAt) . '</p>
 </body></html>';
     }
 
@@ -602,18 +606,19 @@ th{background:#f5f5f5;font-weight:600;}
 
     private function signatureCss(): string
     {
-        return '.sig-section{margin-top:28px;padding-top:8px;page-break-inside:avoid;}'
-            .'.sig-heading{font-size:1.1rem;margin:0 0 6px;color:#0f1838;border-bottom:2px solid #ca8a04;padding-bottom:4px;}'
-            .'.sig-note{color:#555;font-size:0.85rem;margin:0 0 14px;max-width:48rem;}'
-            .'.sig-wrap{display:grid;grid-template-columns:1.2fr 1.6fr 0.9fr;gap:12px;margin-top:8px;}'
-            .'.sig-card{border:1px solid #c9d2e4;border-radius:10px;padding:12px 14px;min-height:110px;background:#fafbff;}'
-            .'.sig-card-wide{min-height:130px;}'
-            .'.sig-label{font-size:12px;color:#555;margin-bottom:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;}'
-            .'.sig-value{font-size:14px;font-weight:600;min-height:24px;}'
-            .'.sig-hand{font-family:Georgia,"Times New Roman",serif;font-size:18px;font-weight:500;}'
-            .'.sig-line{border-bottom:1px solid #334155;margin-top:28px;}'
-            .'.sig-line-tall{margin-top:48px;}'
-            .'@media (max-width:720px){.sig-wrap{grid-template-columns:1fr;}}';
+        return '.sig-section{margin-top:20px;padding-top:8px;page-break-inside:avoid;break-inside:avoid;}'
+            .'.sig-heading{font-size:13px;margin:0 0 4px;color:#0f1838;border-bottom:1px solid #333;padding-bottom:3px;}'
+            .'.sig-note{color:#555;font-size:10px;margin:0 0 10px;max-width:60rem;}'
+            .'.sig-wrap{display:grid;grid-template-columns:1.2fr 1.6fr 0.9fr;gap:10px;margin-top:6px;}'
+            .'.sig-card{border:1px solid #333;border-radius:0;padding:8px 10px;min-height:72px;background:#fff;}'
+            .'.sig-card-wide{min-height:88px;}'
+            .'.sig-label{font-size:10px;color:#555;margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;}'
+            .'.sig-value{font-size:12px;font-weight:600;min-height:18px;}'
+            .'.sig-hand{font-family:Georgia,"Times New Roman",serif;font-size:16px;font-weight:500;}'
+            .'.sig-line{border-bottom:1px solid #334155;margin-top:18px;}'
+            .'.sig-line-tall{margin-top:36px;}'
+            .'@media (max-width:720px){.sig-wrap{grid-template-columns:1fr;}}'
+            .'@media print{.sig-section{margin-top:14px;}.sig-wrap{gap:8px;}.sig-card{min-height:64px;}.sig-card-wide{min-height:80px;}}';
     }
 
     private function eventsReportData(Carbon $from, Carbon $to, ?int $eventId): array
@@ -1176,29 +1181,21 @@ th{background:#f5f5f5;font-weight:600;}
                 $dateLabel .= ' – '.$ev['end_date'];
             }
 
-            $metaRows = [
-                ['Status', $ev['status'] ?? '—'],
-                ['Date', $dateLabel],
-                ['Time', trim(($ev['start_time'] ?? '').($ev['expected_end_time'] ? ' – '.$ev['expected_end_time'] : '')) ?: '—'],
-                ['Location', $ev['location_name'] ?: '—'],
-                ['Client', $ev['client'] ?: '—'],
-                ['Team leader', $ev['team_leader'] ?: '—'],
-                ['Daily allowance', $ev['daily_allowance'] !== null ? 'KES '.number_format((float) $ev['daily_allowance'], 2) : '—'],
-                ['Per diem enabled', ! empty($ev['per_diem_enabled']) ? 'Yes' : 'No'],
-            ];
-            $metaHtml = '';
-            foreach ($metaRows as [$label, $value]) {
-                $metaHtml .= '<tr><th>'.e($label).'</th><td>'.e((string) $value).'</td></tr>';
-            }
-            if (! empty($ev['description'])) {
-                $metaHtml .= '<tr><th>Description</th><td>'.e((string) $ev['description']).'</td></tr>';
-            }
-            if (! empty($ev['end_comment'])) {
-                $metaHtml .= '<tr><th>End comment</th><td>'.e((string) $ev['end_comment']).'</td></tr>';
-            }
-
+            $register = $item['crew_register'] ?? [];
+            $breakfastCount = 0;
+            $lunchCount = 0;
+            $dinnerCount = 0;
+            $fareToSum = 0.0;
+            $fareFromSum = 0.0;
+            $fareTotalSum = 0.0;
             $crewRowsHtml = '';
-            foreach (($item['crew_register'] ?? []) as $c) {
+            foreach ($register as $c) {
+                $breakfastCount += ! empty($c['breakfast']) ? 1 : 0;
+                $lunchCount += ! empty($c['lunch']) ? 1 : 0;
+                $dinnerCount += ! empty($c['dinner']) ? 1 : 0;
+                $fareToSum += (float) ($c['fare_to'] ?? 0);
+                $fareFromSum += (float) ($c['fare_from'] ?? 0);
+                $fareTotalSum += (float) ($c['fare_total'] ?? 0);
                 $mark = static fn (bool $yes): string => $yes ? '✓' : '';
                 $moneyOrBlank = static function ($n): string {
                     if ($n === null || $n === '') {
@@ -1209,20 +1206,31 @@ th{background:#f5f5f5;font-weight:600;}
                 };
                 $crewRowsHtml .= '<tr>'
                     .'<td>'.e((string) ($c['date'] ?? '—')).'</td>'
-                    .'<td>'.e((string) ($c['name'] ?? '—')).'</td>'
-                    .'<td style="text-align:center;">'.$mark((bool) ($c['breakfast'] ?? false)).'</td>'
-                    .'<td style="text-align:center;">'.$mark((bool) ($c['lunch'] ?? false)).'</td>'
-                    .'<td style="text-align:center;">'.$mark((bool) ($c['dinner'] ?? false)).'</td>'
-                    .'<td style="text-align:right;">'.$moneyOrBlank($c['fare_to'] ?? null).'</td>'
-                    .'<td style="text-align:right;">'.$moneyOrBlank($c['fare_from'] ?? null).'</td>'
-                    .'<td style="text-align:right;">'.$moneyOrBlank($c['fare_total'] ?? null).'</td>'
-                    .'<td>'.e((string) ($c['time_in'] ?? '')).'</td>'
-                    .'<td>'.e((string) ($c['time_out'] ?? '')).'</td>'
-                    .'<td></td>'
+                    .'<td class="name">'.e((string) ($c['name'] ?? '—')).'</td>'
+                    .'<td class="c">'.$mark((bool) ($c['breakfast'] ?? false)).'</td>'
+                    .'<td class="c">'.$mark((bool) ($c['lunch'] ?? false)).'</td>'
+                    .'<td class="c">'.$mark((bool) ($c['dinner'] ?? false)).'</td>'
+                    .'<td class="r">'.$moneyOrBlank($c['fare_to'] ?? null).'</td>'
+                    .'<td class="r">'.$moneyOrBlank($c['fare_from'] ?? null).'</td>'
+                    .'<td class="r">'.$moneyOrBlank($c['fare_total'] ?? null).'</td>'
+                    .'<td class="c">'.e((string) ($c['time_in'] ?? '')).'</td>'
+                    .'<td class="c">'.e((string) ($c['time_out'] ?? '')).'</td>'
+                    .'<td class="sign"></td>'
                     .'</tr>';
             }
             if ($crewRowsHtml === '') {
-                $crewRowsHtml = '<tr><td colspan="11">No crew assigned.</td></tr>';
+                $crewRowsHtml = '<tr><td colspan="11" class="muted">No crew assigned.</td></tr>';
+            } else {
+                $crewRowsHtml .= '<tr class="totals">'
+                    .'<td colspan="2"><strong>Totals</strong></td>'
+                    .'<td class="c"><strong>'.$breakfastCount.'</strong></td>'
+                    .'<td class="c"><strong>'.$lunchCount.'</strong></td>'
+                    .'<td class="c"><strong>'.$dinnerCount.'</strong></td>'
+                    .'<td class="r"><strong>'.($fareToSum > 0 ? number_format($fareToSum, 2) : '').'</strong></td>'
+                    .'<td class="r"><strong>'.($fareFromSum > 0 ? number_format($fareFromSum, 2) : '').'</strong></td>'
+                    .'<td class="r"><strong>'.number_format($fareTotalSum, 2).'</strong></td>'
+                    .'<td colspan="3"></td>'
+                    .'</tr>';
             }
 
             $otherAllowances = array_values(array_filter(
@@ -1230,20 +1238,18 @@ th{background:#f5f5f5;font-weight:600;}
                 static fn ($a) => empty($a['meal_slot'])
             ));
             $allowanceRowsHtml = '';
+            $otherAllowanceTotal = 0.0;
             foreach ($otherAllowances as $a) {
+                $amount = (float) ($a['amount'] ?? 0);
+                $otherAllowanceTotal += $amount;
                 $desc = trim((string) ($a['description'] ?? ''));
                 $allowanceRowsHtml .= '<tr>'
                     .'<td>'.e((string) ($a['crew_name'] ?? '—')).'</td>'
                     .'<td>'.e((string) ($a['allowance_type'] ?? '—')).'</td>'
-                    .'<td style="text-align:right;">'.number_format((float) ($a['amount'] ?? 0), 2).'</td>'
+                    .'<td class="r">'.number_format($amount, 2).'</td>'
                     .'<td>'.e((string) ($a['status'] ?? '—')).'</td>'
-                    .'<td>'.e((string) ($a['source'] ?? '—')).'</td>'
                     .'<td>'.e($desc !== '' ? $desc : '—').'</td>'
-                    .'<td>'.e((string) ($a['recorded_at'] ?? '—')).'</td>'
                     .'</tr>';
-            }
-            if ($allowanceRowsHtml === '') {
-                $allowanceRowsHtml = '<tr><td colspan="7">No other (non-meal) allowances recorded.</td></tr>';
             }
 
             $paymentRowsHtml = '';
@@ -1252,92 +1258,69 @@ th{background:#f5f5f5;font-weight:600;}
                     .'<td>'.e((string) ($p['crew_name'] ?? '—')).'</td>'
                     .'<td>'.e((string) ($p['purpose'] ?? '—')).'</td>'
                     .'<td>'.e((string) ($p['payment_date'] ?? '—')).'</td>'
-                    .'<td style="text-align:right;">'.number_format((float) ($p['allowances'] ?? 0), 2).'</td>'
-                    .'<td style="text-align:right;">'.number_format((float) ($p['per_diem'] ?? 0), 2).'</td>'
-                    .'<td style="text-align:right;">'.number_format((float) ($p['total_amount'] ?? 0), 2).'</td>'
+                    .'<td class="r">'.number_format((float) ($p['allowances'] ?? 0), 2).'</td>'
+                    .'<td class="r">'.number_format((float) ($p['per_diem'] ?? 0), 2).'</td>'
+                    .'<td class="r">'.number_format((float) ($p['total_amount'] ?? 0), 2).'</td>'
                     .'<td>'.e((string) ($p['status'] ?? '—')).'</td>'
                     .'</tr>';
             }
-            if ($paymentRowsHtml === '') {
-                $paymentRowsHtml = '<tr><td colspan="7">No payment requests.</td></tr>';
-            }
 
-            $expenseRowsHtml = '';
-            foreach ($item['expenses'] as $x) {
-                $expenseRowsHtml .= '<tr>'
-                    .'<td>'.e((string) ($x['crew_name'] ?? '—')).'</td>'
-                    .'<td>'.(! empty($x['used_company_transport']) ? 'Yes' : 'No').'</td>'
-                    .'<td style="text-align:right;">'.number_format((float) ($x['cab_amount'] ?? 0), 2).'</td>'
-                    .'<td style="text-align:right;">'.number_format((float) ($x['parking_fee'] ?? 0), 2).'</td>'
-                    .'<td style="text-align:right;">'.number_format((float) ($x['total'] ?? 0), 2).'</td>'
-                    .'</tr>';
+            $callTime = trim((string) ($ev['start_time'] ?? ''));
+            if ($callTime !== '') {
+                $callTime = substr($callTime, 0, 5);
             }
-            if ($expenseRowsHtml === '') {
-                $expenseRowsHtml = '<tr><td colspan="5">No cab/parking expenses.</td></tr>';
+            $extraSections = '';
+            if ($allowanceRowsHtml !== '') {
+                $extraSections .= '<div class="secondary">'
+                    .'<h3>Other allowances (non-meal) — KES '.number_format($otherAllowanceTotal, 2).'</h3>'
+                    .'<table><thead><tr><th>Crew</th><th>Type</th><th class="r">Amount</th><th>Status</th><th>Description</th></tr></thead>'
+                    .'<tbody>'.$allowanceRowsHtml.'</tbody></table></div>';
             }
-
-            $taskRowsHtml = '';
-            foreach ($item['tasks'] ?? [] as $task) {
-                $assignees = is_array($task['assignees'] ?? null) ? implode(', ', $task['assignees']) : '—';
-                $taskRowsHtml .= '<tr>'
-                    .'<td>'.e((string) ($task['title'] ?? '—')).'</td>'
-                    .'<td>'.e((string) ($task['status'] ?? '—')).'</td>'
-                    .'<td>'.e((string) ($task['priority'] ?? '—')).'</td>'
-                    .'<td>'.e((string) ($task['due_date'] ?? '—')).'</td>'
-                    .'<td>'.e($assignees).'</td>'
-                    .'</tr>';
-            }
-            if ($taskRowsHtml === '') {
-                $taskRowsHtml = '<tr><td colspan="5">No tasks assigned.</td></tr>';
-            }
-
-            $equipmentRowsHtml = '';
-            foreach ($item['equipment'] ?? [] as $eq) {
-                $equipmentRowsHtml .= '<tr>'
-                    .'<td>'.e((string) ($eq['name'] ?? '—')).'</td>'
-                    .'<td>'.e((string) ($eq['serial_number'] ?? '—')).'</td>'
-                    .'<td>'.e((string) ($eq['condition'] ?? '—')).'</td>'
-                    .'<td>'.e((string) ($eq['notes'] ?? '—')).'</td>'
-                    .'</tr>';
-            }
-            if ($equipmentRowsHtml === '') {
-                $equipmentRowsHtml = '<tr><td colspan="4">No equipment assigned.</td></tr>';
+            if ($paymentRowsHtml !== '') {
+                $extraSections .= '<div class="secondary">'
+                    .'<h3>Payment requests</h3>'
+                    .'<table><thead><tr><th>Crew</th><th>Purpose</th><th>Date</th><th class="r">Allowances</th><th class="r">Per diem</th><th class="r">Total</th><th>Status</th></tr></thead>'
+                    .'<tbody>'.$paymentRowsHtml.'</tbody></table></div>';
             }
 
             $sections .= '<section class="event-block">'
-                .'<h2>'.e((string) ($ev['name'] ?? 'Event')).'</h2>'
-                .'<div class="kpi-grid">'
-                .'<div class="kpi"><span class="k">Earned allowances</span><span class="v">KES '.number_format((float) $t['earned_allowances_total'], 2).'</span></div>'
-                .'<div class="kpi"><span class="k">Approved / paid</span><span class="v">KES '.number_format((float) $t['earned_allowances_approved_paid'], 2).'</span></div>'
-                .'<div class="kpi"><span class="k">Payment totals</span><span class="v">KES '.number_format((float) $t['payment_grand_total'], 2).'</span></div>'
-                .'<div class="kpi"><span class="k">Expenses + transport</span><span class="v">KES '.number_format((float) $t['expenses_total'] + (float) $t['transport_total'], 2).'</span></div>'
+                .'<header class="sheet-head">'
+                .'<div class="brand">STAGEPASS AUDIO VISUAL</div>'
+                .'<div class="sheet-title">TECHNICAL CREW REGISTER</div>'
+                .'</header>'
+                .'<table class="form-meta">'
+                .'<tr><th>Title of the Event</th><td>'.e((string) ($ev['name'] ?? '—')).'</td>'
+                .'<th>Venue</th><td>'.e((string) ($ev['location_name'] ?: '—')).'</td></tr>'
+                .'<tr><th>Event Date(s)</th><td>'.e($dateLabel).'</td>'
+                .'<th>Call Time</th><td>'.e($callTime !== '' ? $callTime : '—').'</td></tr>'
+                .'<tr><th>Project Team Leader</th><td>'.e((string) ($ev['team_leader'] ?: '—')).'</td>'
+                .'<th>Status</th><td>'.e((string) ($ev['status'] ?? '—')).'</td></tr>'
+                .'</table>'
+                .'<div class="mini-kpis">'
+                .'<span><strong>Meals:</strong> B '.$breakfastCount.' · L '.$lunchCount.' · D '.$dinnerCount.'</span>'
+                .'<span><strong>Transport:</strong> KES '.number_format($fareTotalSum, 2).'</span>'
+                .'<span><strong>Meal allowances:</strong> KES '.number_format((float) $t['earned_allowances_approved_paid'], 2).'</span>'
                 .'</div>'
-                .'<h3>Event details</h3>'
-                .'<table class="meta-table"><tbody>'.$metaHtml.'</tbody></table>'
-                .'<h3>Technical crew register</h3>'
                 .'<table class="register">'
+                .'<colgroup>'
+                .'<col class="c-date"><col class="c-name">'
+                .'<col class="c-meal"><col class="c-meal"><col class="c-meal">'
+                .'<col class="c-fare"><col class="c-fare"><col class="c-fare">'
+                .'<col class="c-time"><col class="c-time"><col class="c-sign">'
+                .'</colgroup>'
                 .'<thead>'
                 .'<tr>'
                 .'<th rowspan="2">Date</th><th rowspan="2">Name</th>'
-                .'<th colspan="3" style="text-align:center;">Meals</th>'
-                .'<th colspan="3" style="text-align:center;">Transport</th>'
+                .'<th colspan="3">Meals</th>'
+                .'<th colspan="3">Transport</th>'
                 .'<th rowspan="2">Time In</th><th rowspan="2">Time Out</th><th rowspan="2">Sign</th>'
                 .'</tr>'
                 .'<tr>'
-                .'<th style="text-align:center;">Breakfast</th><th style="text-align:center;">Lunch</th><th style="text-align:center;">Dinner</th>'
-                .'<th style="text-align:center;">Fare to</th><th style="text-align:center;">Fare From</th><th style="text-align:center;">Total</th>'
+                .'<th>Breakfast</th><th>Lunch</th><th>Dinner</th>'
+                .'<th>Fare to</th><th>Fare From</th><th>Total</th>'
                 .'</tr>'
                 .'</thead><tbody>'.$crewRowsHtml.'</tbody></table>'
-                .'<h3>Other allowances (non-meal)</h3>'
-                .'<table><thead><tr><th>Crew</th><th>Type</th><th style="text-align:right;">Amount (KES)</th><th>Status</th><th>Source</th><th>Description</th><th>Recorded</th></tr></thead><tbody>'.$allowanceRowsHtml.'</tbody></table>'
-                .'<h3>Payment requests</h3>'
-                .'<table><thead><tr><th>Crew</th><th>Purpose</th><th>Date</th><th style="text-align:right;">Allowances</th><th style="text-align:right;">Per diem</th><th style="text-align:right;">Total</th><th>Status</th></tr></thead><tbody>'.$paymentRowsHtml.'</tbody></table>'
-                .'<h3>Cab / parking expenses</h3>'
-                .'<table><thead><tr><th>Crew</th><th>Company transport</th><th style="text-align:right;">Cab</th><th style="text-align:right;">Parking</th><th style="text-align:right;">Total</th></tr></thead><tbody>'.$expenseRowsHtml.'</tbody></table>'
-                .'<h3>Tasks</h3>'
-                .'<table><thead><tr><th>Task</th><th>Status</th><th>Priority</th><th>Due</th><th>Assignees</th></tr></thead><tbody>'.$taskRowsHtml.'</tbody></table>'
-                .'<h3>Equipment</h3>'
-                .'<table><thead><tr><th>Name</th><th>Serial</th><th>Condition</th><th>Notes</th></tr></thead><tbody>'.$equipmentRowsHtml.'</tbody></table>'
+                .$extraSections
                 .'</section>';
         }
 
@@ -1348,36 +1331,146 @@ th{background:#f5f5f5;font-weight:600;}
         $signatureHtml = $this->buildProjectLeadSignatureHtml($confirmedBy, $signature);
 
         return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'.e($title).'</title><style>
-body{font-family:system-ui,sans-serif;margin:24px;color:#111;}
-h1{font-size:1.5rem;margin-bottom:4px;}
-h2{font-size:1.25rem;margin:28px 0 8px;color:#0f1838;border-bottom:2px solid #ca8a04;padding-bottom:4px;}
-h3{font-size:1rem;margin:18px 0 8px;color:#1e2d5c;}
-.meta{color:#666;font-size:0.875rem;margin-bottom:20px;}
-table{border-collapse:collapse;width:100%;margin-top:8px;margin-bottom:12px;font-size:13px;}
-th,td{border:1px solid #ddd;padding:6px 10px;text-align:left;vertical-align:top;}
-th{background:#f5f5f5;font-weight:600;}
-table.register th{text-align:center;font-size:12px;}
-table.register td{font-size:12px;}
-.meta-table th{width:180px;}
-.kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;margin:12px 0 16px;}
-.kpi{border:1px solid #ddd;border-radius:10px;padding:10px 12px;background:#fbfbfb;}
-.kpi .k{display:block;color:#555;font-size:12px;margin-bottom:4px;}
-.kpi .v{display:block;font-size:16px;font-weight:700;color:#0f1838;}
-.event-block{page-break-inside:avoid;margin-bottom:28px;}
+@page { size: A4 landscape; margin: 8mm 10mm; }
+* { box-sizing: border-box; }
+html, body { width: 100%; }
+body {
+  font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+  margin: 0;
+  color: #111;
+  font-size: 10px;
+  line-height: 1.3;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.doc-title { font-size: 14px; margin: 0 0 2px; color: #0f1838; }
+.meta { color: #555; font-size: 9px; margin: 0 0 8px; }
+.event-block {
+  margin: 0 0 14px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #ccc;
+  page-break-inside: auto;
+  break-inside: auto;
+}
+.event-block:last-of-type { border-bottom: 0; }
+.sheet-head {
+  text-align: center;
+  margin-bottom: 6px;
+  page-break-after: avoid;
+  break-after: avoid;
+}
+.sheet-head .brand {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  color: #0f1838;
+}
+.sheet-head .sheet-title {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  margin-top: 1px;
+}
+.form-meta {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 6px;
+  font-size: 9px;
+  page-break-after: avoid;
+  break-after: avoid;
+}
+.form-meta th, .form-meta td {
+  border: 1px solid #333;
+  padding: 3px 5px;
+  vertical-align: middle;
+}
+.form-meta th {
+  width: 14%;
+  background: #f3f4f6;
+  text-align: left;
+  font-weight: 600;
+}
+.form-meta td { width: 36%; }
+.mini-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0 0 6px;
+  font-size: 9px;
+  page-break-after: avoid;
+  break-after: avoid;
+}
+table.register {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 8px;
+  table-layout: fixed;
+}
+table.register col.c-date { width: 8%; }
+table.register col.c-name { width: 18%; }
+table.register col.c-meal { width: 7%; }
+table.register col.c-fare { width: 8%; }
+table.register col.c-time { width: 7%; }
+table.register col.c-sign { width: 10%; }
+table.register th, table.register td {
+  border: 1px solid #333;
+  padding: 2px 3px;
+  vertical-align: middle;
+}
+table.register thead { display: table-header-group; }
+table.register tfoot { display: table-footer-group; }
+table.register th {
+  background: #eceff4;
+  font-size: 8px;
+  text-align: center;
+  font-weight: 700;
+  line-height: 1.2;
+}
+table.register td { font-size: 9px; }
+table.register td.name { text-align: left; font-weight: 600; word-wrap: break-word; overflow-wrap: anywhere; }
+table.register td.c, table.register th { text-align: center; }
+table.register td.r { text-align: right; font-variant-numeric: tabular-nums; }
+table.register td.sign { height: 18px; }
+table.register tr.totals td { background: #f3f4f6; font-size: 9px; }
+table.register tbody tr { page-break-inside: avoid; break-inside: avoid; }
+.secondary { margin-top: 6px; }
+.secondary table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 8px;
+  table-layout: fixed;
+}
+.secondary th, .secondary td {
+  border: 1px solid #333;
+  padding: 2px 4px;
+  font-size: 9px;
+  vertical-align: top;
+}
+h3 {
+  font-size: 10px;
+  margin: 8px 0 3px;
+  color: #0f1838;
+}
+.secondary table th { background: #f5f5f5; font-size: 8px; text-align: left; }
+.secondary td.r, .secondary th.r { text-align: right; }
+.muted { text-align: center; color: #666; padding: 8px !important; }
 '.$this->signatureCss().'
-@media print{body{margin:12px;} .no-print{display:none;}}
+@media print {
+  body { margin: 0; }
+  .no-print { display: none !important; }
+  a { color: inherit; text-decoration: none; }
+  .doc-title, .meta { page-break-after: avoid; }
+}
+@media screen {
+  body { margin: 16px; }
+  .event-block { border: 1px solid #d1d5db; border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+}
 </style></head><body>
-<h1>'.e($title).'</h1>
-<p class="meta">Period: '.e($period).' | Generated: '.e($generatedAt).'</p>
-<div class="kpi-grid">
-<div class="kpi"><span class="k">Events</span><span class="v">'.(int) $summary['events_count'].'</span></div>
-<div class="kpi"><span class="k">Earned allowances</span><span class="v">KES '.number_format((float) $summary['earned_allowances_total'], 2).'</span></div>
-<div class="kpi"><span class="k">Approved / paid</span><span class="v">KES '.number_format((float) $summary['earned_allowances_approved_paid'], 2).'</span></div>
-<div class="kpi"><span class="k">Combined outflow</span><span class="v">KES '.number_format((float) $summary['combined_outflow'], 2).'</span></div>
-</div>
+<h1 class="doc-title">'.e($title).'</h1>
+<p class="meta">Period: '.e($period).' · Generated: '.e($generatedAt).' · Events: '.(int) $summary['events_count'].' · Combined outflow: KES '.number_format((float) $summary['combined_outflow'], 2).'</p>
 '.$sections.'
 '.$signatureHtml.'
-<p class="meta" style="margin-top:24px;">Stagepass Full Event Report – '.e($generatedAt).'</p>
+<p class="meta" style="margin-top:12px;">Stagepass Technical Crew Register – '.e($generatedAt).'</p>
 </body></html>';
     }
 

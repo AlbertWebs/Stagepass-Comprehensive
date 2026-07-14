@@ -158,9 +158,14 @@ export default function Reports() {
         w.document.write(html);
         w.document.close();
         w.focus();
+        // Wait for layout/fonts before opening the print dialog
         setTimeout(() => {
-          w.print();
-        }, 500);
+          try {
+            w.print();
+          } catch {
+            // ignore
+          }
+        }, 700);
       }
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Export failed');

@@ -569,6 +569,21 @@ export default function EventDetail() {
     event.status,
   ].join(' · ');
 
+  const registerTotals = {
+    breakfast: crewRegister.filter((r) => r.breakfast).length,
+    lunch: crewRegister.filter((r) => r.lunch).length,
+    dinner: crewRegister.filter((r) => r.dinner).length,
+    fareTo: crewRegister.reduce((sum, r) => sum + (Number(r.fare_to) || 0), 0),
+    fareFrom: crewRegister.reduce((sum, r) => sum + (Number(r.fare_from) || 0), 0),
+    fareTotal: crewRegister.reduce((sum, r) => sum + (Number(r.fare_total) || 0), 0),
+  };
+  const mealAllowances = earnedAllowances.filter((a) => !!a.meal_slot && a.status !== 'rejected');
+  const mealAmountTotal = mealAllowances.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+  const otherAllowances = earnedAllowances.filter((a) => !a.meal_slot);
+  const otherAmountTotal = otherAllowances.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+  const money = (n: number) =>
+    n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   return (
     <div className="space-y-6">
       {/* Hero: dark brand gradient + high-contrast event name */}
@@ -1030,6 +1045,32 @@ export default function EventDetail() {
               Manage on Payments
             </Link>
           </div>
+          <div className="grid grid-cols-2 gap-3 border-b border-slate-200 p-4 sm:grid-cols-3 lg:grid-cols-6">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Breakfast</p>
+              <p className="mt-1 text-xl font-bold text-slate-900">{registerTotals.breakfast}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Lunch</p>
+              <p className="mt-1 text-xl font-bold text-slate-900">{registerTotals.lunch}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Dinner</p>
+              <p className="mt-1 text-xl font-bold text-slate-900">{registerTotals.dinner}</p>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-amber-700">Meal KES</p>
+              <p className="mt-1 text-xl font-bold text-amber-900">{money(mealAmountTotal)}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Transport KES</p>
+              <p className="mt-1 text-xl font-bold text-slate-900">{money(registerTotals.fareTotal)}</p>
+            </div>
+            <div className="rounded-xl border border-green-200 bg-green-50/80 p-3">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-green-700">Combined</p>
+              <p className="mt-1 text-xl font-bold text-green-900">{money(mealAmountTotal + registerTotals.fareTotal + otherAmountTotal)}</p>
+            </div>
+          </div>
           <div className="overflow-x-auto p-4 sm:p-6">
             <table className="w-full min-w-[720px] border border-slate-300 text-sm">
               <thead>
@@ -1070,35 +1111,58 @@ export default function EventDetail() {
                     </td>
                   </tr>
                 ) : (
-                  crewRegister.map((r, idx) => (
-                    <tr key={`${r.user_id}-${r.date ?? 'na'}-${idx}`} className="bg-white">
-                      <td className="border border-slate-300 p-2 whitespace-nowrap">
-                        {r.date ? formatDate(r.date) : '—'}
+                  <>
+                    {crewRegister.map((r, idx) => (
+                      <tr key={`${r.user_id}-${r.date ?? 'na'}-${idx}`} className="bg-white">
+                        <td className="border border-slate-300 p-2 whitespace-nowrap">
+                          {r.date ? formatDate(r.date) : '—'}
+                        </td>
+                        <td className="border border-slate-300 p-2 font-medium text-slate-900">{r.name}</td>
+                        <td className="border border-slate-300 p-2 text-center">{r.breakfast ? '✓' : ''}</td>
+                        <td className="border border-slate-300 p-2 text-center">{r.lunch ? '✓' : ''}</td>
+                        <td className="border border-slate-300 p-2 text-center">{r.dinner ? '✓' : ''}</td>
+                        <td className="border border-slate-300 p-2 text-right">
+                          {r.fare_to == null ? '' : Number(r.fare_to).toFixed(2)}
+                        </td>
+                        <td className="border border-slate-300 p-2 text-right">
+                          {r.fare_from == null ? '' : Number(r.fare_from).toFixed(2)}
+                        </td>
+                        <td className="border border-slate-300 p-2 text-right font-medium">
+                          {r.fare_total == null ? '' : Number(r.fare_total).toFixed(2)}
+                        </td>
+                        <td className="border border-slate-300 p-2 whitespace-nowrap">{r.time_in ?? ''}</td>
+                        <td className="border border-slate-300 p-2 whitespace-nowrap">{r.time_out ?? ''}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-slate-100 font-semibold">
+                      <td className="border border-slate-300 p-2" colSpan={2}>
+                        Totals
                       </td>
-                      <td className="border border-slate-300 p-2 font-medium text-slate-900">{r.name}</td>
-                      <td className="border border-slate-300 p-2 text-center">{r.breakfast ? '✓' : ''}</td>
-                      <td className="border border-slate-300 p-2 text-center">{r.lunch ? '✓' : ''}</td>
-                      <td className="border border-slate-300 p-2 text-center">{r.dinner ? '✓' : ''}</td>
+                      <td className="border border-slate-300 p-2 text-center">{registerTotals.breakfast}</td>
+                      <td className="border border-slate-300 p-2 text-center">{registerTotals.lunch}</td>
+                      <td className="border border-slate-300 p-2 text-center">{registerTotals.dinner}</td>
                       <td className="border border-slate-300 p-2 text-right">
-                        {r.fare_to == null ? '' : Number(r.fare_to).toFixed(2)}
+                        {registerTotals.fareTo > 0 ? money(registerTotals.fareTo) : ''}
                       </td>
                       <td className="border border-slate-300 p-2 text-right">
-                        {r.fare_from == null ? '' : Number(r.fare_from).toFixed(2)}
+                        {registerTotals.fareFrom > 0 ? money(registerTotals.fareFrom) : ''}
                       </td>
-                      <td className="border border-slate-300 p-2 text-right font-medium">
-                        {r.fare_total == null ? '' : Number(r.fare_total).toFixed(2)}
+                      <td className="border border-slate-300 p-2 text-right">
+                        {registerTotals.fareTotal > 0 ? money(registerTotals.fareTotal) : '0.00'}
                       </td>
-                      <td className="border border-slate-300 p-2 whitespace-nowrap">{r.time_in ?? ''}</td>
-                      <td className="border border-slate-300 p-2 whitespace-nowrap">{r.time_out ?? ''}</td>
+                      <td className="border border-slate-300 p-2" colSpan={2} />
                     </tr>
-                  ))
+                  </>
                 )}
               </tbody>
             </table>
           </div>
-          {earnedAllowances.some((a) => !a.meal_slot) ? (
+          {otherAllowances.length > 0 ? (
             <div className="border-t border-slate-200">
-              <div className="px-6 py-3 text-sm font-medium text-slate-800">Other allowances (non-meal)</div>
+              <div className="flex items-center justify-between px-6 py-3">
+                <span className="text-sm font-medium text-slate-800">Other allowances (non-meal)</span>
+                <span className="text-sm font-semibold text-slate-900">Total: KES {money(otherAmountTotal)}</span>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full table-header-brand">
                   <thead>
@@ -1113,9 +1177,7 @@ export default function EventDetail() {
                     </tr>
                   </thead>
                   <tbody>
-                    {earnedAllowances
-                      .filter((a) => !a.meal_slot)
-                      .map((a) => (
+                    {otherAllowances.map((a) => (
                         <tr key={a.id} className="border-b border-slate-100 transition hover:bg-slate-50/60">
                           <td className="px-6 py-4 font-medium text-slate-900">{a.crew_name}</td>
                           <td className="px-6 py-4 text-slate-700">{a.allowance_type}</td>
@@ -1126,6 +1188,13 @@ export default function EventDetail() {
                           <td className="px-6 py-4 text-slate-600">{a.recorded_at ?? '—'}</td>
                         </tr>
                       ))}
+                    <tr className="border-t border-slate-200 bg-slate-50 font-semibold">
+                      <td className="px-6 py-3" colSpan={2}>
+                        Total
+                      </td>
+                      <td className="px-6 py-3">{money(otherAmountTotal)}</td>
+                      <td className="px-6 py-3" colSpan={4} />
+                    </tr>
                   </tbody>
                 </table>
               </div>
