@@ -1002,7 +1002,7 @@ tr{page-break-inside:avoid;break-inside:avoid;}
             $fareFrom = null;
             $displayFareTotal = $fareTotal;
 
-            $slotFlagsForDate = function (?string $workDate) use ($crewMealAllowances): array {
+            $slotAmountsForDate = function (?string $workDate) use ($crewMealAllowances): array {
                 $relevant = $crewMealAllowances->filter(function (EventAllowance $a) use ($workDate) {
                     if ($workDate === null) {
                         return true;
@@ -1012,10 +1012,19 @@ tr{page-break-inside:avoid;break-inside:avoid;}
                     return $grantDate === null || $grantDate === $workDate;
                 });
 
+                $sumSlot = static function (string $slot) use ($relevant): ?float {
+                    $items = $relevant->filter(fn (EventAllowance $a) => $a->meal_slot === $slot);
+                    if ($items->isEmpty()) {
+                        return null;
+                    }
+
+                    return round((float) $items->sum(fn (EventAllowance $a) => (float) $a->amount), 2);
+                };
+
                 return [
-                    'breakfast' => $relevant->contains(fn (EventAllowance $a) => $a->meal_slot === 'breakfast'),
-                    'lunch' => $relevant->contains(fn (EventAllowance $a) => $a->meal_slot === 'lunch'),
-                    'dinner' => $relevant->contains(fn (EventAllowance $a) => $a->meal_slot === 'dinner'),
+                    'breakfast' => $sumSlot('breakfast'),
+                    'lunch' => $sumSlot('lunch'),
+                    'dinner' => $sumSlot('dinner'),
                 ];
             };
 
@@ -1068,7 +1077,7 @@ tr{page-break-inside:avoid;break-inside:avoid;}
                 }
 
                 foreach ($workDates as $workDate) {
-                    $slots = $slotFlagsForDate($workDate);
+                    $slots = $slotAmountsForDate($workDate);
                     $times = $timesForDate($workDate);
                     $rows[] = [
                         'date' => $workDate,
@@ -1092,15 +1101,15 @@ tr{page-break-inside:avoid;break-inside:avoid;}
             foreach ($userMeals as $meal) {
                 /** @var EventMeal $meal */
                 $workDate = Carbon::parse($meal->work_date)->format('Y-m-d');
-                $slots = $slotFlagsForDate($workDate);
+                $slots = $slotAmountsForDate($workDate);
                 $times = $timesForDate($workDate);
                 $rows[] = [
                     'date' => $workDate,
                     'user_id' => $userId,
                     'name' => $name,
-                    'breakfast' => (bool) $meal->breakfast || $slots['breakfast'],
-                    'lunch' => (bool) $meal->lunch || $slots['lunch'],
-                    'dinner' => (bool) $meal->dinner || $slots['dinner'],
+                    'breakfast' => $slots['breakfast'],
+                    'lunch' => $slots['lunch'],
+                    'dinner' => $slots['dinner'],
                     'fare_to' => $fareTo,
                     'fare_from' => $fareFrom,
                     'fare_total' => $displayFareTotal,
@@ -1441,34 +1450,33 @@ tr{page-break-inside:avoid;break-inside:avoid;}
             }
 
             $register = $item['crew_register'] ?? [];
-            $breakfastCount = 0;
-            $lunchCount = 0;
-            $dinnerCount = 0;
+            $breakfastSum = 0.0;
+            $lunchSum = 0.0;
+            $dinnerSum = 0.0;
             $fareToSum = 0.0;
             $fareFromSum = 0.0;
             $fareTotalSum = 0.0;
             $crewRowsHtml = '';
+            $moneyOrBlank = static function ($n): string {
+                if ($n === null || $n === '') {
+                    return '';
+                }
+
+                return number_format((float) $n, 2);
+            };
             foreach ($register as $c) {
-                $breakfastCount += ! empty($c['breakfast']) ? 1 : 0;
-                $lunchCount += ! empty($c['lunch']) ? 1 : 0;
-                $dinnerCount += ! empty($c['dinner']) ? 1 : 0;
+                $breakfastSum += (float) ($c['breakfast'] ?? 0);
+                $lunchSum += (float) ($c['lunch'] ?? 0);
+                $dinnerSum += (float) ($c['dinner'] ?? 0);
                 $fareToSum += (float) ($c['fare_to'] ?? 0);
                 $fareFromSum += (float) ($c['fare_from'] ?? 0);
                 $fareTotalSum += (float) ($c['fare_total'] ?? 0);
-                $mark = static fn (bool $yes): string => $yes ? '✓' : '';
-                $moneyOrBlank = static function ($n): string {
-                    if ($n === null || $n === '') {
-                        return '';
-                    }
-
-                    return number_format((float) $n, 2);
-                };
                 $crewRowsHtml .= '<tr>'
                     .'<td>'.e((string) ($c['date'] ?? '—')).'</td>'
                     .'<td class="name">'.e((string) ($c['name'] ?? '—')).'</td>'
-                    .'<td class="c">'.$mark((bool) ($c['breakfast'] ?? false)).'</td>'
-                    .'<td class="c">'.$mark((bool) ($c['lunch'] ?? false)).'</td>'
-                    .'<td class="c">'.$mark((bool) ($c['dinner'] ?? false)).'</td>'
+                    .'<td class="r">'.$moneyOrBlank($c['breakfast'] ?? null).'</td>'
+                    .'<td class="r">'.$moneyOrBlank($c['lunch'] ?? null).'</td>'
+                    .'<td class="r">'.$moneyOrBlank($c['dinner'] ?? null).'</td>'
                     .'<td class="r">'.$moneyOrBlank($c['fare_to'] ?? null).'</td>'
                     .'<td class="r">'.$moneyOrBlank($c['fare_from'] ?? null).'</td>'
                     .'<td class="r">'.$moneyOrBlank($c['fare_total'] ?? null).'</td>'
@@ -1482,9 +1490,9 @@ tr{page-break-inside:avoid;break-inside:avoid;}
             } else {
                 $crewRowsHtml .= '<tr class="totals">'
                     .'<td colspan="2"><strong>Totals</strong></td>'
-                    .'<td class="c"><strong>'.$breakfastCount.'</strong></td>'
-                    .'<td class="c"><strong>'.$lunchCount.'</strong></td>'
-                    .'<td class="c"><strong>'.$dinnerCount.'</strong></td>'
+                    .'<td class="r"><strong>'.number_format($breakfastSum, 2).'</strong></td>'
+                    .'<td class="r"><strong>'.number_format($lunchSum, 2).'</strong></td>'
+                    .'<td class="r"><strong>'.number_format($dinnerSum, 2).'</strong></td>'
                     .'<td class="r"><strong>'.($fareToSum > 0 ? number_format($fareToSum, 2) : '').'</strong></td>'
                     .'<td class="r"><strong>'.($fareFromSum > 0 ? number_format($fareFromSum, 2) : '').'</strong></td>'
                     .'<td class="r"><strong>'.number_format($fareTotalSum, 2).'</strong></td>'
@@ -1556,9 +1564,12 @@ tr{page-break-inside:avoid;break-inside:avoid;}
                 .'<th>Status</th><td>'.e((string) ($ev['status'] ?? '—')).'</td></tr>'
                 .'</table>'
                 .'<div class="mini-kpis">'
-                .'<span><strong>Meals:</strong> B '.$breakfastCount.' · L '.$lunchCount.' · D '.$dinnerCount.'</span>'
+                .'<span><strong>Meals:</strong> B '.number_format($breakfastSum, 2)
+                .' · L '.number_format($lunchSum, 2)
+                .' · D '.number_format($dinnerSum, 2)
+                .' (KES '.number_format($breakfastSum + $lunchSum + $dinnerSum, 2).')</span>'
                 .'<span><strong>Transport:</strong> KES '.number_format($fareTotalSum, 2).'</span>'
-                .'<span><strong>Meal allowances:</strong> KES '.number_format((float) $t['earned_allowances_approved_paid'], 2).'</span>'
+                .'<span><strong>Meal allowances (approved/paid):</strong> KES '.number_format((float) $t['earned_allowances_approved_paid'], 2).'</span>'
                 .'</div>'
                 .'<table class="register">'
                 .'<colgroup>'
@@ -1570,8 +1581,8 @@ tr{page-break-inside:avoid;break-inside:avoid;}
                 .'<thead>'
                 .'<tr>'
                 .'<th rowspan="2">Date</th><th rowspan="2">Name</th>'
-                .'<th colspan="3">Meals</th>'
-                .'<th colspan="3">Transport</th>'
+                .'<th colspan="3">Meals (KES)</th>'
+                .'<th colspan="3">Transport (KES)</th>'
                 .'<th rowspan="2">Time In</th><th rowspan="2">Time Out</th><th rowspan="2">Sign</th>'
                 .'</tr>'
                 .'<tr>'

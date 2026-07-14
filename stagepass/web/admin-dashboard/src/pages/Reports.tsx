@@ -183,9 +183,9 @@ export default function Reports() {
             item.event.name,
             r.date ?? '',
             r.name,
-            r.breakfast ? 'Yes' : '',
-            r.lunch ? 'Yes' : '',
-            r.dinner ? 'Yes' : '',
+            r.breakfast ?? '',
+            r.lunch ?? '',
+            r.dinner ?? '',
             r.fare_to ?? '',
             r.fare_from ?? '',
             r.fare_total ?? '',
@@ -522,9 +522,8 @@ function FullEventReportView({
   const { summary, events: list } = data;
   const money = (n: number) =>
     Number(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const mealMark = (yes: boolean) => (yes ? '✓' : '');
-  const fareCell = (n: number | null | undefined) =>
-    n == null || Number.isNaN(Number(n)) ? '' : money(Number(n));
+  const amountCell = (n: number | null | undefined) =>
+    n == null || Number.isNaN(Number(n)) || Number(n) === 0 ? '' : money(Number(n));
 
   return (
     <SectionCard sectionLabel="Comprehensive allowance report">
@@ -564,6 +563,14 @@ function FullEventReportView({
                   ? fd(ev.date)
                   : '—';
             const register = item.crew_register ?? [];
+            const registerTotals = {
+              breakfast: register.reduce((sum, r) => sum + (Number(r.breakfast) || 0), 0),
+              lunch: register.reduce((sum, r) => sum + (Number(r.lunch) || 0), 0),
+              dinner: register.reduce((sum, r) => sum + (Number(r.dinner) || 0), 0),
+              fareTo: register.reduce((sum, r) => sum + (Number(r.fare_to) || 0), 0),
+              fareFrom: register.reduce((sum, r) => sum + (Number(r.fare_from) || 0), 0),
+              fareTotal: register.reduce((sum, r) => sum + (Number(r.fare_total) || 0), 0),
+            };
             const otherAllowances = item.earned_allowances.filter((a) => !a.meal_slot);
             return (
               <div key={ev.id} className="rounded-2xl border border-slate-200 overflow-hidden">
@@ -600,10 +607,10 @@ function FullEventReportView({
                             Name
                           </th>
                           <th className="border border-slate-300 p-2 text-center" colSpan={3}>
-                            Meals
+                            Meals (KES)
                           </th>
                           <th className="border border-slate-300 p-2 text-center" colSpan={3}>
-                            Transport
+                            Transport (KES)
                           </th>
                           <th className="border border-slate-300 p-2 text-left" rowSpan={2}>
                             Time In
@@ -613,12 +620,12 @@ function FullEventReportView({
                           </th>
                         </tr>
                         <tr className="bg-slate-50">
-                          <th className="border border-slate-300 p-2 text-center font-medium">Breakfast</th>
-                          <th className="border border-slate-300 p-2 text-center font-medium">Lunch</th>
-                          <th className="border border-slate-300 p-2 text-center font-medium">Dinner</th>
-                          <th className="border border-slate-300 p-2 text-center font-medium">Fare to</th>
-                          <th className="border border-slate-300 p-2 text-center font-medium">Fare From</th>
-                          <th className="border border-slate-300 p-2 text-center font-medium">Total</th>
+                          <th className="border border-slate-300 p-2 text-right font-medium">Breakfast</th>
+                          <th className="border border-slate-300 p-2 text-right font-medium">Lunch</th>
+                          <th className="border border-slate-300 p-2 text-right font-medium">Dinner</th>
+                          <th className="border border-slate-300 p-2 text-right font-medium">Fare to</th>
+                          <th className="border border-slate-300 p-2 text-right font-medium">Fare From</th>
+                          <th className="border border-slate-300 p-2 text-right font-medium">Total</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -629,24 +636,50 @@ function FullEventReportView({
                             </td>
                           </tr>
                         ) : (
-                          register.map((r, idx) => (
-                            <tr key={`${r.user_id}-${r.date ?? 'na'}-${idx}`} className="bg-white">
-                              <td className="border border-slate-300 p-2 whitespace-nowrap">
-                                {r.date ? fd(r.date) : '—'}
+                          <>
+                            {register.map((r, idx) => (
+                              <tr key={`${r.user_id}-${r.date ?? 'na'}-${idx}`} className="bg-white">
+                                <td className="border border-slate-300 p-2 whitespace-nowrap">
+                                  {r.date ? fd(r.date) : '—'}
+                                </td>
+                                <td className="border border-slate-300 p-2 font-medium text-slate-900">{r.name}</td>
+                                <td className="border border-slate-300 p-2 text-right tabular-nums">{amountCell(r.breakfast)}</td>
+                                <td className="border border-slate-300 p-2 text-right tabular-nums">{amountCell(r.lunch)}</td>
+                                <td className="border border-slate-300 p-2 text-right tabular-nums">{amountCell(r.dinner)}</td>
+                                <td className="border border-slate-300 p-2 text-right tabular-nums">{amountCell(r.fare_to)}</td>
+                                <td className="border border-slate-300 p-2 text-right tabular-nums">{amountCell(r.fare_from)}</td>
+                                <td className="border border-slate-300 p-2 text-right tabular-nums font-medium">
+                                  {amountCell(r.fare_total)}
+                                </td>
+                                <td className="border border-slate-300 p-2 whitespace-nowrap">{r.time_in ?? ''}</td>
+                                <td className="border border-slate-300 p-2 whitespace-nowrap">{r.time_out ?? ''}</td>
+                              </tr>
+                            ))}
+                            <tr className="bg-slate-100 font-semibold">
+                              <td className="border border-slate-300 p-2" colSpan={2}>
+                                Totals
                               </td>
-                              <td className="border border-slate-300 p-2 font-medium text-slate-900">{r.name}</td>
-                              <td className="border border-slate-300 p-2 text-center">{mealMark(r.breakfast)}</td>
-                              <td className="border border-slate-300 p-2 text-center">{mealMark(r.lunch)}</td>
-                              <td className="border border-slate-300 p-2 text-center">{mealMark(r.dinner)}</td>
-                              <td className="border border-slate-300 p-2 text-right">{fareCell(r.fare_to)}</td>
-                              <td className="border border-slate-300 p-2 text-right">{fareCell(r.fare_from)}</td>
-                              <td className="border border-slate-300 p-2 text-right font-medium">
-                                {fareCell(r.fare_total)}
+                              <td className="border border-slate-300 p-2 text-right tabular-nums">
+                                {money(registerTotals.breakfast)}
                               </td>
-                              <td className="border border-slate-300 p-2 whitespace-nowrap">{r.time_in ?? ''}</td>
-                              <td className="border border-slate-300 p-2 whitespace-nowrap">{r.time_out ?? ''}</td>
+                              <td className="border border-slate-300 p-2 text-right tabular-nums">
+                                {money(registerTotals.lunch)}
+                              </td>
+                              <td className="border border-slate-300 p-2 text-right tabular-nums">
+                                {money(registerTotals.dinner)}
+                              </td>
+                              <td className="border border-slate-300 p-2 text-right tabular-nums">
+                                {registerTotals.fareTo > 0 ? money(registerTotals.fareTo) : ''}
+                              </td>
+                              <td className="border border-slate-300 p-2 text-right tabular-nums">
+                                {registerTotals.fareFrom > 0 ? money(registerTotals.fareFrom) : ''}
+                              </td>
+                              <td className="border border-slate-300 p-2 text-right tabular-nums">
+                                {money(registerTotals.fareTotal)}
+                              </td>
+                              <td className="border border-slate-300 p-2" colSpan={2} />
                             </tr>
-                          ))
+                          </>
                         )}
                       </tbody>
                     </table>

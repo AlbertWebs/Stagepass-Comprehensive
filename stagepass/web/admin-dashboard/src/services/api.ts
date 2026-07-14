@@ -955,9 +955,9 @@ export interface ReportFullEventResponse {
       date?: string | null;
       user_id: number;
       name: string;
-      breakfast: boolean;
-      lunch: boolean;
-      dinner: boolean;
+      breakfast?: number | null;
+      lunch?: number | null;
+      dinner?: number | null;
       fare_to?: number | null;
       fare_from?: number | null;
       fare_total?: number | null;
