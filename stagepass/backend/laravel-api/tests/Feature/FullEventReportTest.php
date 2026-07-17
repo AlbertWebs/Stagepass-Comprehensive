@@ -6,6 +6,7 @@ use App\Models\AllowanceType;
 use App\Models\Event;
 use App\Models\EventAllowance;
 use App\Models\EventExpense;
+use App\Models\EventMeal;
 use App\Models\EventPayment;
 use App\Models\Role;
 use App\Models\User;
@@ -18,7 +19,7 @@ class FullEventReportTest extends TestCase
 
     private function auth(User $user): array
     {
-        return ['Authorization' => 'Bearer ' . $user->createToken('test')->plainTextToken];
+        return ['Authorization' => 'Bearer '.$user->createToken('test')->plainTextToken];
     }
 
     public function test_admin_can_download_full_event_report_with_allowance_breakdown(): void
@@ -99,5 +100,51 @@ class FullEventReportTest extends TestCase
         $this->assertStringContainsString('Earned allowances (full breakdown)', (string) $export->json('html'));
         $this->assertStringContainsString('Project lead sign-off', (string) $export->json('html'));
         $this->assertStringContainsString('Project lead signature', (string) $export->json('html'));
+    }
+
+    public function test_crew_register_shows_transport_total_once_per_person(): void
+    {
+        $admin = User::factory()->create();
+        $crew = User::factory()->create(['name' => 'Multi Day Crew']);
+        $role = Role::firstOrCreate(['name' => 'admin'], ['label' => 'Admin']);
+        $admin->roles()->syncWithoutDetaching([$role->id]);
+
+        $event = Event::create([
+            'name' => 'Multi Day Event',
+            'date' => '2026-07-17',
+            'end_date' => '2026-07-18',
+            'start_time' => '09:00',
+            'location_name' => 'Nairobi Arena',
+            'team_leader_id' => $admin->id,
+            'created_by_id' => $admin->id,
+            'status' => Event::STATUS_ACTIVE,
+        ]);
+        $event->crew()->attach($crew->id, [
+            'role_in_event' => 'Technician',
+            'transport_type' => 'cab',
+            'transport_amount' => 800,
+        ]);
+
+        foreach (['2026-07-17', '2026-07-18'] as $workDate) {
+            EventMeal::create([
+                'event_id' => $event->id,
+                'user_id' => $crew->id,
+                'work_date' => $workDate,
+            ]);
+        }
+
+        $response = $this->withHeaders($this->auth($admin))
+            ->getJson('/api/reports/full-event?event_id='.$event->id.'&date_from=2026-07-17&date_to=2026-07-18');
+
+        $response->assertOk();
+
+        $rows = collect($response->json('events.0.crew_register'))
+            ->where('user_id', $crew->id)
+            ->values();
+
+        $this->assertCount(2, $rows);
+        $this->assertSame(800, $rows->first()['fare_total']);
+        $this->assertNull($rows->last()['fare_total']);
+        $this->assertSame(800.0, $rows->sum(fn (array $row) => (float) ($row['fare_total'] ?? 0)));
     }
 }

@@ -5,12 +5,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\DailyOfficeCheckin;
 use App\Models\Event;
-use App\Models\EventAttendanceSession;
-use App\Models\EventExpense;
 use App\Models\EventAllowance;
+use App\Models\EventAttendanceSession;
+use App\Models\EventEquipment;
+use App\Models\EventExpense;
 use App\Models\EventMeal;
 use App\Models\EventPayment;
-use App\Models\EventEquipment;
 use App\Models\EventUser;
 use App\Models\Task;
 use App\Services\AttendanceOvertimeService;
@@ -26,6 +26,7 @@ class ReportsController extends Controller
     private function canAccessReports(Request $request): bool
     {
         $user = $request->user();
+
         return $user && (
             $user->hasRole('super_admin') ||
             $user->hasRole('director') ||
@@ -44,6 +45,7 @@ class ReportsController extends Controller
         if ($request->filled('date_from') && $request->filled('date_to')) {
             $from = Carbon::parse($request->date_from)->startOfDay();
             $to = Carbon::parse($request->date_to)->endOfDay();
+
             return [$from, $to];
         }
         if ($request->filled('month') && $request->filled('year')) {
@@ -51,20 +53,24 @@ class ReportsController extends Controller
             $m = (int) $request->month;
             $from = Carbon::createFromDate($y, $m, 1)->startOfDay();
             $to = $from->copy()->endOfMonth();
+
             return [$from, $to];
         }
         if ($request->filled('year')) {
             $y = (int) $request->year;
             $from = Carbon::createFromDate($y, 1, 1)->startOfDay();
             $to = Carbon::createFromDate($y, 12, 31)->endOfDay();
+
             return [$from, $to];
         }
         if ($request->filled('date')) {
             $d = Carbon::parse($request->date)->startOfDay();
+
             return [$d, $d->copy()->endOfDay()];
         }
         $from = $today->copy()->startOfMonth();
         $to = $today->copy()->endOfDay();
+
         return [$from, $to];
     }
 
@@ -534,6 +540,7 @@ class ReportsController extends Controller
         [$from, $to] = $this->parseDateRange($request);
         $eventId = $request->filled('event_id') ? (int) $request->event_id : null;
         $data = $this->endOfDayReportData($from, $to, $eventId);
+
         return response()->json($data);
     }
 
@@ -795,7 +802,7 @@ class ReportsController extends Controller
 
         return response($html, 200, [
             'Content-Type' => 'text/html; charset=UTF-8',
-            'Content-Disposition' => 'inline; filename="report-' . $type . '-' . $from->format('Y-m-d') . '.html"',
+            'Content-Disposition' => 'inline; filename="report-'.$type.'-'.$from->format('Y-m-d').'.html"',
         ]);
     }
 
@@ -808,9 +815,8 @@ class ReportsController extends Controller
         ?int $userId,
         string $confirmedBy = '',
         string $signature = ''
-    ): string
-    {
-        $period = $from->format('M j, Y') . ' – ' . $to->format('M j, Y');
+    ): string {
+        $period = $from->format('M j, Y').' – '.$to->format('M j, Y');
         $generatedAt = now()->format('M j, Y g:i A');
 
         $summaryHtml = '';
@@ -819,13 +825,13 @@ class ReportsController extends Controller
         switch ($type) {
             case 'events':
                 $data = $this->eventsReportData($from, $to, $eventId);
-                $summaryHtml = '<p>Total events: <strong>' . $data['summary']['total_events'] . '</strong></p>';
+                $summaryHtml = '<p>Total events: <strong>'.$data['summary']['total_events'].'</strong></p>';
                 if (! empty($data['summary']['by_status'])) {
-                    $summaryHtml .= '<p>By status: ' . implode(', ', array_map(fn ($s, $c) => $s . ': ' . $c, array_keys($data['summary']['by_status']), $data['summary']['by_status'])) . '</p>';
+                    $summaryHtml .= '<p>By status: '.implode(', ', array_map(fn ($s, $c) => $s.': '.$c, array_keys($data['summary']['by_status']), $data['summary']['by_status'])).'</p>';
                 }
                 $events = Event::query()->spansRange($from->toDateString(), $to->toDateString())->when($eventId, fn ($q) => $q->where('id', $eventId))->orderBy('date')->get();
                 foreach ($events as $e) {
-                    $tableRows .= '<tr><td>' . e($e->name) . '</td><td>' . $e->date->format('Y-m-d') . '</td><td>' . e($e->status ?? '—') . '</td></tr>';
+                    $tableRows .= '<tr><td>'.e($e->name).'</td><td>'.$e->date->format('Y-m-d').'</td><td>'.e($e->status ?? '—').'</td></tr>';
                 }
                 $tableRows = $tableRows ?: '<tr><td colspan="3">No events</td></tr>';
                 break;
@@ -856,10 +862,10 @@ class ReportsController extends Controller
                 break;
             case 'crew-payments':
                 $data = $this->financialReportData($from, $to, $eventId, $userId);
-                $summaryHtml = '<p>Total payments: <strong>' . $data['summary']['total_payments'] . '</strong> | Total amount: <strong>' . number_format($data['summary']['total_amount'], 2) . '</strong></p>';
+                $summaryHtml = '<p>Total payments: <strong>'.$data['summary']['total_payments'].'</strong> | Total amount: <strong>'.number_format($data['summary']['total_amount'], 2).'</strong></p>';
                 $payments = EventPayment::query()->with(['event', 'user'])->whereHas('event', fn ($q) => $q->spansRange($from->toDateString(), $to->toDateString()))->when($eventId, fn ($q) => $q->where('event_id', $eventId))->when($userId, fn ($q) => $q->where('user_id', $userId))->orderByDesc('payment_date')->get();
                 foreach ($payments as $p) {
-                    $tableRows .= '<tr><td>' . e($p->user?->name ?? '—') . '</td><td>' . e($p->event?->name ?? '—') . '</td><td>' . ($p->payment_date?->format('Y-m-d') ?? '—') . '</td><td>' . number_format((float) $p->total_amount, 2) . '</td><td>' . e($p->status ?? '—') . '</td></tr>';
+                    $tableRows .= '<tr><td>'.e($p->user?->name ?? '—').'</td><td>'.e($p->event?->name ?? '—').'</td><td>'.($p->payment_date?->format('Y-m-d') ?? '—').'</td><td>'.number_format((float) $p->total_amount, 2).'</td><td>'.e($p->status ?? '—').'</td></tr>';
                 }
                 $tableRows = $tableRows ?: '<tr><td colspan="5">No payments</td></tr>';
                 $tableHeader = '<tr><th>Crew</th><th>Event</th><th>Date</th><th>Amount</th><th>Status</th></tr>';
@@ -869,18 +875,18 @@ class ReportsController extends Controller
                     $q->whereBetween('due_date', [$from->toDateString(), $to->toDateString()])->orWhereBetween('created_at', [$from, $to]);
                 })->when($eventId, fn ($q) => $q->where('event_id', $eventId))->when($userId, fn ($q) => $q->whereHas('assignees', fn ($aq) => $aq->where('users.id', $userId)));
                 $all = (clone $query)->get();
-                $summaryHtml = '<p>Total: <strong>' . $all->count() . '</strong> | Pending: <strong>' . $all->where('status', 'pending')->count() . '</strong> | In progress: <strong>' . $all->where('status', 'in_progress')->count() . '</strong> | Completed: <strong>' . $all->where('status', 'completed')->count() . '</strong></p>';
+                $summaryHtml = '<p>Total: <strong>'.$all->count().'</strong> | Pending: <strong>'.$all->where('status', 'pending')->count().'</strong> | In progress: <strong>'.$all->where('status', 'in_progress')->count().'</strong> | Completed: <strong>'.$all->where('status', 'completed')->count().'</strong></p>';
                 foreach ($query->orderBy('due_date')->get() as $t) {
                     $assignees = $t->assignees->pluck('name')->join(', ') ?: '—';
-                    $tableRows .= '<tr><td>' . e($t->title) . '</td><td>' . e($t->event?->name ?? '—') . '</td><td>' . ($t->due_date?->format('Y-m-d') ?? '—') . '</td><td>' . e($t->status) . '</td><td>' . e($assignees) . '</td></tr>';
+                    $tableRows .= '<tr><td>'.e($t->title).'</td><td>'.e($t->event?->name ?? '—').'</td><td>'.($t->due_date?->format('Y-m-d') ?? '—').'</td><td>'.e($t->status).'</td><td>'.e($assignees).'</td></tr>';
                 }
                 $tableRows = $tableRows ?: '<tr><td colspan="5">No tasks</td></tr>';
                 break;
             case 'financial':
                 $data = $this->financialReportData($from, $to, $eventId, $userId);
-                $summaryHtml = '<p>Total payments: <strong>' . $data['summary']['total_payments'] . '</strong> | Total amount: <strong>' . number_format($data['summary']['total_amount'], 2) . '</strong></p>';
+                $summaryHtml = '<p>Total payments: <strong>'.$data['summary']['total_payments'].'</strong> | Total amount: <strong>'.number_format($data['summary']['total_amount'], 2).'</strong></p>';
                 foreach ($data['by_day'] as $row) {
-                    $tableRows .= '<tr><td>' . e($row['date']) . '</td><td>' . $row['count'] . '</td><td>' . number_format($row['total'], 2) . '</td></tr>';
+                    $tableRows .= '<tr><td>'.e($row['date']).'</td><td>'.$row['count'].'</td><td>'.number_format($row['total'], 2).'</td></tr>';
                 }
                 $tableRows = $tableRows ?: '<tr><td colspan="3">No data</td></tr>';
                 $tableHeader = '<tr><th>Date</th><th>Count</th><th>Total</th></tr>';
@@ -888,20 +894,20 @@ class ReportsController extends Controller
             case 'end-of-day':
                 $data = $this->endOfDayReportData($from, $to, $eventId);
                 $summaryHtml = '<div class="kpi-grid">'
-                    . '<div class="kpi"><span class="k">Events</span><span class="v">' . $data['summary']['events_count'] . '</span></div>'
-                    . '<div class="kpi"><span class="k">Crew allowances</span><span class="v">KES ' . number_format((float) $data['summary']['crew_allowances_total'], 2) . '</span></div>'
-                    . '<div class="kpi"><span class="k">Other expenses</span><span class="v">KES ' . number_format((float) $data['summary']['other_expenses_total'], 2) . '</span></div>'
-                    . '<div class="kpi"><span class="k">Grand total</span><span class="v">KES ' . number_format((float) $data['summary']['grand_total'], 2) . '</span></div>'
-                    . '</div>';
+                    .'<div class="kpi"><span class="k">Events</span><span class="v">'.$data['summary']['events_count'].'</span></div>'
+                    .'<div class="kpi"><span class="k">Crew allowances</span><span class="v">KES '.number_format((float) $data['summary']['crew_allowances_total'], 2).'</span></div>'
+                    .'<div class="kpi"><span class="k">Other expenses</span><span class="v">KES '.number_format((float) $data['summary']['other_expenses_total'], 2).'</span></div>'
+                    .'<div class="kpi"><span class="k">Grand total</span><span class="v">KES '.number_format((float) $data['summary']['grand_total'], 2).'</span></div>'
+                    .'</div>';
 
                 foreach ($data['data'] as $row) {
                     $tableRows .= '<tr>'
-                        . '<td>' . e((string) ($row['date'] ?? '—')) . '</td>'
-                        . '<td>' . e((string) ($row['event_name'] ?? '—')) . '</td>'
-                        . '<td style="text-align:right;">' . number_format((float) ($row['crew_allowances'] ?? 0), 2) . '</td>'
-                        . '<td style="text-align:right;">' . number_format((float) ($row['other_expenses'] ?? 0), 2) . '</td>'
-                        . '<td style="text-align:right;font-weight:700;">' . number_format((float) ($row['total'] ?? 0), 2) . '</td>'
-                        . '</tr>';
+                        .'<td>'.e((string) ($row['date'] ?? '—')).'</td>'
+                        .'<td>'.e((string) ($row['event_name'] ?? '—')).'</td>'
+                        .'<td style="text-align:right;">'.number_format((float) ($row['crew_allowances'] ?? 0), 2).'</td>'
+                        .'<td style="text-align:right;">'.number_format((float) ($row['other_expenses'] ?? 0), 2).'</td>'
+                        .'<td style="text-align:right;font-weight:700;">'.number_format((float) ($row['total'] ?? 0), 2).'</td>'
+                        .'</tr>';
                 }
                 $tableRows = $tableRows ?: '<tr><td colspan="5">No records for selected range.</td></tr>';
                 $tableHeader = '<tr><th>Date</th><th>Event</th><th style="text-align:right;">Crew allowances (KES)</th><th style="text-align:right;">Other expenses (KES)</th><th style="text-align:right;">Total (KES)</th></tr>';
@@ -919,7 +925,7 @@ class ReportsController extends Controller
 
         $signatureHtml = $this->buildProjectLeadSignatureHtml($confirmedBy, $signature);
 
-        return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' . e($title) . '</title><style>
+        return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'.e($title).'</title><style>
 @page{size:A4 portrait;margin:12mm;}
 body{font-family:"Segoe UI",Arial,Helvetica,sans-serif;margin:0;color:#111;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 h1{font-size:18px;margin:0 0 4px;color:#0f1838;}
@@ -937,12 +943,12 @@ tr{page-break-inside:avoid;break-inside:avoid;}
 @media print{body{margin:0;} .no-print{display:none!important;}}
 @media screen{body{margin:16px;}}
 </style></head><body>
-<h1>' . e($title) . '</h1>
-<p class="meta">Period: ' . e($period) . ' | Generated: ' . e($generatedAt) . '</p>
-<div class="summary">' . $summaryHtml . '</div>
-<table><thead>' . $tableHeader . '</thead><tbody>' . $tableRows . '</tbody></table>
-' . $signatureHtml . '
-<p class="meta" style="margin-top:16px;">Stagepass Reports – ' . e($generatedAt) . '</p>
+<h1>'.e($title).'</h1>
+<p class="meta">Period: '.e($period).' | Generated: '.e($generatedAt).'</p>
+<div class="summary">'.$summaryHtml.'</div>
+<table><thead>'.$tableHeader.'</thead><tbody>'.$tableRows.'</tbody></table>
+'.$signatureHtml.'
+<p class="meta" style="margin-top:16px;">Stagepass Reports – '.e($generatedAt).'</p>
 </body></html>';
     }
 
@@ -1366,6 +1372,22 @@ tr{page-break-inside:avoid;break-inside:avoid;}
             return strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
         });
 
+        // Transport is recorded once per event/person. Show it once on the
+        // person's first chronological row so multi-day registers do not
+        // duplicate that person's total.
+        $usersWithDisplayedFareTotal = [];
+        foreach ($rows as &$row) {
+            $userId = (int) ($row['user_id'] ?? 0);
+            if (isset($usersWithDisplayedFareTotal[$userId])) {
+                $row['fare_total'] = null;
+
+                continue;
+            }
+
+            $usersWithDisplayedFareTotal[$userId] = true;
+        }
+        unset($row);
+
         return $rows;
     }
 
@@ -1716,20 +1738,20 @@ tr{page-break-inside:avoid;break-inside:avoid;}
             .'</div>';
 
         $tableRows = '';
-                foreach ($built['rows'] as $a) {
-                    $tableRows .= '<tr>'
-                        .'<td>'.e((string) ($a['event_name'] ?? '—')).'</td>'
-                        .'<td>'.e((string) ($a['meal_grant_date'] ?? $a['event_date'] ?? '—')).'</td>'
-                        .'<td>'.e((string) ($a['crew_name'] ?? '—')).'</td>'
-                        .'<td>'.e((string) ($a['allowance_type'] ?? '—')).'</td>'
-                        .'<td>'.e((string) ($a['meal_slot'] ?? '—')).'</td>'
-                        .'<td style="text-align:right;">'.number_format((float) ($a['amount'] ?? 0), 2).'</td>'
-                        .'<td>'.e((string) ($a['time_in'] ?? '—')).'</td>'
-                        .'<td>'.e((string) ($a['time_out'] ?? '—')).'</td>'
-                        .'<td>'.e((string) ($a['status'] ?? '—')).'</td>'
-                        .'<td>'.e((string) ($a['source'] ?? '—')).'</td>'
-                        .'</tr>';
-                }
+        foreach ($built['rows'] as $a) {
+            $tableRows .= '<tr>'
+                .'<td>'.e((string) ($a['event_name'] ?? '—')).'</td>'
+                .'<td>'.e((string) ($a['meal_grant_date'] ?? $a['event_date'] ?? '—')).'</td>'
+                .'<td>'.e((string) ($a['crew_name'] ?? '—')).'</td>'
+                .'<td>'.e((string) ($a['allowance_type'] ?? '—')).'</td>'
+                .'<td>'.e((string) ($a['meal_slot'] ?? '—')).'</td>'
+                .'<td style="text-align:right;">'.number_format((float) ($a['amount'] ?? 0), 2).'</td>'
+                .'<td>'.e((string) ($a['time_in'] ?? '—')).'</td>'
+                .'<td>'.e((string) ($a['time_out'] ?? '—')).'</td>'
+                .'<td>'.e((string) ($a['status'] ?? '—')).'</td>'
+                .'<td>'.e((string) ($a['source'] ?? '—')).'</td>'
+                .'</tr>';
+        }
         if ($tableRows === '') {
             $tableRows = '<tr><td colspan="10">No allowances for the selected filters.</td></tr>';
         }
@@ -2109,7 +2131,7 @@ h3 {
         $byDay = [];
         foreach ($checkins as $c) {
             $date = $c->date->format('Y-m-d');
-            $userName = $c->user?->name ?? 'User #' . $c->user_id;
+            $userName = $c->user?->name ?? 'User #'.$c->user_id;
             if (! isset($byUser[$userName])) {
                 $byUser[$userName] = ['user' => $userName, 'user_id' => $c->user_id, 'days' => 0, 'checkins' => []];
             }
@@ -2145,7 +2167,7 @@ h3 {
             if ($date) {
                 $byDay[$date] = ($byDay[$date] ?? 0) + 1;
             }
-            $eventName = $a->event?->name ?? 'Event #' . $a->event_id;
+            $eventName = $a->event?->name ?? 'Event #'.$a->event_id;
             if (! isset($byEvent[$eventName])) {
                 $byEvent[$eventName] = ['event' => $eventName, 'arrivals' => 0];
             }
