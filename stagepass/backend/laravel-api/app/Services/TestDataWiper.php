@@ -84,7 +84,7 @@ class TestDataWiper
             }
 
             if (in_array(self::SCOPE_USERS, $scopes, true)) {
-                $deletedUsers = $this->deleteNonProtectedUsers($actor);
+                $deletedUsers = $this->deleteAllNonProtectedUsers($actor);
             }
         } finally {
             Schema::enableForeignKeyConstraints();
@@ -135,7 +135,11 @@ class TestDataWiper
         return array_values(array_unique($tables));
     }
 
-    private function deleteNonProtectedUsers(User $actor): int
+    /**
+     * Delete every user except admins / directors / the actor.
+     * Used by danger-zone wipe and Crew “delete all” (many crew have no role assigned).
+     */
+    public function deleteAllNonProtectedUsers(User $actor): int
     {
         $protectedUserIds = DB::table('role_user')
             ->join('roles', 'roles.id', '=', 'role_user.role_id')

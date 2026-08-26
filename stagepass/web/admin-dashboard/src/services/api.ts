@@ -445,7 +445,7 @@ export const api = {
     update: (id: number, body: { name?: string; email?: string; password?: string; username?: string; pin?: string; phone?: string; role_ids?: number[] }) =>
       request<User>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (id: number) => request<void>(`/users/${id}`, { method: 'DELETE' }),
-    /** Admin: delete all users with the crew role (excludes admins and the current user). */
+    /** Admin: delete all non-admin users (excludes admins/directors and the current user). */
     deleteAllCrew: (confirm: string) =>
       request<{ message: string; deleted: number }>('/users/delete-all-crew', {
         method: 'POST',

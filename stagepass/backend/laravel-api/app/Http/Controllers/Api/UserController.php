@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Mail\UserCreatedMail;
 use App\Models\User;
+use App\Services\TestDataWiper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -201,9 +202,10 @@ class UserController extends Controller
     }
 
     /**
-     * Admin: delete all users who have the crew role (never admins / self).
+     * Admin: delete all non-admin users (Crew page lists everyone; many have no "crew" role).
+     * Never deletes admins, directors, or the current user.
      */
-    public function destroyAllCrew(Request $request): JsonResponse
+    public function destroyAllCrew(Request $request, TestDataWiper $wiper): JsonResponse
     {
         $admin = $request->user();
         if (! $admin->hasRole('super_admin') && ! $admin->hasRole('director') && ! $admin->hasRole('admin')) {
@@ -214,21 +216,7 @@ class UserController extends Controller
             'confirm' => 'required|string|in:DELETE ALL CREW',
         ]);
 
-        $protectedRoles = ['admin', 'super_admin', 'director'];
-        $query = User::query()
-            ->where('id', '!=', $admin->id)
-            ->whereHas('roles', fn ($q) => $q->where('name', 'crew'))
-            ->whereDoesntHave('roles', fn ($q) => $q->whereIn('name', $protectedRoles));
-
-        $ids = $query->pluck('id');
-        $deleted = 0;
-        foreach ($ids as $id) {
-            $user = User::find($id);
-            if ($user) {
-                $user->delete();
-                $deleted++;
-            }
-        }
+        $deleted = $wiper->deleteAllNonProtectedUsers($admin);
 
         return response()->json([
             'message' => $deleted === 0

@@ -933,8 +933,8 @@ export default function Users({
               </div>
             )}
             <p className="text-sm text-slate-700">
-              This permanently deletes every user with the <strong>crew</strong> role. Admins and your own account are
-              not deleted. This cannot be undone.
+              This permanently deletes every non-admin user (including people with no role, crew, or team leader).
+              Admins, directors, and your own account are kept. This cannot be undone.
             </p>
             <div className="mt-4 form-field">
               <label className="form-label" htmlFor="delete-all-crew-confirm">
