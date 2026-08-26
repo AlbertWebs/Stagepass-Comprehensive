@@ -1082,6 +1082,34 @@ export default function EventDetailScreen() {
                 </View>
                 <ThemedText style={[styles.sectionTitle, { color: accent }]}>Crew</ThemedText>
               </View>
+              {!isEventEnded ? (
+                <Pressable
+                  onPress={() =>
+                    handleNav(() =>
+                      router.push({
+                        pathname: '/(tabs)/admin/events/[id]/crew',
+                        params: { id: String(event.id), openAdd: '1' },
+                      })
+                    )
+                  }
+                  style={({ pressed }) => [
+                    styles.leadOpsCard,
+                    { backgroundColor: cardSurface, borderColor: leadOpsCardBorder },
+                    pressed && { opacity: 0.92 },
+                  ]}
+                >
+                  <View style={[styles.leadOpsIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
+                    <Ionicons name="person-add-outline" size={Icons.standard} color={accentBrand} />
+                  </View>
+                  <View style={styles.leadOpsTextWrap}>
+                    <ThemedText style={[styles.leadOpsTitle, { color: colors.text }]}>Onboard crew</ThemedText>
+                    <ThemedText style={[styles.leadOpsSub, { color: colors.textSecondary }]}>
+                      Select people and add them to this event
+                    </ThemedText>
+                  </View>
+                  <Ionicons name="chevron-forward" size={22} color={colors.textSecondary} />
+                </Pressable>
+              ) : null}
               <Pressable
                 onPress={() =>
                   handleNav(() =>
@@ -1095,6 +1123,7 @@ export default function EventDetailScreen() {
                   styles.leadOpsCard,
                   { backgroundColor: cardSurface, borderColor: leadOpsCardBorder },
                   pressed && { opacity: 0.92 },
+                  !isEventEnded ? { marginTop: Spacing.md } : null,
                 ]}
               >
                 <View style={[styles.leadOpsIconWrap, { backgroundColor: iconWrapBg, borderColor: iconWrapBorder }]}>
@@ -1103,7 +1132,7 @@ export default function EventDetailScreen() {
                 <View style={styles.leadOpsTextWrap}>
                   <ThemedText style={[styles.leadOpsTitle, { color: colors.text }]}>Event operations</ThemedText>
                   <ThemedText style={[styles.leadOpsSub, { color: colors.textSecondary }]}>
-                    Onboard crew, check-in, and end event
+                    Check-in, tasks, messaging, and end event
                   </ThemedText>
                 </View>
                 <Ionicons name="chevron-forward" size={22} color={colors.textSecondary} />

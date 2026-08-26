@@ -569,6 +569,17 @@ export default function EventsTab() {
                   canManageEventCrew(currentUser, item)
                     ? [
                         {
+                          label: 'Onboard',
+                          icon: 'person-add-outline',
+                          onPress: () =>
+                            handleNav(() =>
+                              router.push({
+                                pathname: '/(tabs)/admin/events/[id]/crew',
+                                params: { id: String(item.id), openAdd: '1' },
+                              })
+                            ),
+                        },
+                        {
                           label: 'Operations',
                           icon: 'briefcase-outline',
                           onPress: () =>

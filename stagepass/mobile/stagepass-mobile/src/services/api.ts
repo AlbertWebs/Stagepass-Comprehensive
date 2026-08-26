@@ -757,7 +757,16 @@ export const api = {
     list: () => request<{ data: { id: number; name: string }[] }>('/roles'),
   },
   users: {
-    list: () => request<{ data: User[] }>('/users'),
+    list: (params?: { search?: string; role?: string; per_page?: number; page?: number }) =>
+      request<{ data: User[]; current_page?: number; last_page?: number; total?: number }>('/users', {
+        params: params
+          ? (Object.fromEntries(
+              Object.entries(params)
+                .filter(([, v]) => v !== undefined && v !== '')
+                .map(([k, v]) => [k, String(v)])
+            ) as Record<string, string>)
+          : undefined,
+      }),
     get: (id: number) => request<User>(`/users/${id}`),
     create: (body: Partial<User> & { password?: string }) =>
       request<User>('/users', { method: 'POST', body: JSON.stringify(body) }),

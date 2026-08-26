@@ -1,10 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type Paginated, type Role, type User } from '@/services/api';
 import { FormModal } from '@/components/FormModal';
 import { PageHeader } from '@/components/PageHeader';
 import { Preloader } from '@/components/Preloader';
 import { SectionCard } from '@/components/SectionCard';
 import { useAuth } from '@/contexts/AuthContext';
+import {
+  downloadCrewExcelTemplate,
+  parseCrewExcelFile,
+  resolveRoleIdsFromCell,
+  type CrewExcelRow,
+} from '@/utils/crewExcelImport';
 
 function hasAdminAccess(user: { roles?: Array<{ name?: string }> } | null): boolean {
   const names = (user?.roles ?? [])
@@ -54,6 +60,8 @@ type UsersPageProps = {
   createButtonLabel?: string;
   /** Crew page: show “Test push” per row (admins only; uses /checkins/send-push). */
   showPushTestActions?: boolean;
+  /** Crew page: download Excel template + bulk upload. */
+  showExcelImport?: boolean;
 };
 
 export default function Users({
@@ -62,9 +70,11 @@ export default function Users({
   sectionLabel = 'Team members',
   createButtonLabel = 'Create user',
   showPushTestActions = false,
+  showExcelImport = false,
 }: UsersPageProps = {}) {
   const { user: authUser } = useAuth();
   const canSendTestPush = showPushTestActions && hasAdminAccess(authUser);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [data, setData] = useState<Paginated<User> | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [search, setSearch] = useState('');
@@ -83,6 +93,14 @@ export default function Users({
   const [form, setForm] = useState<UserFormState>(emptyForm());
   const [pushTestUserId, setPushTestUserId] = useState<number | null>(null);
   const [pushTestMessage, setPushTestMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importPreview, setImportPreview] = useState<CrewExcelRow[]>([]);
+  const [importParseErrors, setImportParseErrors] = useState<{ rowNumber: number; message: string }[]>([]);
+  const [importResult, setImportResult] = useState<{
+    created: number;
+    failed: { rowNumber: number; email: string; message: string }[];
+  } | null>(null);
 
   const fetchUsers = useCallback(() => {
     api.users
@@ -148,6 +166,84 @@ export default function Users({
     setWelcomePin('');
     setWelcomeError(null);
     setError(null);
+    setImportOpen(false);
+    setImportPreview([]);
+    setImportParseErrors([]);
+    setImportResult(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const openImportModal = () => {
+    setImportPreview([]);
+    setImportParseErrors([]);
+    setImportResult(null);
+    setError(null);
+    setImportOpen(true);
+  };
+
+  const handleExcelFileSelected = async (file: File | null) => {
+    if (!file) return;
+    setImportResult(null);
+    setError(null);
+    try {
+      const buffer = await file.arrayBuffer();
+      const { rows, errors } = parseCrewExcelFile(buffer);
+      setImportPreview(rows);
+      setImportParseErrors(errors);
+      if (rows.length === 0 && errors.length === 0) {
+        setImportParseErrors([{ rowNumber: 0, message: 'No crew rows found in the file.' }]);
+      }
+    } catch (err) {
+      setImportPreview([]);
+      setImportParseErrors([
+        {
+          rowNumber: 0,
+          message: err instanceof Error ? err.message : 'Could not read this Excel file.',
+        },
+      ]);
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (importPreview.length === 0) return;
+    setImporting(true);
+    setError(null);
+    const failed: { rowNumber: number; email: string; message: string }[] = [];
+    let created = 0;
+
+    for (const row of importPreview) {
+      const { roleIds, unknownNames } = resolveRoleIdsFromCell(row.roles, roles);
+      if (unknownNames.length > 0) {
+        failed.push({
+          rowNumber: row.rowNumber,
+          email: row.email,
+          message: `Unknown role(s): ${unknownNames.join(', ')}`,
+        });
+        continue;
+      }
+      try {
+        await api.users.create({
+          name: row.name,
+          email: row.email,
+          password: row.password,
+          username: row.username,
+          pin: row.pin,
+          phone: row.phone,
+          role_ids: roleIds.length ? roleIds : undefined,
+        });
+        created += 1;
+      } catch (err) {
+        failed.push({
+          rowNumber: row.rowNumber,
+          email: row.email,
+          message: err instanceof Error ? err.message : 'Failed to create',
+        });
+      }
+    }
+
+    setImportResult({ created, failed });
+    setImporting(false);
+    if (created > 0) fetchUsers();
   };
 
   const toggleRole = (roleId: number) => {
@@ -370,9 +466,25 @@ export default function Users({
         title={title}
         subtitle={subtitle}
         action={
-          <button type="button" onClick={openCreate} className="btn-brand">
-            {createButtonLabel}
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {showExcelImport ? (
+              <>
+                <button
+                  type="button"
+                  onClick={downloadCrewExcelTemplate}
+                  className="btn-secondary"
+                >
+                  Download Excel template
+                </button>
+                <button type="button" onClick={openImportModal} className="btn-secondary">
+                  Upload Excel
+                </button>
+              </>
+            ) : null}
+            <button type="button" onClick={openCreate} className="btn-brand">
+              {createButtonLabel}
+            </button>
+          </div>
         }
       />
 
@@ -534,6 +646,134 @@ export default function Users({
           </div>
         )}
       </SectionCard>
+
+      {importOpen && (
+        <FormModal title="Upload crew Excel" onClose={closeModals} wide>
+          <div className="form-card-body space-y-4">
+            <p className="text-sm text-slate-600">
+              Download the template, fill in crew details, then upload the <strong>.xlsx</strong> file. Required
+              columns: <code className="text-xs">name</code>, <code className="text-xs">email</code>,{' '}
+              <code className="text-xs">password</code> (min 8). Optional:{' '}
+              <code className="text-xs">username</code>, <code className="text-xs">pin</code>,{' '}
+              <code className="text-xs">phone</code>, <code className="text-xs">roles</code> (e.g.{' '}
+              <code className="text-xs">crew</code>).
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={downloadCrewExcelTemplate} className="btn-secondary">
+                Download template
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+              >
+                Choose Excel file
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                className="hidden"
+                onChange={(e) => {
+                  void handleExcelFileSelected(e.target.files?.[0] ?? null);
+                }}
+              />
+            </div>
+
+            {importParseErrors.length > 0 ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                <p className="font-semibold">Could not use some rows</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {importParseErrors.slice(0, 8).map((err) => (
+                    <li key={`${err.rowNumber}-${err.message}`}>
+                      {err.rowNumber > 0 ? `Row ${err.rowNumber}: ` : ''}
+                      {err.message}
+                    </li>
+                  ))}
+                </ul>
+                {importParseErrors.length > 8 ? (
+                  <p className="mt-2 text-xs">…and {importParseErrors.length - 8} more</p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {importPreview.length > 0 ? (
+              <div className="overflow-x-auto rounded-lg border border-slate-200">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2">Row</th>
+                      <th className="px-3 py-2">Name</th>
+                      <th className="px-3 py-2">Email</th>
+                      <th className="px-3 py-2">Username</th>
+                      <th className="px-3 py-2">Roles</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importPreview.slice(0, 50).map((row) => (
+                      <tr key={`${row.rowNumber}-${row.email}`} className="border-t border-slate-100">
+                        <td className="px-3 py-2 text-slate-500">{row.rowNumber}</td>
+                        <td className="px-3 py-2 font-medium text-slate-900">{row.name}</td>
+                        <td className="px-3 py-2 text-slate-700">{row.email}</td>
+                        <td className="px-3 py-2 text-slate-600">{row.username ?? '–'}</td>
+                        <td className="px-3 py-2 text-slate-600">{row.roles?.trim() || 'crew (default)'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {importPreview.length > 50 ? (
+                  <p className="border-t border-slate-100 px-3 py-2 text-xs text-slate-500">
+                    Showing first 50 of {importPreview.length} rows
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {importResult ? (
+              <div
+                className={`rounded-lg border px-4 py-3 text-sm ${
+                  importResult.failed.length === 0
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                    : 'border-slate-200 bg-slate-50 text-slate-800'
+                }`}
+              >
+                <p className="font-semibold">
+                  Created {importResult.created} of {importPreview.length} crew member
+                  {importPreview.length === 1 ? '' : 's'}.
+                </p>
+                {importResult.failed.length > 0 ? (
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-red-700">
+                    {importResult.failed.slice(0, 10).map((f) => (
+                      <li key={`${f.rowNumber}-${f.email}`}>
+                        Row {f.rowNumber} ({f.email}): {f.message}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="form-actions">
+              <button type="button" onClick={closeModals} className="btn-secondary" disabled={importing}>
+                {importResult ? 'Close' : 'Cancel'}
+              </button>
+              {!importResult ? (
+                <button
+                  type="button"
+                  className="btn-brand disabled:opacity-50"
+                  disabled={importing || importPreview.length === 0}
+                  onClick={() => void handleConfirmImport()}
+                >
+                  {importing
+                    ? 'Importing…'
+                    : `Import ${importPreview.length || ''} crew`.replace(/\s+/g, ' ').trim()}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </FormModal>
+      )}
 
       {createOpen && (
         <FormModal title="Create user" onClose={closeModals} wide>

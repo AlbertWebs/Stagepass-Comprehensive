@@ -1,9 +1,9 @@
 /**
- * Admin: assign and remove crew for an event.
+ * Team leader / admin: onboard crew onto an event — select people and add them.
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,6 +11,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,20 +31,26 @@ import { ThemedView } from '@/components/themed-view';
 import { BorderRadius, Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 
-type CrewMember = { id: number; name: string; pivot?: { checkin_time?: string; checkout_time?: string } };
+type CrewMember = {
+  id: number;
+  name: string;
+  pivot?: { checkin_time?: string; checkout_time?: string; role_in_event?: string | null };
+};
 
 export default function AdminEventCrewScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, openAdd } = useLocalSearchParams<{ id: string; openAdd?: string }>();
   const router = useRouter();
-  const { colors } = useStagePassTheme();
+  const { colors, isDark } = useStagePassTheme();
   const insets = useSafeAreaInsets();
   const [event, setEvent] = useState<EventType | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [usersLoading, setUsersLoading] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [transferModalVisible, setTransferModalVisible] = useState(false);
   const [transferMember, setTransferMember] = useState<CrewMember | null>(null);
-  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
+  const [personSearch, setPersonSearch] = useState('');
   const [roleInEvent, setRoleInEvent] = useState('');
   const [assigning, setAssigning] = useState(false);
   const [removingId, setRemovingId] = useState<number | null>(null);
@@ -64,12 +71,19 @@ export default function AdminEventCrewScreen() {
     }
   }, [eventId]);
 
-  const loadUsers = useCallback(async () => {
+  const loadUsers = useCallback(async (search?: string) => {
+    setUsersLoading(true);
     try {
-      const res = await api.users.list();
+      const res = await api.users.list({
+        per_page: 200,
+        search: search?.trim() || undefined,
+      });
       setUsers(Array.isArray(res?.data) ? res.data : []);
     } catch {
       setUsers([]);
+      Alert.alert('Could not load people', 'Check your connection and try again.');
+    } finally {
+      setUsersLoading(false);
     }
   }, []);
 
@@ -79,52 +93,79 @@ export default function AdminEventCrewScreen() {
     Promise.all([loadEvent(), loadUsers()]).finally(() => setLoading(false));
   }, [eventId, loadEvent, loadUsers]);
 
+  useEffect(() => {
+    if (openAdd === '1' && !loading && event && canManage) {
+      setAddModalVisible(true);
+    }
+  }, [openAdd, loading, event, canManage]);
+
+  useEffect(() => {
+    if (!addModalVisible) return;
+    const t = setTimeout(() => {
+      void loadUsers(personSearch);
+    }, 280);
+    return () => clearTimeout(t);
+  }, [personSearch, addModalVisible, loadUsers]);
+
+  const alreadyAssignedIds = useMemo(() => new Set(crew.map((c) => c.id)), [crew]);
+  const availableUsers = useMemo(
+    () => users.filter((u) => !alreadyAssignedIds.has(u.id)),
+    [users, alreadyAssignedIds]
+  );
+
+  const toggleUser = (userId: number) => {
+    setSelectedUserIds((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const closeAddModal = () => {
+    setAddModalVisible(false);
+    setSelectedUserIds([]);
+    setRoleInEvent('');
+    setPersonSearch('');
+  };
+
   const handleAddCrew = async () => {
-    const uid = selectedUserId ? Number(selectedUserId) : 0;
-    if (!uid || !eventId) return;
-    if (crew.some((c) => c.id === uid)) {
-      Alert.alert('Already assigned', 'This person is already on the crew.');
+    if (!eventId || selectedUserIds.length === 0) return;
+    setAssigning(true);
+    const role = roleInEvent.trim() || undefined;
+    const failed: string[] = [];
+    let added = 0;
+
+    for (const uid of selectedUserIds) {
+      if (alreadyAssignedIds.has(uid)) continue;
+      try {
+        await api.events.assignUser(eventId, uid, role);
+        added += 1;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Could not add';
+        const person = users.find((u) => u.id === uid)?.name ?? `User #${uid}`;
+        if (/already|overlap|conflict|assigned/i.test(msg)) {
+          failed.push(`${person}: ${msg}`);
+        } else {
+          failed.push(`${person}: ${msg}`);
+        }
+      }
+    }
+
+    await loadEvent();
+    setAssigning(false);
+
+    if (added > 0 && failed.length === 0) {
+      closeAddModal();
+      Alert.alert('Crew onboarded', `${added} ${added === 1 ? 'person was' : 'people were'} added to this event.`);
       return;
     }
-    setAssigning(true);
-    try {
-      await api.events.assignUser(eventId, uid, roleInEvent.trim() || undefined);
-      await loadEvent();
-      setAddModalVisible(false);
-      setSelectedUserId('');
-      setRoleInEvent('');
-    } catch (e) {
-      const body = (e as Error & { responseBody?: { conflicting_events?: Array<{ id: number; name: string }> } })
-        .responseBody;
-      const conflict = body?.conflicting_events?.[0];
-      if (conflict) {
-        Alert.alert(
-          'Schedule conflict',
-          `This person is on "${conflict.name}". Move them from that event instead?`,
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Transfer',
-              onPress: async () => {
-                try {
-                  await api.events.transferUser(conflict.id, uid, eventId);
-                  await loadEvent();
-                  setAddModalVisible(false);
-                  setSelectedUserId('');
-                  setRoleInEvent('');
-                } catch (transferErr) {
-                  Alert.alert('Transfer failed', transferErr instanceof Error ? transferErr.message : 'Could not transfer.');
-                }
-              },
-            },
-          ]
-        );
-        return;
-      }
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not add crew member.');
-    } finally {
-      setAssigning(false);
+    if (added > 0 && failed.length > 0) {
+      closeAddModal();
+      Alert.alert(
+        'Partially added',
+        `${added} added. ${failed.length} could not be added:\n${failed.slice(0, 4).join('\n')}`
+      );
+      return;
     }
+    Alert.alert('Could not add crew', failed[0] ?? 'Try again.');
   };
 
   const handleCheckInOnBehalf = async (userId: number) => {
@@ -149,28 +190,24 @@ export default function AdminEventCrewScreen() {
 
   const handleRemove = (userId: number) => {
     if (!eventId) return;
-    Alert.alert(
-      'Remove from crew',
-      'Remove this person from the event crew?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            setRemovingId(userId);
-            try {
-              await api.events.removeUser(eventId, userId);
-              await loadEvent();
-            } catch (e) {
-              Alert.alert('Error', e instanceof Error ? e.message : 'Could not remove.');
-            } finally {
-              setRemovingId(null);
-            }
-          },
+    Alert.alert('Remove from crew', 'Remove this person from the event crew?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          setRemovingId(userId);
+          try {
+            await api.events.removeUser(eventId, userId);
+            await loadEvent();
+          } catch (e) {
+            Alert.alert('Error', e instanceof Error ? e.message : 'Could not remove.');
+          } finally {
+            setRemovingId(null);
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const openTransferModal = (member: CrewMember) => {
@@ -178,15 +215,15 @@ export default function AdminEventCrewScreen() {
     setTransferModalVisible(true);
   };
 
-  const alreadyAssignedIds = crew.map((c) => c.id);
-  const availableUsers = users.filter((u) => !alreadyAssignedIds.includes(u.id));
-  const isEnded = event?.status === 'completed' || event?.status === 'closed' || event?.status === 'done_for_the_day';
+  const isEnded =
+    event?.status === 'completed' || event?.status === 'closed' || event?.status === 'done_for_the_day';
   const canManualCheckIn = event != null && canLeaderManualCheckIn(event);
+  const searchBorder = isDark ? colors.border : themeBlue + '33';
 
   if (loading || !event) {
     return (
       <ThemedView style={styles.container}>
-        <AppHeader title="Crew" showBack />
+        <AppHeader title="Onboard crew" showBack />
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={themeYellow} />
           <ThemedText style={[styles.loadingText, { color: colors.textSecondary }]}>Loading…</ThemedText>
@@ -208,42 +245,53 @@ export default function AdminEventCrewScreen() {
           </ThemedText>
         ) : !canManage ? (
           <ThemedText style={[styles.readOnlyHint, { color: colors.textSecondary, borderColor: colors.border }]}>
-            Only an admin or the team leader assigned to this event can add, remove, or transfer crew. If you lead
-            this event but do not see actions, ask an admin to set you as team leader on the event.
+            Only an admin or the team leader assigned to this event can onboard crew. If you lead this event but do
+            not see actions, ask an admin to set you as team leader on the event.
           </ThemedText>
-        ) : null}
+        ) : (
+          <ThemedText style={[styles.leadHint, { color: colors.textSecondary }]}>
+            Select people and add them to this event. You can onboard more than one at a time.
+          </ThemedText>
+        )}
 
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={styles.cardHeader}>
-            <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Assigned crew</ThemedText>
+            <ThemedText style={[styles.cardTitle, { color: colors.text }]}>
+              Assigned crew ({crew.length})
+            </ThemedText>
             {!isEnded && canManage && (
               <Pressable
                 style={({ pressed }) => [styles.addBtn, { opacity: pressed ? 0.8 : 1 }]}
-                onPress={() => setAddModalVisible(true)}
+                onPress={() => {
+                  setSelectedUserIds([]);
+                  setPersonSearch('');
+                  setAddModalVisible(true);
+                  void loadUsers();
+                }}
               >
                 <Ionicons name="person-add" size={20} color={colors.brandIcon} />
-                <ThemedText style={[styles.addBtnText, { color: colors.brandText }]}>Add</ThemedText>
+                <ThemedText style={[styles.addBtnText, { color: colors.brandText }]}>Onboard</ThemedText>
               </Pressable>
             )}
           </View>
           {crew.length === 0 ? (
             <ThemedText style={[styles.empty, { color: colors.textSecondary }]}>
               {canManage && !isEnded
-                ? 'No crew assigned yet. Tap Add to assign crew.'
+                ? 'No crew assigned yet. Tap Onboard to select and add people.'
                 : 'No crew assigned yet.'}
             </ThemedText>
           ) : (
             crew.map((member) => (
-              <View
-                key={member.id}
-                style={[styles.crewRow, { borderBottomColor: colors.border }]}
-              >
+              <View key={member.id} style={[styles.crewRow, { borderBottomColor: colors.border }]}>
                 <View style={styles.crewInfo}>
                   <ThemedText style={[styles.crewName, { color: colors.text }]}>{member.name}</ThemedText>
-                  {member.pivot?.checkin_time ? (
+                  {member.pivot?.role_in_event ? (
                     <ThemedText style={[styles.crewMeta, { color: colors.textSecondary }]}>
-                      Checked in
+                      {member.pivot.role_in_event}
                     </ThemedText>
+                  ) : null}
+                  {member.pivot?.checkin_time ? (
+                    <ThemedText style={[styles.crewMeta, { color: colors.textSecondary }]}>Checked in</ThemedText>
                   ) : null}
                 </View>
                 {!isEnded && canManage && (
@@ -296,36 +344,91 @@ export default function AdminEventCrewScreen() {
       </ScrollView>
 
       <Modal visible={addModalVisible} transparent animationType="fade">
-        <Pressable style={styles.modalBackdrop} onPress={() => setAddModalVisible(false)}>
-          <Pressable style={[styles.modalContent, { backgroundColor: colors.background }]} onPress={(e) => e.stopPropagation()}>
-            <ThemedText style={[styles.modalTitle, { color: colors.text }]}>Add to crew</ThemedText>
-            <ThemedText style={[styles.label, { color: colors.textSecondary }]}>Person</ThemedText>
-            <View style={styles.pickerWrap}>
-              <ScrollView style={styles.pickerScroll} nestedScrollEnabled>
-                {availableUsers.length === 0 ? (
-                  <ThemedText style={[styles.empty, { color: colors.textSecondary }]}>
-                    No other users available to add.
-                  </ThemedText>
-                ) : (
-                  availableUsers.map((u) => (
-                    <Pressable
-                      key={u.id}
-                      style={[
-                        styles.pickerItem,
-                        { backgroundColor: selectedUserId === String(u.id) ? themeYellow + '33' : 'transparent' },
-                      ]}
-                      onPress={() => setSelectedUserId(String(u.id))}
-                    >
-                      <ThemedText style={[styles.pickerItemText, { color: colors.text }]}>{u.name}</ThemedText>
-                      {u.email ? (
-                        <ThemedText style={[styles.pickerItemSub, { color: colors.textSecondary }]}>{u.email}</ThemedText>
-                      ) : null}
-                    </Pressable>
-                  ))
-                )}
-              </ScrollView>
+        <Pressable style={styles.modalBackdrop} onPress={closeAddModal}>
+          <Pressable
+            style={[styles.modalContent, { backgroundColor: colors.background }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <ThemedText style={[styles.modalTitle, { color: colors.text }]}>Onboard crew</ThemedText>
+            <ThemedText style={[styles.modalSub, { color: colors.textSecondary }]}>
+              Select one or more people to add to this event.
+            </ThemedText>
+
+            <View style={[styles.searchWrap, { borderColor: searchBorder, backgroundColor: colors.surface }]}>
+              <Ionicons name="search" size={18} color={colors.textSecondary} />
+              <TextInput
+                value={personSearch}
+                onChangeText={setPersonSearch}
+                placeholder="Search by name or email"
+                placeholderTextColor={colors.textSecondary}
+                style={[styles.searchInput, { color: colors.text }]}
+                autoCorrect={false}
+                autoCapitalize="none"
+              />
+              {personSearch ? (
+                <Pressable onPress={() => setPersonSearch('')} hitSlop={8}>
+                  <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
+                </Pressable>
+              ) : null}
             </View>
-            <ThemedText style={[styles.label, { color: colors.textSecondary }]}>Role (optional)</ThemedText>
+
+            <ThemedText style={[styles.label, { color: colors.textSecondary }]}>
+              People {selectedUserIds.length > 0 ? `· ${selectedUserIds.length} selected` : ''}
+            </ThemedText>
+            <View style={[styles.pickerWrap, { borderColor: searchBorder }]}>
+              {usersLoading ? (
+                <View style={styles.pickerLoading}>
+                  <ActivityIndicator color={themeYellow} />
+                </View>
+              ) : (
+                <ScrollView style={styles.pickerScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                  {availableUsers.length === 0 ? (
+                    <ThemedText style={[styles.empty, { color: colors.textSecondary, padding: Spacing.md }]}>
+                      {personSearch.trim()
+                        ? 'No matching people found.'
+                        : 'No other users available to add.'}
+                    </ThemedText>
+                  ) : (
+                    availableUsers.map((u) => {
+                      const selected = selectedUserIds.includes(u.id);
+                      return (
+                        <Pressable
+                          key={u.id}
+                          style={[
+                            styles.pickerItem,
+                            {
+                              backgroundColor: selected ? themeYellow + '33' : 'transparent',
+                              borderBottomColor: colors.border,
+                            },
+                          ]}
+                          onPress={() => toggleUser(u.id)}
+                        >
+                          <View style={styles.pickerCheck}>
+                            <Ionicons
+                              name={selected ? 'checkbox' : 'square-outline'}
+                              size={22}
+                              color={selected ? themeYellow : colors.textSecondary}
+                            />
+                          </View>
+                          <View style={styles.pickerTextWrap}>
+                            <ThemedText style={[styles.pickerItemText, { color: colors.text }]}>{u.name}</ThemedText>
+                            {u.email ? (
+                              <ThemedText style={[styles.pickerItemSub, { color: colors.textSecondary }]}>
+                                {u.email}
+                              </ThemedText>
+                            ) : null}
+                          </View>
+                        </Pressable>
+                      );
+                    })
+                  )}
+                </ScrollView>
+              )}
+            </View>
+
+            <ThemedText style={[styles.label, { color: colors.textSecondary }]}>
+              Role for selected (optional)
+            </ThemedText>
             <StagePassInput
               value={roleInEvent}
               onChangeText={setRoleInEvent}
@@ -333,16 +436,17 @@ export default function AdminEventCrewScreen() {
               style={styles.input}
             />
             <View style={styles.modalActions}>
+              <StagePassButton title="Cancel" variant="outline" onPress={closeAddModal} style={styles.modalBtn} />
               <StagePassButton
-                title="Cancel"
-                variant="outline"
-                onPress={() => setAddModalVisible(false)}
-                style={styles.modalBtn}
-              />
-              <StagePassButton
-                title={assigning ? 'Adding…' : 'Add'}
+                title={
+                  assigning
+                    ? 'Adding…'
+                    : selectedUserIds.length > 1
+                      ? `Add ${selectedUserIds.length}`
+                      : 'Add'
+                }
                 onPress={handleAddCrew}
-                disabled={assigning || !selectedUserId}
+                disabled={assigning || selectedUserIds.length === 0}
                 style={[styles.modalBtn, { backgroundColor: themeYellow }]}
               />
             </View>
@@ -372,6 +476,7 @@ const styles = StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: Spacing.md },
   loadingText: { fontSize: 15 },
   scroll: { padding: Spacing.lg },
+  leadHint: { fontSize: 14, lineHeight: 20, marginBottom: Spacing.md },
   readOnlyHint: {
     fontSize: 13,
     lineHeight: 19,
@@ -382,7 +487,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   card: { padding: Spacing.lg, borderRadius: BorderRadius.lg, borderWidth: 1, marginBottom: Spacing.lg },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
   cardTitle: { fontSize: 17, fontWeight: '700' },
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   addBtnText: { fontSize: 15, fontWeight: '600' },
@@ -394,7 +504,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  crewInfo: { flex: 1 },
+  crewInfo: { flex: 1, minWidth: 0 },
   crewName: { fontSize: 16, fontWeight: '600' },
   crewMeta: { fontSize: 12, marginTop: 2 },
   crewActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
@@ -422,13 +532,40 @@ const styles = StyleSheet.create({
   modalContent: {
     borderRadius: BorderRadius.xl,
     padding: Spacing.lg,
-    maxHeight: '80%',
+    maxHeight: '88%',
   },
-  modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: Spacing.md },
+  modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: Spacing.xs },
+  modalSub: { fontSize: 13, lineHeight: 18, marginBottom: Spacing.md },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 10,
+    marginBottom: Spacing.md,
+  },
+  searchInput: { flex: 1, fontSize: 15, padding: 0 },
   label: { fontSize: 13, marginBottom: Spacing.xs, fontWeight: '600' },
-  pickerWrap: { maxHeight: 200, marginBottom: Spacing.md, borderWidth: 1, borderRadius: BorderRadius.md, borderColor: 'rgba(0,0,0,0.1)' },
-  pickerScroll: { maxHeight: 200 },
-  pickerItem: { padding: Spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(0,0,0,0.08)' },
+  pickerWrap: {
+    maxHeight: 260,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    overflow: 'hidden',
+  },
+  pickerScroll: { maxHeight: 260 },
+  pickerLoading: { padding: Spacing.xl, alignItems: 'center' },
+  pickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.sm,
+  },
+  pickerCheck: { paddingTop: 1 },
+  pickerTextWrap: { flex: 1, minWidth: 0 },
   pickerItemText: { fontSize: 15, fontWeight: '600' },
   pickerItemSub: { fontSize: 12, marginTop: 2 },
   input: { marginBottom: Spacing.md },

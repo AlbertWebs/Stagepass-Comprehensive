@@ -226,14 +226,26 @@ export default function AdminEventOperationsScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.opsRow, { borderBottomColor: opsBorder }, pressed && styles.opsRowPressed]}
-            onPress={navTo('/(tabs)/admin/events/[id]/crew')}
+            onPress={() =>
+              handleNav(() =>
+                router.push({
+                  pathname: '/(tabs)/admin/events/[id]/crew',
+                  params: {
+                    id: String(eventId),
+                    ...(canManageCrew && !isEnded ? { openAdd: '1' } : {}),
+                  },
+                })
+              )
+            }
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
               <Ionicons name="people" size={20} color={themeBlue} />
             </View>
             <View style={styles.opsLabelWrap}>
-              <ThemedText style={[styles.opsLabel, { color: colors.text }]}>Assign crew</ThemedText>
-              <ThemedText style={[styles.opsSub, { color: colors.textSecondary }]}>{crewCount} assigned</ThemedText>
+              <ThemedText style={[styles.opsLabel, { color: colors.text }]}>Onboard crew</ThemedText>
+              <ThemedText style={[styles.opsSub, { color: colors.textSecondary }]}>
+                {crewCount} assigned · select and add people
+              </ThemedText>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
           </Pressable>

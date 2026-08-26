@@ -96,10 +96,11 @@ export default function App() {
           element={
             <Users
               title="Crew"
-              subtitle="Manage crew members. Search, create, edit or delete and assign roles."
+              subtitle="Manage crew members. Search, create, edit or delete and assign roles. Download an Excel template to add many people at once."
               sectionLabel="Crew members"
               createButtonLabel="Add crew"
               showPushTestActions
+              showExcelImport
             />
           }
         />
