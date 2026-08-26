@@ -445,6 +445,12 @@ export const api = {
     update: (id: number, body: { name?: string; email?: string; password?: string; username?: string; pin?: string; phone?: string; role_ids?: number[] }) =>
       request<User>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (id: number) => request<void>(`/users/${id}`, { method: 'DELETE' }),
+    /** Admin: delete all users with the crew role (excludes admins and the current user). */
+    deleteAllCrew: (confirm: string) =>
+      request<{ message: string; deleted: number }>('/users/delete-all-crew', {
+        method: 'POST',
+        body: JSON.stringify({ confirm }),
+      }),
     /** Resend welcome / sign-in email. Optional password and/or PIN are applied before sending (plain values appear in the email). */
     sendWelcomeEmail: (id: number, body?: { password?: string; pin?: string }) =>
       request<{ message: string }>(`/users/${id}/welcome-email`, {

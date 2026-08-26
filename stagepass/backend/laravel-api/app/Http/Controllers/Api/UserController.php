@@ -201,6 +201,44 @@ class UserController extends Controller
     }
 
     /**
+     * Admin: delete all users who have the crew role (never admins / self).
+     */
+    public function destroyAllCrew(Request $request): JsonResponse
+    {
+        $admin = $request->user();
+        if (! $admin->hasRole('super_admin') && ! $admin->hasRole('director') && ! $admin->hasRole('admin')) {
+            return response()->json(['message' => 'Only admins can delete all crew members.'], 403);
+        }
+
+        $request->validate([
+            'confirm' => 'required|string|in:DELETE ALL CREW',
+        ]);
+
+        $protectedRoles = ['admin', 'super_admin', 'director'];
+        $query = User::query()
+            ->where('id', '!=', $admin->id)
+            ->whereHas('roles', fn ($q) => $q->where('name', 'crew'))
+            ->whereDoesntHave('roles', fn ($q) => $q->whereIn('name', $protectedRoles));
+
+        $ids = $query->pluck('id');
+        $deleted = 0;
+        foreach ($ids as $id) {
+            $user = User::find($id);
+            if ($user) {
+                $user->delete();
+                $deleted++;
+            }
+        }
+
+        return response()->json([
+            'message' => $deleted === 0
+                ? 'No crew members were deleted.'
+                : "Deleted {$deleted} crew member".($deleted === 1 ? '' : 's').'.',
+            'deleted' => $deleted,
+        ]);
+    }
+
+    /**
      * Admin: set or reset another user's PIN (no current PIN required).
      */
     public function setPin(Request $request, User $user): JsonResponse

@@ -62,6 +62,8 @@ type UsersPageProps = {
   showPushTestActions?: boolean;
   /** Crew page: download Excel template + bulk upload. */
   showExcelImport?: boolean;
+  /** Crew page: dangerous action to delete all crew-role users. */
+  showDeleteAllCrew?: boolean;
 };
 
 export default function Users({
@@ -71,9 +73,11 @@ export default function Users({
   createButtonLabel = 'Create user',
   showPushTestActions = false,
   showExcelImport = false,
+  showDeleteAllCrew = false,
 }: UsersPageProps = {}) {
   const { user: authUser } = useAuth();
   const canSendTestPush = showPushTestActions && hasAdminAccess(authUser);
+  const canDeleteAllCrew = showDeleteAllCrew && hasAdminAccess(authUser);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [data, setData] = useState<Paginated<User> | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -82,6 +86,8 @@ export default function Users({
   const [createOpen, setCreateOpen] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
   const [deleteUser, setDeleteUser] = useState<User | null>(null);
+  const [deleteAllCrewOpen, setDeleteAllCrewOpen] = useState(false);
+  const [deleteAllCrewConfirm, setDeleteAllCrewConfirm] = useState('');
   const [welcomeUser, setWelcomeUser] = useState<User | null>(null);
   const [welcomePassword, setWelcomePassword] = useState('');
   const [welcomePin, setWelcomePin] = useState('');
@@ -170,6 +176,8 @@ export default function Users({
     setImportPreview([]);
     setImportParseErrors([]);
     setImportResult(null);
+    setDeleteAllCrewOpen(false);
+    setDeleteAllCrewConfirm('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -312,6 +320,26 @@ export default function Users({
       fetchUsers();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete user');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteAllCrew = async () => {
+    if (deleteAllCrewConfirm !== 'DELETE ALL CREW') return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await api.users.deleteAllCrew('DELETE ALL CREW');
+      closeModals();
+      setPushTestMessage({
+        type: 'success',
+        text: res.message || `Deleted ${res.deleted} crew member(s).`,
+      });
+      setPage(1);
+      fetchUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete all crew');
     } finally {
       setSaving(false);
     }
@@ -480,6 +508,19 @@ export default function Users({
                   Upload Excel
                 </button>
               </>
+            ) : null}
+            {canDeleteAllCrew ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  setDeleteAllCrewConfirm('');
+                  setDeleteAllCrewOpen(true);
+                }}
+                className="rounded-xl border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-50"
+              >
+                Delete all crew
+              </button>
             ) : null}
             <button type="button" onClick={openCreate} className="btn-brand">
               {createButtonLabel}
@@ -877,6 +918,54 @@ export default function Users({
                 className="rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
               >
                 {saving ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </FormModal>
+      )}
+
+      {deleteAllCrewOpen && (
+        <FormModal title="Delete all crew" onClose={closeModals} wide={false}>
+          <div className="px-6 py-4">
+            {error && (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+                {error}
+              </div>
+            )}
+            <p className="text-sm text-slate-700">
+              This permanently deletes every user with the <strong>crew</strong> role. Admins and your own account are
+              not deleted. This cannot be undone.
+            </p>
+            <div className="mt-4 form-field">
+              <label className="form-label" htmlFor="delete-all-crew-confirm">
+                Type <code className="text-xs">DELETE ALL CREW</code> to confirm
+              </label>
+              <input
+                id="delete-all-crew-confirm"
+                type="text"
+                value={deleteAllCrewConfirm}
+                onChange={(e) => setDeleteAllCrewConfirm(e.target.value)}
+                className="form-input"
+                placeholder="DELETE ALL CREW"
+                autoComplete="off"
+              />
+            </div>
+            <div className="mt-6 flex justify-end gap-2 border-t border-slate-200 pt-4">
+              <button
+                type="button"
+                onClick={closeModals}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteAllCrew()}
+                disabled={saving || deleteAllCrewConfirm !== 'DELETE ALL CREW'}
+                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {saving ? 'Deleting…' : 'Delete all crew'}
               </button>
             </div>
           </div>

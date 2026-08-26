@@ -101,6 +101,7 @@ export default function App() {
               createButtonLabel="Add crew"
               showPushTestActions
               showExcelImport
+              showDeleteAllCrew
             />
           }
         />
