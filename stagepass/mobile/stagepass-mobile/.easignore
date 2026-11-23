@@ -1,14 +1,22 @@
 # Smaller/faster EAS uploads — adjust if a path is required for your build
 .git
 .gitignore
+node_modules/
+dist/
+dist-buildcheck/
+web-build/
+android/
+ios/
+expo-env.d.ts
 **/__tests__/**
 **/*.test.ts
 **/*.test.tsx
 **/*.spec.ts
 **/*.spec.tsx
 coverage
-.expo/web
-.expo/types
+.expo/
 .expo-export-check
 *.log
 .DS_Store
+.env
+.env.*

@@ -37,6 +37,9 @@ if (process.env.EAS_BUILD_PROFILE === 'production') {
 }
 
 const googlePlacesApiKey =
+  process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ||
+  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
+  process.env.VITE_GOOGLE_MAPS_API_KEY ||
   env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ||
   env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
   env.VITE_GOOGLE_MAPS_API_KEY;

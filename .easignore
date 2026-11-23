@@ -1,2 +1,12 @@
 stagepass/backend/laravel-api/storage/app/public
 stagepass/backend/laravel-api/public/storage
+.git/
+**/.git/
+**/node_modules/
+**/.expo/
+**/dist/
+**/dist-buildcheck/
+**/coverage/
+**/.env
+**/.env.*
+**/database.sqlite
