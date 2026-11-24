@@ -12,9 +12,9 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
+import { StagepassTextInput as TextInput } from '@/components/StagepassTextInput';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api, type TaskItem, type TaskStatus } from '~/services/api';
 import { AppHeader } from '@/components/AppHeader';

@@ -34,19 +34,32 @@ class FcmSender
             return false;
         }
 
-        $payload = [
-            'message' => [
-                'token' => $token,
+        $message = [
+            'token' => $token,
+            'notification' => [
+                'title' => $title,
+                'body' => $body,
+            ],
+            'android' => [
+                'priority' => 'HIGH',
                 'notification' => [
-                    'title' => $title,
-                    'body' => $body,
+                    'channel_id' => 'default',
+                    'sound' => 'default',
                 ],
-                'data' => $this->stringifyData($data),
             ],
         ];
+        // FCM expects `data` to be a JSON object. An empty PHP array encodes as
+        // `[]` (a list), which FCM rejects because `data` must be a string map.
+        if ($data !== []) {
+            $message['data'] = $this->stringifyData($data);
+        }
+        $payload = ['message' => $message];
 
         $url = "https://fcm.googleapis.com/v1/projects/{$projectId}/messages:send";
-        $response = Http::withToken($accessToken)
+        $caBundle = config('services.firebase.ca_bundle') ?: true;
+        $response = Http::withOptions(['verify' => $caBundle])
+            ->withToken($accessToken)
+            ->timeout(15)
             ->withHeaders(['Content-Type' => 'application/json'])
             ->post($url, $payload);
 
@@ -86,7 +99,10 @@ class FcmSender
             return null;
         }
 
-        $response = Http::asForm()->post('https://oauth2.googleapis.com/token', [
+        $caBundle = config('services.firebase.ca_bundle') ?: true;
+        $response = Http::withOptions(['verify' => $caBundle])
+            ->asForm()
+            ->post('https://oauth2.googleapis.com/token', [
             'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
             'assertion' => $jwt,
         ]);
@@ -128,7 +144,6 @@ class FcmSender
             return null;
         }
         openssl_sign($signingInput, $signature, $key, OPENSSL_ALGO_SHA256);
-        openssl_free_key($key);
         $segments[] = $this->base64UrlEncode($signature);
         return implode('.', $segments);
     }

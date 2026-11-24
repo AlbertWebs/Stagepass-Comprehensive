@@ -15,7 +15,7 @@ class SendCheckOutNotificationToTeamLeader implements ShouldQueue
         $eventModel = $eventUser->event;
         $teamLeader = $eventModel->teamLeader;
 
-        if ($teamLeader) {
+        if ($teamLeader && (int) $teamLeader->id !== (int) $eventUser->user_id) {
             $teamLeader->notify(new CrewCheckedOutNotification($eventUser, $session));
         }
     }

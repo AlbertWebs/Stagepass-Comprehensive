@@ -1,4 +1,5 @@
-import { StyleSheet, TextInput, type TextInputProps } from 'react-native';
+import { StyleSheet, type TextInputProps } from 'react-native';
+import { StagepassTextInput as TextInput } from '@/components/StagepassTextInput';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 
 export type StagePassInputProps = TextInputProps & {

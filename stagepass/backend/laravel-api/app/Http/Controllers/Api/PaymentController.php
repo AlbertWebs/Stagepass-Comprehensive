@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Event;
 use App\Models\EventPayment;
 use App\Models\EventUser;
+use App\Notifications\WorkflowPushNotification;
 use App\Services\EventCrewAttendanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -143,6 +144,12 @@ class PaymentController extends Controller
             'approved_by' => $request->user()->id,
             'approved_at' => now(),
         ]);
+        $payment->user?->notify(new WorkflowPushNotification(
+            'Payment approved',
+            'Your payment for ' . ($payment->event?->name ?? 'an event') . ' has been approved.',
+            'payment_approved',
+            ['payment_id' => (string) $payment->id, 'event_id' => (string) $payment->event_id]
+        ));
 
         return response()->json($payment->fresh()->load(['event', 'user', 'approvedBy']));
     }
@@ -168,6 +175,12 @@ class PaymentController extends Controller
             'approved_at' => now(),
             'rejection_reason' => $request->rejection_reason,
         ]);
+        $payment->user?->notify(new WorkflowPushNotification(
+            'Payment declined',
+            'Your payment request for ' . ($payment->event?->name ?? 'an event') . ' was declined.',
+            'payment_rejected',
+            ['payment_id' => (string) $payment->id, 'event_id' => (string) $payment->event_id]
+        ));
 
         return response()->json($payment->fresh()->load(['event', 'user', 'approvedBy']));
     }

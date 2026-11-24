@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { HomeHeader } from '@/components/HomeHeader';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -1386,10 +1386,10 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   attendanceMapImage: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   attendanceMapPlaceholder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
@@ -1640,7 +1640,7 @@ const styles = StyleSheet.create({
     backgroundColor: themeBlue + '22',
   },
   roundCheckInInner: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 48,
     justifyContent: 'center',
     alignItems: 'center',

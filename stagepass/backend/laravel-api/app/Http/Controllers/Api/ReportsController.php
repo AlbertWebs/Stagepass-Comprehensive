@@ -41,30 +41,38 @@ class ReportsController extends Controller
      */
     private function parseDateRange(Request $request): array
     {
-        $today = Carbon::today();
-        if ($request->filled('date_from') && $request->filled('date_to')) {
-            $from = Carbon::parse($request->date_from)->startOfDay();
-            $to = Carbon::parse($request->date_to)->endOfDay();
+        $tz = config('app.timezone', 'Africa/Nairobi');
+        $today = Carbon::today($tz);
+        if ($request->filled('date_from') || $request->filled('date_to')) {
+            $request->validate([
+                'date_from' => 'required|date_format:Y-m-d',
+                'date_to' => 'required|date_format:Y-m-d|after_or_equal:date_from',
+            ]);
+            $from = Carbon::parse($request->date_from, $tz)->startOfDay();
+            $to = Carbon::parse($request->date_to, $tz)->endOfDay();
 
             return [$from, $to];
         }
         if ($request->filled('month') && $request->filled('year')) {
             $y = (int) $request->year;
             $m = (int) $request->month;
-            $from = Carbon::createFromDate($y, $m, 1)->startOfDay();
+            abort_unless($m >= 1 && $m <= 12 && $y >= 1970 && $y <= 2200, 422, 'Invalid report month or year.');
+            $from = Carbon::createFromDate($y, $m, 1, $tz)->startOfDay();
             $to = $from->copy()->endOfMonth();
 
             return [$from, $to];
         }
         if ($request->filled('year')) {
             $y = (int) $request->year;
-            $from = Carbon::createFromDate($y, 1, 1)->startOfDay();
-            $to = Carbon::createFromDate($y, 12, 31)->endOfDay();
+            abort_unless($y >= 1970 && $y <= 2200, 422, 'Invalid report year.');
+            $from = Carbon::createFromDate($y, 1, 1, $tz)->startOfDay();
+            $to = Carbon::createFromDate($y, 12, 31, $tz)->endOfDay();
 
             return [$from, $to];
         }
         if ($request->filled('date')) {
-            $d = Carbon::parse($request->date)->startOfDay();
+            $request->validate(['date' => 'required|date_format:Y-m-d']);
+            $d = Carbon::parse($request->date, $tz)->startOfDay();
 
             return [$d, $d->copy()->endOfDay()];
         }
@@ -195,16 +203,16 @@ class ReportsController extends Controller
             ->when($userId, fn ($q) => $q->where('user_id', $userId))
             ->get();
 
-        $eventIds = $assignments->pluck('event_id')->unique()->filter()->values();
-
-        $sessions = $eventIds->isEmpty()
-            ? collect()
-            : EventAttendanceSession::query()
-                ->with(['event:id,name,date,end_date', 'user:id,name'])
-                ->whereIn('event_id', $eventIds)
-                ->when($userId, fn ($q) => $q->where('user_id', $userId))
-                ->orderByDesc('checkin_time')
-                ->get();
+        // Sessions are the durable per-day record for multi-day events. Filter by their
+        // actual work date so a monthly report cannot accidentally include every session
+        // for an event that merely overlaps the selected month.
+        $sessions = EventAttendanceSession::query()
+            ->with(['event:id,name,date,end_date', 'user:id,name'])
+            ->whereBetween('work_date', [$from->toDateString(), $to->toDateString()])
+            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
+            ->when($userId, fn ($q) => $q->where('user_id', $userId))
+            ->orderByDesc('checkin_time')
+            ->get();
 
         $overtime = app(AttendanceOvertimeService::class);
         $rows = collect();
@@ -254,12 +262,17 @@ class ReportsController extends Controller
             $extraHours = $assignment->extra_hours !== null ? (float) $assignment->extra_hours : null;
             $pause = (int) ($assignment->pause_duration ?? 0);
             if ($assignment->checkin_time && ! $assignment->checkout_time) {
+                $checkin = Carbon::parse($assignment->checkin_time)->timezone('Africa/Nairobi');
+                $asOf = now('Africa/Nairobi');
+                if ($asOf->toDateString() !== $checkin->toDateString()) {
+                    $asOf = $checkin->copy()->endOfDay();
+                }
                 if ($assignment->is_paused && $assignment->pause_start_time) {
-                    $pause += (int) Carbon::parse($assignment->pause_start_time)->diffInMinutes(now());
+                    $pause += (int) Carbon::parse($assignment->pause_start_time)->diffInMinutes($asOf);
                 }
                 $calc = $overtime->calculate(
-                    Carbon::parse($assignment->checkin_time),
-                    now(),
+                    $checkin,
+                    $asOf,
                     null,
                     $pause
                 );

@@ -15,6 +15,7 @@ use App\Support\EventAttendanceEligibility;
 use App\Support\EventTeamLeaderGate;
 use Carbon\Carbon;
 use App\Notifications\CrewAddedToEventReminder;
+use App\Notifications\WorkflowPushNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -101,6 +102,16 @@ class EventCrewController extends Controller
             $user->notify(new CrewAddedToEventReminder($event->fresh(), $request->role_in_event));
             ReminderLog::logSent($event->id, $user->id, ReminderLog::TYPE_ADDED, ReminderLog::CHANNEL_EMAIL);
             ReminderLog::logSent($event->id, $user->id, ReminderLog::TYPE_ADDED, ReminderLog::CHANNEL_SMS);
+            ReminderLog::logSent($event->id, $user->id, ReminderLog::TYPE_EVENT_ASSIGNED, ReminderLog::CHANNEL_PUSH);
+        }
+        if ($event->teamLeader && (int) $event->teamLeader->id !== (int) $request->user()->id
+            && (int) $event->teamLeader->id !== (int) $request->user_id) {
+            $event->teamLeader->notify(new WorkflowPushNotification(
+                'Crew member added',
+                ($user?->name ?? 'A crew member') . ' was added to ' . $event->name . '.',
+                'event_crew_added',
+                ['event_id' => (string) $event->id, 'user_id' => (string) $request->user_id]
+            ));
         }
 
         return response()->json($assignment, 201);
@@ -112,7 +123,25 @@ class EventCrewController extends Controller
             return response()->json(['message' => 'You cannot remove crew from this event.'], 403);
         }
 
+        $wasAssigned = $event->crew()->where('user_id', $user->id)->exists();
         $event->crew()->detach($user->id);
+        if ($wasAssigned) {
+            $user->notify(new WorkflowPushNotification(
+                'Project assignment removed',
+                'You are no longer assigned to ' . $event->name . '.',
+                'event_assignment_removed',
+                ['event_id' => (string) $event->id, 'event_name' => $event->name]
+            ));
+            if ($event->teamLeader && (int) $event->teamLeader->id !== (int) $request->user()->id
+                && (int) $event->teamLeader->id !== (int) $user->id) {
+                $event->teamLeader->notify(new WorkflowPushNotification(
+                    'Crew member removed',
+                    $user->name . ' was removed from ' . $event->name . '.',
+                    'event_crew_removed',
+                    ['event_id' => (string) $event->id, 'user_id' => (string) $user->id]
+                ));
+            }
+        }
 
         return response()->json(null, 204);
     }
@@ -172,6 +201,17 @@ class EventCrewController extends Controller
             $transferredUser->notify(new CrewAddedToEventReminder($targetEvent->fresh(), $roleInEvent));
             ReminderLog::logSent($targetEvent->id, $transferredUser->id, ReminderLog::TYPE_ADDED, ReminderLog::CHANNEL_EMAIL);
             ReminderLog::logSent($targetEvent->id, $transferredUser->id, ReminderLog::TYPE_ADDED, ReminderLog::CHANNEL_SMS);
+            ReminderLog::logSent($targetEvent->id, $transferredUser->id, ReminderLog::TYPE_EVENT_ASSIGNED, ReminderLog::CHANNEL_PUSH);
+        }
+        foreach (collect([$event->teamLeader, $targetEvent->teamLeader])->filter()->unique('id') as $leader) {
+            if ((int) $leader->id === (int) $request->user()->id || (int) $leader->id === $transferredUserId) continue;
+            $isTargetLeader = (int) $leader->id === (int) $targetEvent->team_leader_id;
+            $leader->notify(new WorkflowPushNotification(
+                $isTargetLeader ? 'Crew member transferred in' : 'Crew member transferred out',
+                ($transferredUser?->name ?? 'A crew member') . ($isTargetLeader ? ' joined ' : ' left ') . ($isTargetLeader ? $targetEvent->name : $event->name) . '.',
+                $isTargetLeader ? 'event_crew_transferred_in' : 'event_crew_transferred_out',
+                ['event_id' => (string) ($isTargetLeader ? $targetEvent->id : $event->id), 'user_id' => (string) $transferredUserId]
+            ));
         }
 
         return response()->json([
@@ -308,6 +348,14 @@ class EventCrewController extends Controller
         ]);
 
         $assignment->load('user');
+        if ((int) $user->id !== (int) $request->user()->id) {
+            $user->notify(new WorkflowPushNotification(
+                'Check-in recorded',
+                $request->user()->name . ' recorded your check-in for ' . $event->name . '.',
+                'crew_checked_in_manually',
+                ['event_id' => (string) $event->id, 'event_name' => $event->name]
+            ));
+        }
 
         return response()->json([
             'message' => 'Marked as arrived',

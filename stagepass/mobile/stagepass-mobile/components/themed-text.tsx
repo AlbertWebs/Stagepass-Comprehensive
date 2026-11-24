@@ -1,4 +1,5 @@
-import { StyleSheet, Text, type TextProps } from 'react-native';
+import { StyleSheet, type TextProps } from 'react-native';
+import { StagepassText as Text } from '@/components/StagepassText';
 
 import { Typography } from '@/constants/ui';
 import { useThemeColor } from '@/hooks/use-theme-color';

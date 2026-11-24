@@ -25,7 +25,7 @@ class SendCheckInDueReminders extends Command
 
         $events = Event::query()
             ->where('date', $now->toDateString())
-            ->with('crew')
+            ->with(['crew', 'teamLeader'])
             ->get();
 
         $sent = 0;
@@ -41,11 +41,16 @@ class SendCheckInDueReminders extends Command
                 ->with('user')
                 ->get();
 
-            foreach ($crewWithoutCheckin as $assignment) {
-                $user = $assignment->user;
-                if (! $user) {
-                    continue;
+            $assignedUsers = $crewWithoutCheckin->pluck('user')->filter()->keyBy('id');
+            if ($event->teamLeader) {
+                $leaderAssignment = EventUser::query()->where('event_id', $event->id)
+                    ->where('user_id', $event->team_leader_id)->first();
+                if (! $leaderAssignment || ! $leaderAssignment->checkin_time) {
+                    $assignedUsers->put($event->teamLeader->id, $event->teamLeader);
                 }
+            }
+
+            foreach ($assignedUsers as $user) {
 
                 $lastSent = ReminderLog::where('event_id', $event->id)
                     ->where('user_id', $user->id)

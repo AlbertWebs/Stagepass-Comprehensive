@@ -44,7 +44,20 @@ const googlePlacesApiKey =
   env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
   env.VITE_GOOGLE_MAPS_API_KEY;
 
-const appJson = require('./app.json');
+const googleServicesFileSetting = process.env.GOOGLE_SERVICES_JSON || env.GOOGLE_SERVICES_JSON || 'google-services.json';
+const googleServicesFilePath = path.isAbsolute(googleServicesFileSetting)
+  ? googleServicesFileSetting
+  : path.resolve(__dirname, googleServicesFileSetting);
+const googleServicesFile = fs.existsSync(googleServicesFilePath)
+  ? path.relative(__dirname, googleServicesFilePath)
+  : undefined;
+const iosFirebaseFileSetting = process.env.GOOGLE_SERVICE_INFO_PLIST || env.GOOGLE_SERVICE_INFO_PLIST || 'GoogleService-Info.plist';
+const iosFirebaseFilePath = path.isAbsolute(iosFirebaseFileSetting)
+  ? iosFirebaseFileSetting
+  : path.resolve(__dirname, iosFirebaseFileSetting);
+const iosFirebaseFile = fs.existsSync(iosFirebaseFilePath)
+  ? path.relative(__dirname, iosFirebaseFilePath)
+  : undefined;
 
 /** EAS sets this for `eas build --profile production` (undefined for local `expo start`). */
 const isProductionBuild = process.env.EAS_BUILD_PROFILE === 'production';
@@ -74,9 +87,16 @@ function mapPlugins(plugins) {
   });
 }
 
-module.exports = {
-  expo: {
-    ...appJson.expo,
+module.exports = ({ config }) => ({
+    ...config,
+    android: {
+      ...(config.android || {}),
+      ...(googleServicesFile ? { googleServicesFile } : {}),
+    },
+    ios: {
+      ...(config.ios || {}),
+      ...(iosFirebaseFile ? { googleServicesFile: iosFirebaseFile } : {}),
+    },
     /** EAS Update — required for builds when using EAS Update. https://expo.fyi/eas-update-config */
     updates: {
       url: 'https://u.expo.dev/9c5ebab6-be53-4719-b5ef-704d71b23691',
@@ -84,16 +104,15 @@ module.exports = {
     runtimeVersion: {
       policy: 'appVersion',
     },
-    plugins: mapPlugins(appJson.expo.plugins),
+    plugins: mapPlugins(config.plugins),
     extra: {
-      ...(appJson.expo?.extra || {}),
+      ...(config.extra || {}),
       eas: {
-        ...((appJson.expo?.extra && appJson.expo.extra.eas) || {}),
+        ...((config.extra && config.extra.eas) || {}),
         projectId: '9c5ebab6-be53-4719-b5ef-704d71b23691',
       },
       googlePlacesApiKey: googlePlacesApiKey || undefined,
       /** Read at runtime for diagnostics (optional). */
       easBuildProfile: process.env.EAS_BUILD_PROFILE || null,
     },
-  },
-};
+});

@@ -4,28 +4,29 @@
     "slug": "stagepass-mobile",
     "version": "1.0.1",
     "orientation": "portrait",
-    "icon": "./assets/images/app-icon.png",
+    "icon": "./assets/images/app-icon-square.png",
     "scheme": "stagepassapp",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "bundleIdentifier": "co.ke.stagepass.mobile",
       "supportsTablet": true,
       "infoPlist": {
         "NSFaceIDUsageDescription": "StagePass uses Face ID so you can sign in quickly and securely.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       }
     },
     "android": {
-      "package": "co.ke.stagepass.mobile",
+      "package": "com.stagepass.spmobile",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/app-icon.png"
+        "foregroundImage": "./assets/images/app-icon-square.png"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "softwareKeyboardLayoutMode": "resize",
-      "versionCode": 6
+      "versionCode": 7
     },
     "web": {
       "output": "static",
@@ -60,6 +61,9 @@
           "defaultChannel": "default"
         }
       ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging",
+      "./plugins/withFirebaseDefaultNotificationChannel",
       [
         "expo-location",
         {

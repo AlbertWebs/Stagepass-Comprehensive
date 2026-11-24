@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\B2cPayoutItem;
 use App\Models\EventAllowance;
+use App\Notifications\WorkflowPushNotification;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -218,6 +219,7 @@ class MpesaB2cService
             }
         }
 
+        $previousStatus = $item->status;
         $success = $resultCode === '0';
         $item->update([
             'status' => $success ? B2cPayoutItem::STATUS_COMPLETED : B2cPayoutItem::STATUS_FAILED,
@@ -238,6 +240,17 @@ class MpesaB2cService
                         'paid_at' => now(),
                     ]);
             }
+        }
+
+        if ($previousStatus !== $item->status && $item->user) {
+            $item->user->notify(new WorkflowPushNotification(
+                $success ? 'Allowance payout sent' : 'Allowance payout failed',
+                $success
+                    ? 'An allowance payout of KES ' . number_format((float) $item->amount, 2) . ' was sent to your phone.'
+                    : 'An allowance payout could not be completed. Contact your administrator for help.',
+                $success ? 'allowance_payout_completed' : 'allowance_payout_failed',
+                ['payout_item_id' => (string) $item->id, 'amount' => (string) $item->amount]
+            ));
         }
 
         $this->refreshPayoutStatus((int) $item->b2c_payout_id);

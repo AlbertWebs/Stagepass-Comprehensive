@@ -4,6 +4,7 @@ namespace App\Notifications;
 
 use App\Models\EventAttendanceSession;
 use App\Models\EventUser;
+use App\Channels\FcmChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -24,7 +25,32 @@ class CrewCheckedOutNotification extends Notification implements ShouldQueue
         if (! empty($notifiable->email)) {
             $channels[] = 'mail';
         }
+        if (! empty($notifiable->fcm_token)) {
+            $channels[] = FcmChannel::class;
+        }
         return $channels;
+    }
+
+    /** @return array{title: string, body: string, data: array<string, string>} */
+    public function toFcm(object $notifiable): array
+    {
+        $user = $this->eventUser->user;
+        $event = $this->eventUser->event;
+        $checkout = $this->session?->checkout_time ?? $this->eventUser->checkout_time;
+
+        return [
+            'title' => 'Crew checked out',
+            'body' => $user->name . ' checked out from ' . $event->name . ' at ' . ($checkout?->format('g:i A') ?? '—') . '.',
+            'data' => [
+                'type' => 'crew_checked_out',
+                'event_id' => (string) $event->id,
+                'event_name' => $event->name,
+                'user_id' => (string) $user->id,
+                'user_name' => $user->name,
+                'checkout_time' => $checkout?->toIso8601String() ?? '',
+                'total_hours' => (string) ($this->session?->total_hours ?? $this->eventUser->total_hours ?? ''),
+            ],
+        ];
     }
 
     public function toMail(object $notifiable): MailMessage

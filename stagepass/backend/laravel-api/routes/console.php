@@ -97,6 +97,16 @@ Schedule::command('allowances:process-meals')
     ->hourly()
     ->timezone($eastAfrica);
 
+Schedule::command('reminders:event-near')
+    ->hourly()
+    ->timezone($eastAfrica)
+    ->withoutOverlapping();
+
+Schedule::command('reminders:checkin-due --minutes=30 --throttle=120')
+    ->everyFifteenMinutes()
+    ->timezone($eastAfrica)
+    ->withoutOverlapping();
+
 if (filter_var(env('CRON_TEST_EMAIL_ENABLED', false), FILTER_VALIDATE_BOOL)) {
     Schedule::command('cron:send-test-email')
         ->everyMinute()

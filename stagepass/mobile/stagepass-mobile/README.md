@@ -37,6 +37,16 @@ You can start developing by editing the files inside the **app** directory. This
 - `EXPO_PUBLIC_OFFICE_CHECKIN_LNG` — longitude  
 - `EXPO_PUBLIC_OFFICE_CHECKIN_RADIUS_M=100` — radius in metres (default 100)
 
+## Firebase push notifications
+
+Push delivery uses Firebase Cloud Messaging. To build a native app, supply the Firebase app config files without committing them:
+
+- Android: set `GOOGLE_SERVICES_JSON` to the `google-services.json` path, or place that file in this directory.
+- iOS: set `GOOGLE_SERVICE_INFO_PLIST` to the `GoogleService-Info.plist` path, or place that file in this directory. Upload an APNs authentication key to the same Firebase project for iOS delivery.
+- Laravel API: set `FIREBASE_CREDENTIALS` to a Firebase service-account JSON file with permission to send FCM messages.
+
+The mobile app requests notification permission after sign-in and registers the device token with the API. Push requires a native development or production build; Expo Go does not include the Firebase native modules. Keep Laravel's queue worker running (`php artisan queue:work`) and run its scheduler (`php artisan schedule:work`, or the production cron entry) for queued workflow alerts and scheduled event/check-in reminders.
+
 ## Get a fresh project
 
 When you're ready, run:

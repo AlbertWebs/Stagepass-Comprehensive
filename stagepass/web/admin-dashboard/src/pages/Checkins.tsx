@@ -16,11 +16,16 @@ function formatDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function getRange(preset: Preset, singleDate?: string): { from: string; to: string } {
-  const today = new Date();
+function parseLocalDate(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function getRange(preset: Preset, singleDate?: string, anchorDate?: string): { from: string; to: string } {
+  const today = parseLocalDate(anchorDate ?? formatDate(new Date()));
   today.setHours(0, 0, 0, 0);
   if (preset === 'today' || (preset === 'date' && singleDate)) {
-    const d = singleDate ? new Date(singleDate) : today;
+    const d = singleDate ? parseLocalDate(singleDate) : today;
     const from = formatDate(d);
     return { from, to: from };
   }
@@ -55,7 +60,7 @@ function downloadCheckinsCsv(
   from: string,
   to: string,
   presetLabel: string,
-  summary?: { total: number; office: number; event: number }
+  summary?: { total: number; office: number; event: number; total_hours?: number }
 ) {
   const periodLabel = from === to ? from : `${from} to ${to}`;
   const summaryRows: string[] =
@@ -65,14 +70,17 @@ function downloadCheckinsCsv(
           ['Total check-ins', String(summary.total)].map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','),
           ['Office check-ins', String(summary.office)].map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','),
           ['Event check-ins', String(summary.event)].map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','),
+          ['Hours worked', Number(summary.total_hours ?? 0).toFixed(2)].map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','),
           '',
         ]
       : [];
-  const headers = ['Date', 'Check-in', 'Checkout', 'User', 'Type', 'Event', 'Location'];
+  const headers = ['Date', 'Check-in', 'Checkout', 'Hours worked', 'Extra hours', 'User', 'Type', 'Event', 'Location'];
   const dataRows = checkins.map((c) => [
     c.date,
     c.checkin_time,
     c.checkout_time ?? '—',
+    Number(c.total_hours ?? 0).toFixed(2),
+    Number(c.extra_hours ?? 0).toFixed(2),
     c.user_name,
     c.type === 'office' ? 'Office' : 'Event',
     c.event_name ?? '—',
@@ -88,7 +96,7 @@ function downloadCheckinsCsv(
   link.href = URL.createObjectURL(blob);
   link.download = `checkins-report-${from}-to-${to}-${presetLabel.replace(/\s+/g, '-')}.csv`;
   link.click();
-  URL.revokeObjectURL(link.href);
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
 
 const OFFICE_COLOR = 'bg-blue-100 text-blue-800 border-blue-200';
@@ -121,7 +129,7 @@ export default function Checkins() {
       ? { from: customFrom, to: customTo }
       : preset === 'today'
         ? { from: effectiveToday, to: effectiveToday }
-        : getRange(preset, preset === 'date' ? singleDate : undefined);
+        : getRange(preset, preset === 'date' ? singleDate : undefined, effectiveToday);
   const params =
     preset === 'today'
       ? (serverToday ? { date: serverToday } : ({} as { date?: string; from?: string; to?: string }))
@@ -144,6 +152,8 @@ export default function Checkins() {
             setServerToday(dateUsed);
             setSingleDate(dateUsed);
             setEmployeesTableDate(dateUsed);
+            setCustomFrom(dateUsed);
+            setCustomTo(dateUsed);
           }
         }
       })
@@ -222,6 +232,8 @@ export default function Checkins() {
         setServerToday(res.date);
         setSingleDate(res.date);
         setEmployeesTableDate(res.date);
+        setCustomFrom(res.date);
+        setCustomTo(res.date);
       })
       .catch(() => {});
   }, []);
@@ -242,9 +254,6 @@ export default function Checkins() {
     const summary = data?.summary;
     downloadCheckinsCsv(checkins, fromTo.from, fromTo.to, presetExportLabel, summary);
   };
-
-  const presetLabel =
-    preset === 'today' ? 'Today' : preset === 'week' ? 'This week' : preset === 'month' ? 'This month' : preset === 'year' ? 'This year' : preset === 'date' ? 'Particular date' : 'Custom range';
 
   if (loading && !data) {
     return <Preloader message="Loading check-ins…" fullScreen />;
@@ -491,7 +500,7 @@ export default function Checkins() {
 
       {summary && (
         <SectionCard sectionLabel="Summary">
-          <div className="grid grid-cols-2 gap-4 p-6 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 p-6 sm:grid-cols-5">
             <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
               <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Total check-ins</p>
               <p className="mt-1 text-2xl font-bold text-slate-900">{summary.total}</p>
@@ -503,6 +512,10 @@ export default function Checkins() {
             <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-4">
               <p className="text-xs font-medium uppercase tracking-wider text-emerald-700">Event check-ins</p>
               <p className="mt-1 text-2xl font-bold text-emerald-900">{summary.event}</p>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4">
+              <p className="text-xs font-medium uppercase tracking-wider text-amber-700">Hours worked</p>
+              <p className="mt-1 text-2xl font-bold text-amber-900">{Number(summary.total_hours ?? 0).toFixed(2)}</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
               <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Period</p>
@@ -535,6 +548,7 @@ export default function Checkins() {
                 <th className="px-6 py-3 font-semibold text-slate-700">Date</th>
                 <th className="px-6 py-3 font-semibold text-slate-700">Check-in</th>
                 <th className="px-6 py-3 font-semibold text-slate-700">Checkout</th>
+                <th className="px-6 py-3 font-semibold text-slate-700">Hours worked</th>
                 <th className="px-6 py-3 font-semibold text-slate-700">User</th>
                 <th className="px-6 py-3 font-semibold text-slate-700">Type</th>
                 <th className="px-6 py-3 font-semibold text-slate-700">Event</th>
@@ -544,7 +558,7 @@ export default function Checkins() {
             <tbody>
               {checkins.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
                     No check-ins for the selected period.
                   </td>
                 </tr>
@@ -554,6 +568,7 @@ export default function Checkins() {
                   <td className="whitespace-nowrap px-6 py-3 text-slate-900">{formatDisplayDate(c.date)}</td>
                   <td className="whitespace-nowrap px-6 py-3 text-slate-700">{c.checkin_time}</td>
                   <td className="whitespace-nowrap px-6 py-3 text-slate-700">{c.checkout_time ?? '—'}</td>
+                  <td className="whitespace-nowrap px-6 py-3 text-slate-700">{Number(c.total_hours ?? 0).toFixed(2)}{c.checkout_time ? '' : ' (live)'}</td>
                   <td className="px-6 py-3">
                     <span className="font-medium text-slate-900">{c.user_name}</span>
                     {c.user_email && <span className="block text-xs text-slate-500">{c.user_email}</span>}

@@ -51,8 +51,8 @@ function getDefaultDateRange(): { date_from: string; date_to: string } {
   const today = new Date();
   const from = new Date(today.getFullYear(), today.getMonth(), 1);
   return {
-    date_from: from.toISOString().slice(0, 10),
-    date_to: today.toISOString().slice(0, 10),
+    date_from: formatDateInput(from),
+    date_to: formatDateInput(today),
   };
 }
 

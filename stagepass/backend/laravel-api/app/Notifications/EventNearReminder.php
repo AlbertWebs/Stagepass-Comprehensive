@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Models\Event;
+use App\Channels\FcmChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -18,7 +19,32 @@ class EventNearReminder extends Notification implements ShouldQueue
 
     public function via(object $notifiable): array
     {
-        return ['mail', 'sms'];
+        $channels = ['database', 'mail', 'sms'];
+        if (! empty($notifiable->fcm_token)) $channels[] = FcmChannel::class;
+        return $channels;
+    }
+
+    public function toArray(object $notifiable): array
+    {
+        return [
+            'type' => 'event_reminder',
+            'event_id' => $this->event->id,
+            'event_name' => $this->event->name,
+            'event_date' => $this->event->date->toDateString(),
+        ];
+    }
+
+    public function toFcm(object $notifiable): array
+    {
+        return [
+            'title' => 'Upcoming project',
+            'body' => $this->event->name . ' starts ' . $this->event->date->format('D, j M') . ' at ' . $this->event->start_time . '.',
+            'data' => [
+                'type' => 'event_reminder',
+                'event_id' => (string) $this->event->id,
+                'event_name' => $this->event->name,
+            ],
+        ];
     }
 
     public function toMail(object $notifiable): MailMessage

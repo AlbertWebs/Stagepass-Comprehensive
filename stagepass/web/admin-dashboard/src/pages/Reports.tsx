@@ -28,6 +28,13 @@ function formatDate(d: string) {
   }
 }
 
+function toDateInputValue(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function escapeCsvCell(s: string | number): string {
   const str = String(s ?? '');
   if (/[",\n\r]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
@@ -57,8 +64,8 @@ export default function Reports() {
     return Number.isFinite(n) && n > 0 ? n : ('' as number | '');
   })();
   const [activeTab, setActiveTab] = useState<ReportType>('full-event');
-  const [dateFrom, setDateFrom] = useState(firstDayOfMonth.toISOString().slice(0, 10));
-  const [dateTo, setDateTo] = useState(today.toISOString().slice(0, 10));
+  const [dateFrom, setDateFrom] = useState(toDateInputValue(firstDayOfMonth));
+  const [dateTo, setDateTo] = useState(toDateInputValue(today));
   const [month, setMonth] = useState<number | ''>(today.getMonth() + 1);
   const [year, setYear] = useState(today.getFullYear());
   const [useDateRange, setUseDateRange] = useState(true);
@@ -132,6 +139,19 @@ export default function Reports() {
     api.events.list({ per_page: 500 }).then((r) => setEvents(r.data ?? [])).catch(() => setEvents([]));
     api.users.list({ per_page: 500 }).then((r) => setUsers(r.data?.map((u) => ({ id: u.id, name: u.name })) ?? [])).catch(() => setUsers([]));
   }, []);
+
+  useEffect(() => {
+    if (eventIdFromUrl !== '') return;
+    api.checkins.serverDate().then(({ date }) => {
+      const [yearValue, monthValue, dayValue] = date.split('-').map(Number);
+      const serverDay = new Date(yearValue, monthValue - 1, dayValue);
+      const monthStart = new Date(yearValue, monthValue - 1, 1);
+      setDateFrom(toDateInputValue(monthStart));
+      setDateTo(toDateInputValue(serverDay));
+      setMonth(monthValue);
+      setYear(yearValue);
+    }).catch(() => {});
+  }, [eventIdFromUrl]);
 
   useEffect(() => {
     const raw = searchParams.get('event_id');

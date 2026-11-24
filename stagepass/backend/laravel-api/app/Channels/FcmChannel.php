@@ -5,6 +5,8 @@ namespace App\Channels;
 use App\Services\ExpoPushSender;
 use App\Services\FcmSender;
 use Illuminate\Notifications\Notification;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Sends notifications to a device via push: Expo Push API (ExponentPushToken[...]) or Firebase (native device token).
@@ -38,10 +40,17 @@ class FcmChannel
             if (! is_string($token) || $token === '') {
                 continue;
             }
-            if (ExpoPushSender::isExpoPushToken($token)) {
-                $this->expo->send($token, $title, $body, $data);
-            } else {
-                $this->fcm->send($token, $title, $body, $data);
+            try {
+                if (ExpoPushSender::isExpoPushToken($token)) {
+                    $this->expo->send($token, $title, $body, $data);
+                } else {
+                    $this->fcm->send($token, $title, $body, $data);
+                }
+            } catch (Throwable $error) {
+                Log::warning('Push notification delivery failed.', [
+                    'notifiable_id' => $notifiable->id ?? null,
+                    'exception' => $error->getMessage(),
+                ]);
             }
         }
     }

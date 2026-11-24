@@ -7,6 +7,7 @@ use App\Models\Event;
 use App\Models\Setting;
 use App\Models\User;
 use App\Notifications\AssignedEventOnLoginPush;
+use App\Models\ReminderLog;
 use App\Services\AttendanceOvertimeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -143,7 +144,12 @@ class AuthController extends Controller
             return;
         }
 
+        if (ReminderLog::wasSent($event->id, $user->id, ReminderLog::TYPE_EVENT_ASSIGNED, ReminderLog::CHANNEL_PUSH)) {
+            return;
+        }
+
         $user->notify(new AssignedEventOnLoginPush($event));
+        ReminderLog::logSent($event->id, $user->id, ReminderLog::TYPE_EVENT_ASSIGNED, ReminderLog::CHANNEL_PUSH);
     }
 
     public function logout(Request $request): JsonResponse

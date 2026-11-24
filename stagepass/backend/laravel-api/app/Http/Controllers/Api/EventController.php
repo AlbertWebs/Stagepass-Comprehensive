@@ -8,6 +8,7 @@ use App\Models\EventAllowance;
 use App\Models\EventUser;
 use App\Models\User;
 use App\Notifications\TeamLeaderAssignedNotification;
+use App\Notifications\WorkflowPushNotification;
 use App\Services\AttendanceOvertimeService;
 use App\Services\EventCrewAttendanceService;
 use App\Support\ApiDateTime;
@@ -148,6 +149,9 @@ class EventController extends Controller
 
         // So the creator always sees the event in the list (list filters by team_leader or crew)
         $event->crew()->attach($request->user()->id, ['role_in_event' => null]);
+        if ($event->teamLeader && (int) $event->team_leader_id !== (int) $request->user()->id) {
+            $event->teamLeader->notify(new TeamLeaderAssignedNotification($event));
+        }
 
         return response()->json($event->load(['teamLeader', 'client']), 201);
     }
@@ -199,6 +203,9 @@ class EventController extends Controller
             'ended_by_id' => $user->id,
             'end_comment' => $validated['end_comment'],
         ]);
+
+        $this->notifyEventParticipants($event->fresh()->load(['teamLeader', 'crew']), (int) $user->id,
+            'Project ended', $event->name . ' has been marked complete.', 'event_closed');
 
         return response()->json($event->fresh()->load(['teamLeader', 'endedBy']));
     }
@@ -255,6 +262,9 @@ class EventController extends Controller
             'end_comment' => $validated['closing_comment'],
         ]);
 
+        $this->notifyEventParticipants($event->fresh()->load(['teamLeader', 'crew']), (int) $user->id,
+            'Shift closed for today', $event->name . ' has been marked done for today.', 'event_done_for_day');
+
         $fresh = $event->fresh()->load(['teamLeader', 'closedBy']);
 
         return response()->json(array_merge($fresh->toArray(), [
@@ -289,10 +299,13 @@ class EventController extends Controller
         $previousTeamLeaderId = $event->team_leader_id;
 
         $previous = [
+            'name' => $event->name,
             'date' => $event->date->format('Y-m-d'),
             'end_date' => $event->end_date?->format('Y-m-d'),
             'start_time' => $event->start_time,
             'expected_end_time' => $event->expected_end_time,
+            'location_name' => $event->location_name,
+            'status' => $event->status,
         ];
 
         $dateFieldsChanging = collect(['date', 'end_date', 'start_time', 'expected_end_time'])
@@ -315,6 +328,12 @@ class EventController extends Controller
 
         $event->update($validated);
 
+        $changedFields = collect(['name', 'date', 'end_date', 'start_time', 'expected_end_time', 'location_name', 'status'])
+            ->filter(fn (string $key) => array_key_exists($key, $validated)
+                && (string) ($validated[$key] ?? '') !== (string) ($previous[$key] ?? ''))
+            ->values()
+            ->all();
+
         $adjustmentSummary = null;
         if ($dateFieldsChanging) {
             $adjustmentSummary = $this->dateAdjustment->adjust($event->fresh(), $previous);
@@ -335,6 +354,18 @@ class EventController extends Controller
             }
         }
 
+        if ($changedFields !== []) {
+            $updatedEvent = $event->fresh()->load(['teamLeader', 'crew']);
+            $isEnded = in_array($updatedEvent->status, [Event::STATUS_COMPLETED, Event::STATUS_CLOSED], true);
+            $this->notifyEventParticipants(
+                $updatedEvent,
+                (int) $request->user()->id,
+                $isEnded ? 'Project ended' : 'Project updated',
+                $isEnded ? $updatedEvent->name . ' has been closed.' : 'Details changed for ' . $updatedEvent->name . '.',
+                $isEnded ? 'event_closed' : 'event_updated'
+            );
+        }
+
         return response()->json(array_merge(
             $event->fresh()->load(['teamLeader', 'client'])->toArray(),
             $adjustmentSummary !== null ? ['date_adjustment' => $adjustmentSummary] : []
@@ -349,8 +380,33 @@ class EventController extends Controller
             return response()->json(['message' => 'Only an admin can delete events. Use the web admin portal.'], 403);
         }
 
+        $event->load(['teamLeader', 'crew']);
+        $this->notifyEventParticipants(
+            $event,
+            (int) $user->id,
+            'Project cancelled',
+            $event->name . ' has been cancelled.',
+            'event_cancelled'
+        );
         $event->delete();
 
         return response()->json(null, 204);
+    }
+
+    private function notifyEventParticipants(Event $event, int $actorId, string $title, string $body, string $type): void
+    {
+        $participants = $event->crew->concat(collect([$event->teamLeader]))
+            ->filter()
+            ->unique('id');
+
+        foreach ($participants as $participant) {
+            if ((int) $participant->id === $actorId) continue;
+            $participant->notify(new WorkflowPushNotification(
+                $title,
+                $body,
+                $type,
+                ['event_id' => (string) $event->id, 'event_name' => $event->name]
+            ));
+        }
     }
 }

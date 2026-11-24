@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
+import { StagepassText as Text } from '@/components/StagepassText';
 import { StagePassColors, themeBlue } from '@/constants/theme';
 
 type CheckInButtonProps = {

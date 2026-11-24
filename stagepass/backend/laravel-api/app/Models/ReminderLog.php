@@ -10,9 +10,11 @@ class ReminderLog extends Model
     public const TYPE_ADDED = 'added';
     public const TYPE_EVENT_NEAR = 'event_near';
     public const TYPE_CHECKIN_DUE = 'checkin_due';
+    public const TYPE_EVENT_ASSIGNED = 'event_assigned';
 
     public const CHANNEL_EMAIL = 'email';
     public const CHANNEL_SMS = 'sms';
+    public const CHANNEL_PUSH = 'push';
 
     protected $fillable = ['event_id', 'user_id', 'type', 'channel', 'sent_at'];
 

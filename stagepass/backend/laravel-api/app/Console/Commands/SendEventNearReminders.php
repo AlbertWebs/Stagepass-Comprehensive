@@ -18,17 +18,23 @@ class SendEventNearReminders extends Command
     public function handle(): int
     {
         $hours = (int) $this->option('hours');
-        $fromDate = now()->toDateString();
-        $toDate = now()->addHours($hours)->toDateString();
+        $now = Carbon::now(config('app.timezone', 'Africa/Nairobi'));
+        $windowEnd = $now->copy()->addHours($hours);
+        $fromDate = $now->toDateString();
+        $toDate = $windowEnd->toDateString();
 
         $events = Event::query()
             ->whereBetween('date', [$fromDate, $toDate])
-            ->with('crew')
+            ->with(['crew', 'teamLeader'])
             ->get();
 
         $sent = 0;
         foreach ($events as $event) {
-            foreach ($event->crew as $user) {
+            $eventStart = Carbon::parse($event->date->format('Y-m-d') . ' ' . $event->start_time, config('app.timezone', 'Africa/Nairobi'));
+            if ($eventStart->lt($now) || $eventStart->gt($windowEnd)) {
+                continue;
+            }
+            foreach ($event->crew->concat(collect([$event->teamLeader]))->filter()->unique('id') as $user) {
                 $alreadySent = ReminderLog::where('event_id', $event->id)
                     ->where('user_id', $user->id)
                     ->where('type', ReminderLog::TYPE_EVENT_NEAR)

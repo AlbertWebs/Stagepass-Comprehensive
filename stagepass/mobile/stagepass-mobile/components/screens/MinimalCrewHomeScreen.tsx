@@ -13,12 +13,14 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Reanimated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
+import { StagepassText as Text } from '@/components/StagepassText';
+import Svg, { Circle, ClipPath, Defs, Image as SvgImage, Path } from 'react-native-svg';
+import { OfficeCheckInDistanceModal } from '@/components/OfficeCheckInDistanceModal';
 import { useDispatch, useSelector } from 'react-redux';
 import { HomeHeader } from '@/components/HomeHeader';
 import { ThemedText } from '@/components/themed-text';
@@ -79,7 +81,9 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const { colors, isDark } = useStagePassTheme();
   const user = useSelector((s: { auth: { user: ApiUser | null } }) => s.auth.user);
+  const authToken = useSelector((s: { auth: { token: string | null } }) => s.auth.token);
   const [loading, setLoading] = useState(false);
+  const [showOfficeDistanceModal, setShowOfficeDistanceModal] = useState(false);
   const [officeConfig, setOfficeConfig] = useState<{ latitude: number; longitude: number; radiusMeters: number } | null>(null);
   const [requiredCheckinDays, setRequiredCheckinDays] = useState<number[]>(DEFAULT_OFFICE_CHECKIN_REQUIRED_DAYS);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -215,7 +219,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
     return 'Not required on this day.';
   }, [isWeekendOffDay]);
 
-  const loadConfig = useCallback(async () => {
+  const loadConfig = useCallback(async (): Promise<{ latitude: number; longitude: number; radiusMeters: number } | null> => {
     try {
       const s = await api.settings.getOfficeCheckinConfig();
       setRequiredCheckinDays(parseOfficeCheckinRequiredDays(s?.office_checkin_required_days));
@@ -227,12 +231,16 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
           ? rawRadius
           : Number.parseFloat(String(rawRadius ?? '').replace(/,/g, '.')) || 100;
       if (lat != null && lng != null) {
-        setOfficeConfig({ latitude: lat, longitude: lng, radiusMeters: radius > 0 ? radius : 100 });
+        const config = { latitude: lat, longitude: lng, radiusMeters: radius > 0 ? radius : 100 };
+        setOfficeConfig(config);
+        return config;
       } else {
         setOfficeConfig(null);
+        return null;
       }
     } catch {
       setOfficeConfig(null);
+      return null;
     }
   }, []);
 
@@ -319,9 +327,12 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
 
   useFocusEffect(
     useCallback(() => {
+      // The home route can mount while auth is still hydrating. Wait for the token
+      // so the office settings request is authenticated, then retry on token arrival.
+      if (!authToken) return undefined;
       loadConfig();
       void refreshUser();
-    }, [loadConfig, refreshUser])
+    }, [authToken, loadConfig, refreshUser])
   );
 
   const handleOfficeCheckIn = useCallback(async () => {
@@ -349,19 +360,20 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
         Alert.alert('Location required', 'Enable location to continue.');
         return;
       }
-      if (!officeConfig) {
+      const resolvedOfficeConfig = officeConfig ?? (await loadConfig());
+      if (!resolvedOfficeConfig) {
         Alert.alert('Office not configured', 'Ask admin to set office location in settings.');
         return;
       }
       const within = isWithinGeofence(
         location.latitude,
         location.longitude,
-        officeConfig.latitude,
-        officeConfig.longitude,
-        officeConfig.radiusMeters
+        resolvedOfficeConfig.latitude,
+        resolvedOfficeConfig.longitude,
+        resolvedOfficeConfig.radiusMeters
       );
       if (!within) {
-        Alert.alert('Not at office', `Move within ${officeConfig.radiusMeters}m of office to check in.`);
+        setShowOfficeDistanceModal(true);
         return;
       }
       await api.attendance.officeCheckin(location.latitude, location.longitude);
@@ -377,6 +389,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
     officeCheckedOutToday,
     userLocation,
     officeConfig,
+    loadConfig,
     refreshUser,
     requiredCheckinDays,
     triggerSuccessHaptic,
@@ -447,7 +460,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                 style={[styles.mapImage, { minWidth: windowWidth, minHeight: windowHeight }]}
                 contentFit="cover"
                 contentPosition="center"
-                transition={0}
+                transition={220}
                 cachePolicy="memory-disk"
                 priority="high"
                 allowDownscaling={false}
@@ -535,12 +548,21 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                         size="small"
                         color={canCheckout || officeCheckedOutToday ? '#fff' : themeBlue}
                       />
+                    ) : canCheckout ? (
+                      <Ionicons name="exit-outline" size={22} color="#fff" />
                     ) : (
-                      <Ionicons
-                        name={canCheckout ? 'exit-outline' : 'location'}
-                        size={22}
-                        color={officeCheckedOutToday || canCheckout ? '#fff' : themeBlue}
-                      />
+                      <Svg width={36} height={42} viewBox="0 0 36 42" accessible={false}>
+                        <Defs>
+                          <ClipPath id="office-pin-logo"><Circle cx={18} cy={16} r={11} /></ClipPath>
+                        </Defs>
+                        <Path
+                          d="M18 1C9.2 1 2 7.7 2 16c0 9.3 9.8 19.7 16 25 6.2-5.3 16-15.7 16-25C34 7.7 26.8 1 18 1Z"
+                          fill={themeBlue}
+                        />
+                        <Circle cx={18} cy={16} r={12} fill={themeYellow} />
+                        <SvgImage x={6} y={4} width={24} height={24}
+                          href={require('../../assets/images/favicon.png')} clipPath="url(#office-pin-logo)" />
+                      </Svg>
                     )}
                   </Pressable>
                 </View>
@@ -902,6 +924,11 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
           <HomeHeader title="Home" notificationCount={0} transparentOverlay />
         </View>
       </View>
+      <OfficeCheckInDistanceModal
+        visible={showOfficeDistanceModal}
+        radiusMeters={officeConfig?.radiusMeters ?? 100}
+        onDismiss={() => setShowOfficeDistanceModal(false)}
+      />
     </ThemedView>
   );
 }
@@ -913,11 +940,11 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   mapLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 0,
   },
   mapHeroInner: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     width: '100%',
     height: '100%',
     overflow: 'hidden',
@@ -933,7 +960,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   overlayStack: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     width: '100%',
     height: '100%',
     zIndex: 1,
@@ -1038,19 +1065,19 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   mapImage: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     width: '100%',
     height: '100%',
   },
   mapOverlayTint: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   gridOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderWidth: 1,
   },
   mapLoadingLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 10,

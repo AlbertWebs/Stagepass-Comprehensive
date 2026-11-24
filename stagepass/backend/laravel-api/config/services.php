@@ -44,6 +44,7 @@ return [
 
     'firebase' => [
         'credentials' => env('FIREBASE_CREDENTIALS'),
+        'ca_bundle' => env('FIREBASE_CA_BUNDLE'),
     ],
 
 ];

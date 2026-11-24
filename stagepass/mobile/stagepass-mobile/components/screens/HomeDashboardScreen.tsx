@@ -33,6 +33,7 @@ import type { RoleName } from '~/services/api';
 import { QUICK_ACTIONS } from '@/constants/quickActions';
 import { CrewAttendanceStatistic } from '@/components/CrewAttendanceStatistic';
 import { HomeHeader } from '@/components/HomeHeader';
+import { OfficeCheckInDistanceModal } from '@/components/OfficeCheckInDistanceModal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -262,6 +263,7 @@ export function HomeDashboardScreen({
   const [officeCheckinWindow, setOfficeCheckinWindow] = useState<{ start: string; end: string }>({ start: '09:00', end: '10:00' });
   const [officeConfigFromApi, setOfficeConfigFromApi] = useState<{ latitude: number; longitude: number; radiusMeters: number } | null>(null);
   const [officeCheckinRequiredDays, setOfficeCheckinRequiredDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [showOfficeDistanceModal, setShowOfficeDistanceModal] = useState(false);
   const [officeCheckinStep, setOfficeCheckinStep] = useState<'idle' | 'checking_in' | 'location_confirmed' | 'you_made_it'>('idle');
   const [officeCheckoutStep, setOfficeCheckoutStep] = useState<'idle' | 'checking_out' | 'success_thankyou' | 'see_you'>('idle');
   const [optimisticOfficeCheckedIn, setOptimisticOfficeCheckedIn] = useState(false);
@@ -562,10 +564,7 @@ export function HomeDashboardScreen({
       officeConfig.radiusMeters
     );
     if (!within) {
-      Alert.alert(
-        'Not at office',
-        `You must be within ${officeConfig.radiusMeters}m of the office to check in. Please go to the check-in location.`
-      );
+      setShowOfficeDistanceModal(true);
       setCheckInLoading(false);
       setOfficeCheckinStep('idle');
       return;
@@ -731,10 +730,7 @@ export function HomeDashboardScreen({
         officeConfig.radiusMeters
       );
       if (!within) {
-        Alert.alert(
-          'Not at office',
-          `Daily check-in is only available within ${officeConfig.radiusMeters}m of the office. Please go to the check-in location.`
-        );
+        setShowOfficeDistanceModal(true);
         return;
       }
       setCheckInLoading(true);
@@ -954,7 +950,7 @@ export function HomeDashboardScreen({
           </View>
           <LinearGradient
             pointerEvents="none"
-            style={StyleSheet.absoluteFillObject}
+            style={StyleSheet.absoluteFill}
             colors={
               isDark
                 ? ['rgba(0,0,0,0.2)', 'rgba(0,0,0,0.45)']
@@ -1494,6 +1490,11 @@ export function HomeDashboardScreen({
 
         </ScrollView>
       </View>
+      <OfficeCheckInDistanceModal
+        visible={showOfficeDistanceModal}
+        radiusMeters={officeConfig?.radiusMeters ?? 100}
+        onDismiss={() => setShowOfficeDistanceModal(false)}
+      />
     </ThemedView>
   );
 }
@@ -1516,7 +1517,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   welcomePatternLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   welcomeHex: {
     position: 'absolute',
@@ -1668,7 +1669,7 @@ const styles = StyleSheet.create({
   roundCheckInButtonEvent: {},
   roundCheckInButtonOffice: {},
   roundCheckInInner: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 48,
     justifyContent: 'center',
     alignItems: 'center',

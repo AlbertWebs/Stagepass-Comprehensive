@@ -14,9 +14,9 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import { StagepassText as Text } from '@/components/StagepassText';
 import Animated, { SlideInRight } from 'react-native-reanimated';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppPermissionsCard } from '@/components/AppPermissionsCard';
@@ -624,7 +624,11 @@ export default function ProfileScreen() {
                 return (
                   <Pressable
                     key={mode}
-                    onPress={() => setPreference(mode)}
+                    onPress={(event) =>
+                      setPreference(mode, {
+                        origin: { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY },
+                      })
+                    }
                     style={({ pressed }) => [
                       styles.appearanceOption,
                       { backgroundColor: selected ? themeYellow : bg, borderColor: selected ? themeYellow : (mode === 'dark' ? '#2d2d2d' : themeBlue + '44'), borderWidth: selected ? 2.5 : 2 },
@@ -1034,7 +1038,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   heroPatternLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   heroHexShape: {
     position: 'absolute',

@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Models\Event;
+use App\Channels\FcmChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -18,7 +19,32 @@ class CheckInDueReminder extends Notification implements ShouldQueue
 
     public function via(object $notifiable): array
     {
-        return ['mail', 'sms'];
+        $channels = ['database', 'mail', 'sms'];
+        if (! empty($notifiable->fcm_token)) $channels[] = FcmChannel::class;
+        return $channels;
+    }
+
+    public function toArray(object $notifiable): array
+    {
+        return [
+            'type' => 'checkin_due',
+            'event_id' => $this->event->id,
+            'event_name' => $this->event->name,
+            'event_date' => $this->event->date->toDateString(),
+        ];
+    }
+
+    public function toFcm(object $notifiable): array
+    {
+        return [
+            'title' => 'Check in when you arrive',
+            'body' => 'You have not checked in for ' . $this->event->name . '.',
+            'data' => [
+                'type' => 'checkin_due',
+                'event_id' => (string) $this->event->id,
+                'event_name' => $this->event->name,
+            ],
+        ];
     }
 
     public function toMail(object $notifiable): MailMessage

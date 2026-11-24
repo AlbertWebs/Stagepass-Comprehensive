@@ -2,10 +2,11 @@
  * Approve or reject pending earned-allowance requests for this event.
  * Intentionally separate from Event operations (crew, check-in, report, end event).
  */
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, BackHandler, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, BackHandler, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { StagepassTextInput as TextInput } from '@/components/StagepassTextInput';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
 import { api, type EarnedAllowanceDetail, type Event as EventType, type User } from '~/services/api';

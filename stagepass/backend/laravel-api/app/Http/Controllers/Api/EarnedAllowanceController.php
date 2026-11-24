@@ -10,6 +10,7 @@ use App\Models\Event;
 use App\Models\EventAllowance;
 use App\Models\User;
 use App\Notifications\AllowanceRequestDecisionNotification;
+use App\Notifications\WorkflowPushNotification;
 use App\Notifications\AllowanceRequestSubmittedNotification;
 use App\Services\MpesaB2cService;
 use App\Support\EventTeamLeaderGate;
@@ -387,6 +388,15 @@ class EarnedAllowanceController extends Controller
             if ($crew) {
                 $crew->notify(new AllowanceRequestDecisionNotification($fresh, $status === EventAllowance::STATUS_APPROVED));
             }
+        }
+        if ($status === EventAllowance::STATUS_PAID) {
+            $crew = User::find($eventAllowance->crew_id);
+            $crew?->notify(new WorkflowPushNotification(
+                'Allowance paid',
+                'Your allowance for ' . ($fresh->event?->name ?? 'an event') . ' has been marked as paid.',
+                'allowance_paid',
+                ['allowance_id' => (string) $fresh->id, 'event_id' => (string) $fresh->event_id]
+            ));
         }
 
         return response()->json($this->serializeDetail($fresh));

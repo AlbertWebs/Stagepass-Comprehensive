@@ -13,9 +13,9 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
+import { StagepassTextInput as TextInput } from '@/components/StagepassTextInput';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
 import { AppHeader } from '@/components/AppHeader';

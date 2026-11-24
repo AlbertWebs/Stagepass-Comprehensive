@@ -4,7 +4,9 @@
  */
 import { usePathname, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useDispatch } from 'react-redux';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -123,31 +125,28 @@ export function HomeHeader({
   const isAdmin = role === 'admin' || role === 'team_leader';
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [logoutConfirmVisible, setLogoutConfirmVisible] = useState(false);
   const handleNav = useNavigationPress();
 
   const toggleMoreMenu = useCallback(() => setMoreMenuOpen((v) => !v), []);
   const closeMoreMenu = useCallback(() => setMoreMenuOpen(false), []);
 
   const handleLogout = useCallback(() => {
-    Alert.alert('Sign out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign out',
-        style: 'destructive',
-        onPress: async () => {
-          setSigningOut(true);
-          try {
-            await api.auth.logout();
-          } catch {
-            // ignore
-          }
-          await clearStoredToken();
-          dispatch(logout());
-          router.replace('/login');
-          setSigningOut(false);
-        },
-      },
-    ]);
+    setLogoutConfirmVisible(true);
+  }, []);
+
+  const confirmLogout = useCallback(async () => {
+    setLogoutConfirmVisible(false);
+    setSigningOut(true);
+    try {
+      await api.auth.logout();
+    } catch {
+      // Local sign-out still completes if the server cannot be reached.
+    }
+    await clearStoredToken();
+    dispatch(logout());
+    router.replace('/login');
+    setSigningOut(false);
   }, [dispatch, router]);
 
   const handleBack = useCallback(() => {
@@ -160,8 +159,8 @@ export function HomeHeader({
     }
   }, [onBack, router]);
 
-  const handleThemeToggle = useCallback(() => {
-    setPreference(isDark ? 'light' : 'dark');
+  const handleThemeToggle = useCallback((x: number, y: number) => {
+    setPreference(isDark ? 'light' : 'dark', { origin: { x, y } });
   }, [isDark, setPreference]);
 
   const headerBg = transparentOverlay ? 'transparent' : isDark ? '#171B24' : '#F8FAFF';
@@ -222,6 +221,63 @@ export function HomeHeader({
         <View style={[styles.logoutOverlay, { backgroundColor: colors.background + 'EE' }]}>
           <ActivityIndicator size="large" color={colors.text} />
           <ThemedText style={[styles.logoutOverlayText, { color: colors.text }]}>Signing out…</ThemedText>
+        </View>
+      </Modal>
+      <Modal
+        visible={logoutConfirmVisible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setLogoutConfirmVisible(false)}
+      >
+        <View style={styles.logoutConfirmBackdrop}>
+          <Animated.View entering={FadeIn.duration(180)} style={StyleSheet.absoluteFill}>
+            <Pressable
+              style={[StyleSheet.absoluteFill, styles.logoutConfirmScrim]}
+              onPress={() => setLogoutConfirmVisible(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss sign-out confirmation"
+            />
+          </Animated.View>
+          <Animated.View
+            entering={FadeInDown.springify().damping(17).stiffness(170)}
+            style={[styles.logoutConfirmCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          >
+            <Animated.View entering={FadeInUp.delay(70).duration(320)} style={styles.logoutConfirmIconHalo}>
+              <LinearGradient colors={['#FFE16A', themeYellow, '#F2A900']} style={styles.logoutConfirmIcon}>
+                <Ionicons name="log-out-outline" size={28} color="#0F1838" />
+              </LinearGradient>
+            </Animated.View>
+            <View style={[styles.logoutConfirmEyebrow, { backgroundColor: isDark ? 'rgba(234,179,8,0.13)' : 'rgba(234,179,8,0.15)' }]}>
+              <View style={styles.logoutConfirmDot} />
+              <ThemedText style={styles.logoutConfirmEyebrowText}>SESSION</ThemedText>
+            </View>
+            <ThemedText style={[styles.logoutConfirmTitle, { color: colors.text }]}>Sign out?</ThemedText>
+            <ThemedText style={[styles.logoutConfirmMessage, { color: colors.textSecondary }]}>
+              You’ll need to sign in again to access your Stagepass account.
+            </ThemedText>
+            <View style={styles.logoutConfirmActions}>
+              <Pressable
+                onPress={() => setLogoutConfirmVisible(false)}
+                style={({ pressed }) => [
+                  styles.logoutConfirmCancel,
+                  { borderColor: colors.border, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#F8FAFC' },
+                  pressed && { opacity: NAV_PRESSED_OPACITY },
+                ]}
+              >
+                <ThemedText style={[styles.logoutConfirmCancelText, { color: colors.text }]}>Stay signed in</ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={confirmLogout}
+                style={({ pressed }) => [styles.logoutConfirmSignOut, pressed && { opacity: NAV_PRESSED_OPACITY }]}
+              >
+                <LinearGradient colors={['#FFE16A', themeYellow, '#F2A900']} style={styles.logoutConfirmSignOutGradient}>
+                  <ThemedText style={styles.logoutConfirmSignOutText}>Sign out</ThemedText>
+                  <Ionicons name="arrow-forward" size={17} color="#0F1838" />
+                </LinearGradient>
+              </Pressable>
+            </View>
+          </Animated.View>
         </View>
       </Modal>
       <View style={styles.bar}>
@@ -286,7 +342,7 @@ export function HomeHeader({
                   </Pressable>
                 ) : null}
                 <Pressable
-                  onPress={handleThemeToggle}
+                  onPress={(event) => handleThemeToggle(event.nativeEvent.pageX, event.nativeEvent.pageY)}
                   style={({ pressed }) => [styles.iconBtn, { backgroundColor: iconTint, borderColor: iconBorder }, pressed && styles.iconBtnPressed]}
                   accessibilityLabel={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
                   accessibilityRole="button"
@@ -332,7 +388,7 @@ export function HomeHeader({
                 </Pressable>
               ) : null}
               <Pressable
-                onPress={handleThemeToggle}
+                onPress={(event) => handleThemeToggle(event.nativeEvent.pageX, event.nativeEvent.pageY)}
                 style={({ pressed }) => [styles.iconBtn, { backgroundColor: iconTint, borderColor: iconBorder }, pressed && styles.iconBtnPressed]}
                 accessibilityLabel={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
                 accessibilityRole="button"
@@ -522,6 +578,123 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: Spacing.lg,
+  },
+  logoutConfirmBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xl,
+  },
+  logoutConfirmScrim: {
+    backgroundColor: 'rgba(3,8,22,0.74)',
+  },
+  logoutConfirmCard: {
+    width: '100%',
+    maxWidth: 390,
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderRadius: 26,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.xl + 4,
+    paddingBottom: Spacing.xl,
+    shadowColor: '#000',
+    shadowOpacity: 0.28,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 16,
+  },
+  logoutConfirmIconHalo: {
+    width: 82,
+    height: 82,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 41,
+    backgroundColor: 'rgba(234,179,8,0.13)',
+    marginBottom: Spacing.md,
+  },
+  logoutConfirmIcon: {
+    width: 58,
+    height: 58,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 29,
+    shadowColor: '#EAB308',
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 6,
+  },
+  logoutConfirmEyebrow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderRadius: 20,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    marginBottom: Spacing.sm,
+  },
+  logoutConfirmDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#D39A00',
+  },
+  logoutConfirmEyebrowText: {
+    color: '#B27D00',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+  },
+  logoutConfirmTitle: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  logoutConfirmMessage: {
+    maxWidth: 290,
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+    marginTop: Spacing.sm,
+  },
+  logoutConfirmActions: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginTop: Spacing.xl,
+  },
+  logoutConfirmCancel: {
+    flex: 1,
+    minHeight: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: Spacing.sm,
+  },
+  logoutConfirmCancelText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  logoutConfirmSignOut: {
+    flex: 1,
+    overflow: 'hidden',
+    borderRadius: 14,
+  },
+  logoutConfirmSignOutGradient: {
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+  },
+  logoutConfirmSignOutText: {
+    color: '#0F1838',
+    fontSize: 14,
+    fontWeight: '800',
   },
   logoutOverlayText: {
     fontSize: Typography.body,

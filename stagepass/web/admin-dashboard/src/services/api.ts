@@ -784,6 +784,7 @@ export interface CheckinItem {
   event_name?: string | null;
   location: string;
   total_hours?: number;
+  standard_hours?: number;
   extra_hours?: number;
   is_sunday?: boolean;
   is_holiday?: boolean;
@@ -796,6 +797,7 @@ export interface CheckinsResponse {
     total: number;
     office: number;
     event: number;
+    total_hours: number;
     from: string;
     to: string;
   };

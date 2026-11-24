@@ -2,7 +2,7 @@
  * Admin: event operations — edit, crew, check-in, messaging, tasks, report, end event.
  * Pending allowance approvals live on `pending-allowances`, not here.
  */
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';

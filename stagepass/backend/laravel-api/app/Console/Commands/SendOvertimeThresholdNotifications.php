@@ -7,7 +7,7 @@ use App\Models\EventUser;
 use App\Models\OvertimeNotificationLog;
 use App\Models\User;
 use App\Services\AttendanceOvertimeService;
-use App\Services\ExpoPushSender;
+use App\Services\FcmSender;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -22,7 +22,7 @@ class SendOvertimeThresholdNotifications extends Command
 
     public function __construct(
         private AttendanceOvertimeService $overtime,
-        private ExpoPushSender $expoPush
+        private FcmSender $fcmPush
     ) {
         parent::__construct();
     }
@@ -58,7 +58,7 @@ class SendOvertimeThresholdNotifications extends Command
 
                         continue;
                     }
-                    $sent = $this->expoPush->send(
+                    $sent = $this->fcmPush->send(
                         $user->fcm_token,
                         'Extra hours',
                         self::MESSAGE,
@@ -113,7 +113,7 @@ class SendOvertimeThresholdNotifications extends Command
 
                         continue;
                     }
-                    $sent = $this->expoPush->send(
+                    $sent = $this->fcmPush->send(
                         $user->fcm_token,
                         'Extra hours',
                         self::MESSAGE,

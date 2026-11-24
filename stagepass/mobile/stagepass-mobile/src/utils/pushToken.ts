@@ -1,7 +1,7 @@
 /**
- * Device push token for the Stagepass API `fcm_token` field.
- * Prefers Expo Push Token (expo-notifications) so the Laravel backend can send via Expo Push API.
- * Falls back to the native device token (FCM/APNs) from getDevicePushTokenAsync when Expo token is unavailable.
+ * Native push token for the Stagepass API `fcm_token` field.
+ * Android registers an FCM token through expo-notifications. iOS uses Firebase
+ * Messaging so the API receives an FCM token (not the raw APNs token).
  *
  * Requires expo-notifications and a physical device. Returns null if unavailable or permission denied.
  * In Expo Go (SDK 53+), Android push was removed; we skip loading expo-notifications to avoid runtime errors.
@@ -32,18 +32,9 @@ export async function getDevicePushTokenAsync(): Promise<string | null> {
     }
     if (finalStatus !== 'granted') return null;
 
-    const projectId =
-      Constants.expoConfig?.extra?.eas?.projectId ??
-      (Constants as { easConfig?: { projectId?: string } }).easConfig?.projectId;
-    try {
-      const expoToken = await Notifications.getExpoPushTokenAsync(
-        projectId ? { projectId: String(projectId) } : undefined
-      );
-      if (expoToken?.data && typeof expoToken.data === 'string' && expoToken.data.length > 0) {
-        return expoToken.data;
-      }
-    } catch {
-      // Fall through to native token (e.g. non-EAS builds).
+    if (Platform.OS === 'ios') {
+      const firebaseMessaging = await import('@react-native-firebase/messaging');
+      return await firebaseMessaging.getToken(firebaseMessaging.getMessaging());
     }
 
     const { data } = await Notifications.getDevicePushTokenAsync();

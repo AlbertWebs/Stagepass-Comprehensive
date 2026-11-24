@@ -5,7 +5,8 @@
  * Dark: bright AV title + light logo tile on dark ground; light: deeper tones (vice versa).
  */
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, View } from 'react-native';
+import { StagepassText as Text } from '@/components/StagepassText';
 import { StagePassColors, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 
@@ -175,7 +176,7 @@ const DOT = 6;
 
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 100,
     justifyContent: 'center',
     alignItems: 'center',

@@ -7,6 +7,8 @@ use App\Models\DailyOfficeCheckin;
 use App\Models\Event;
 use App\Models\EventUser;
 use App\Models\Setting;
+use App\Models\User;
+use App\Notifications\WorkflowPushNotification;
 use App\Services\AttendanceOvertimeService;
 use App\Services\EventCrewAttendanceService;
 use App\Services\MealAllowanceService;
@@ -18,6 +20,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class AttendanceController extends Controller
 {
@@ -140,6 +143,8 @@ class AttendanceController extends Controller
             ], 422);
         }
 
+        $this->notifyOfficeAttendanceAdmins($user, 'Office check-in', ' checked in at ' . $now->format('g:i A') . '.', 'office_checkin');
+
         $payload = [
             'message' => 'Checked in successfully',
             'checkin_time' => $checkin->checkin_time->toIso8601String(),
@@ -167,29 +172,45 @@ class AttendanceController extends Controller
         $user = $request->user();
         $tz = 'Africa/Nairobi';
         $today = Carbon::now($tz)->toDateString();
-        $record = DailyOfficeCheckin::where('user_id', $user->id)->whereDate('date', $today)->first();
+        $result = DB::transaction(function () use ($user, $today, $tz) {
+            $record = DailyOfficeCheckin::where('user_id', $user->id)
+                ->whereDate('date', $today)
+                ->lockForUpdate()
+                ->first();
+            if (! $record) {
+                return ['error' => 'missing'];
+            }
+            if ($record->checkout_time) {
+                return ['error' => 'already_checked_out', 'record' => $record];
+            }
 
-        if (! $record) {
+            $checkout = Carbon::now($tz);
+            $calc = $this->overtime->calculate($record->checkin_time, $checkout, $tz);
+            $record->checkout_time = $checkout;
+            $record->total_hours = $calc['total_hours'];
+            $record->standard_hours = $calc['standard_hours'];
+            $record->extra_hours = $calc['extra_hours'];
+            $record->save();
+
+            return ['record' => $record];
+        });
+
+        if (($result['error'] ?? null) === 'missing') {
             Log::info('Office checkout: no check-in found', [
                 'user_id' => $user->id,
                 'today' => $today,
             ]);
             return response()->json(['message' => 'You have not checked in today.'], 422);
         }
-        if ($record->checkout_time) {
+        $record = $result['record'];
+        if (($result['error'] ?? null) === 'already_checked_out') {
             return response()->json([
                 'message' => 'Already checked out.',
                 'checkout_time' => $record->checkout_time->toIso8601String(),
             ], 422);
         }
 
-        $checkout = Carbon::now($tz);
-        $calc = $this->overtime->calculate($record->checkin_time, $checkout, $tz);
-        $record->checkout_time = $checkout;
-        $record->total_hours = $calc['total_hours'];
-        $record->standard_hours = $calc['standard_hours'];
-        $record->extra_hours = $calc['extra_hours'];
-        $record->save();
+        $this->notifyOfficeAttendanceAdmins($user, 'Office check-out', ' checked out at ' . $record->checkout_time->format('g:i A') . '.', 'office_checkout');
 
         return response()->json([
             'message' => 'Checked out successfully',
@@ -202,6 +223,23 @@ class AttendanceController extends Controller
             'holiday_name' => $record->holiday_name,
             'day_type' => $record->is_holiday ? 'holiday' : ($record->is_sunday ? 'sunday' : 'normal'),
         ]);
+    }
+
+    private function notifyOfficeAttendanceAdmins(User $crewMember, string $title, string $detail, string $type): void
+    {
+        $admins = User::query()
+            ->whereHas('roles', fn ($query) => $query->whereIn('name', ['super_admin', 'director', 'admin']))
+            ->where('id', '<>', $crewMember->id)
+            ->get();
+
+        foreach ($admins as $admin) {
+            $admin->notify(new WorkflowPushNotification(
+                $title,
+                $crewMember->name . $detail,
+                $type,
+                ['user_id' => (string) $crewMember->id, 'user_name' => $crewMember->name]
+            ));
+        }
     }
 
     public function checkin(Request $request): JsonResponse

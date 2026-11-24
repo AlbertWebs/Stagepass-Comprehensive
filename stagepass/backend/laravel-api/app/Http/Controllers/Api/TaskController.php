@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Event;
 use App\Models\Task;
+use App\Notifications\WorkflowPushNotification;
 use App\Models\TaskComment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -140,6 +141,16 @@ class TaskController extends Controller
 
         if (! empty($validated['assignee_ids'])) {
             $task->assignees()->sync($validated['assignee_ids']);
+            $task->load('assignees');
+            foreach ($task->assignees as $assignee) {
+                if ((int) $assignee->id === (int) $request->user()->id) continue;
+                $assignee->notify(new WorkflowPushNotification(
+                    'New task assigned',
+                    'You have been assigned: ' . $task->title,
+                    'task_assigned',
+                    ['task_id' => (string) $task->id, 'task_title' => $task->title]
+                ));
+            }
         }
 
         return response()->json($task->load(['event', 'creator', 'assignees']), 201);
@@ -183,6 +194,7 @@ class TaskController extends Controller
             'assignee_ids.*' => 'exists:users,id',
         ]);
 
+        $previousAssigneeIds = $task->assignees()->pluck('users.id')->map(fn ($id) => (int) $id)->all();
         $assigneeIds = $validated['assignee_ids'] ?? null;
         $syncAssignees = array_key_exists('assignee_ids', $validated);
         unset($validated['assignee_ids']);
@@ -191,6 +203,32 @@ class TaskController extends Controller
         }
         if ($syncAssignees) {
             $task->assignees()->sync($assigneeIds ?? []);
+            $newAssigneeIds = array_values(array_diff(array_map('intval', $assigneeIds ?? []), $previousAssigneeIds));
+            if ($newAssigneeIds !== []) {
+                $task->load('assignees');
+                foreach ($task->assignees->whereIn('id', $newAssigneeIds) as $assignee) {
+                    $assignee->notify(new WorkflowPushNotification(
+                        'New task assigned',
+                        'You have been assigned: ' . $task->title,
+                        'task_assigned',
+                        ['task_id' => (string) $task->id, 'task_title' => $task->title]
+                    ));
+                }
+            }
+        }
+        $contentChanged = collect(['title', 'description', 'due_date', 'priority', 'event_id'])
+            ->contains(fn (string $key) => array_key_exists($key, $validated));
+        if ($contentChanged) {
+            $task->loadMissing('assignees');
+            foreach ($task->assignees->whereNotIn('id', $newAssigneeIds ?? []) as $assignee) {
+                if ((int) $assignee->id === (int) $request->user()->id) continue;
+                $assignee->notify(new WorkflowPushNotification(
+                    'Task updated',
+                    'Task details changed: ' . $task->title,
+                    'task_updated',
+                    ['task_id' => (string) $task->id, 'task_title' => $task->title]
+                ));
+            }
         }
 
         return response()->json($task->load(['event', 'creator', 'assignees']));
@@ -203,6 +241,16 @@ class TaskController extends Controller
     {
         if (! $this->isAdmin($request)) {
             return response()->json(['message' => 'Only admins can delete tasks.'], 403);
+        }
+        $task->loadMissing('assignees');
+        foreach ($task->assignees as $assignee) {
+            if ((int) $assignee->id === (int) $request->user()->id) continue;
+            $assignee->notify(new WorkflowPushNotification(
+                'Task cancelled',
+                'The task "' . $task->title . '" has been removed.',
+                'task_cancelled',
+                ['task_id' => (string) $task->id, 'task_title' => $task->title]
+            ));
         }
         $task->delete();
         return response()->json(null, 204);
@@ -224,7 +272,23 @@ class TaskController extends Controller
         $validated = $request->validate([
             'status' => 'required|in:pending,in_progress,completed',
         ]);
+        $previousStatus = $task->status;
         $task->update(['status' => $validated['status']]);
+        if ($previousStatus !== $task->status) {
+            $task->loadMissing(['creator', 'event.teamLeader']);
+            $recipients = collect([$task->creator, $task->event?->teamLeader])
+                ->filter()
+                ->unique('id');
+            foreach ($recipients as $recipient) {
+                if ((int) $recipient->id === (int) $user->id) continue;
+                $recipient->notify(new WorkflowPushNotification(
+                    'Task status updated',
+                    ($task->assignees()->where('users.id', $user->id)->exists() ? $user->name . ' marked ' : 'Task ') . $task->title . ' as ' . str_replace('_', ' ', $task->status) . '.',
+                    'task_status_updated',
+                    ['task_id' => (string) $task->id, 'task_title' => $task->title, 'status' => $task->status]
+                ));
+            }
+        }
         return response()->json($task->fresh()->load(['event', 'creator', 'assignees']));
     }
 
@@ -262,6 +326,20 @@ class TaskController extends Controller
             'user_id' => $user->id,
             'body' => $validated['body'],
         ]);
+        $task->loadMissing(['assignees', 'creator', 'event.teamLeader']);
+        $recipients = $task->assignees
+            ->concat(collect([$task->creator, $task->event?->teamLeader]))
+            ->filter()
+            ->unique('id');
+        foreach ($recipients as $recipient) {
+            if ((int) $recipient->id === (int) $user->id) continue;
+            $recipient->notify(new WorkflowPushNotification(
+                'New task comment',
+                $user->name . ' commented on "' . $task->title . '": ' . mb_strimwidth($comment->body, 0, 100, '…'),
+                'task_comment_added',
+                ['task_id' => (string) $task->id, 'task_title' => $task->title]
+            ));
+        }
         return response()->json($comment->load('user'), 201);
     }
 }

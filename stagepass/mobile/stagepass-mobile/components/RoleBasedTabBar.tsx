@@ -4,9 +4,8 @@
  * Admin: Dashboard, Crew, Projects (center, emphasized), Reports, Profile.
  * Logout is in the header (top right).
  */
-import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { useRouter, usePathname } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
+import type { BottomTabBarProps } from 'expo-router/js-tabs';
+import { useRouter, usePathname, useFocusEffect } from 'expo-router';
 import { IconSymbol, type IconSymbolName } from '@/components/ui/icon-symbol';
 import { Icons } from '@/constants/ui';
 import { themeBlue, themeYellow } from '@/constants/theme';
@@ -20,9 +19,9 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import { StagepassText as Text } from '@/components/StagepassText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigationPress, NAV_PRESSED_OPACITY } from '@/src/utils/navigationPress';
 import { api, type Event } from '~/services/api';
@@ -128,7 +127,7 @@ const ADMIN_TABS: TabItemConfig[] = [
   { name: 'profile', route: 'profile', label: 'Profile', iconName: 'person.fill' },
 ];
 
-export function RoleBasedTabBar({ state, navigation, descriptors, insets: tabNavigatorInsets }: BottomTabBarProps) {
+export function RoleBasedTabBar({ state, emitter, navigateToTab, descriptors, insets: tabNavigatorInsets }: BottomTabBarProps) {
   const role = useAppRole();
   const router = useRouter();
   const pathname = usePathname();
@@ -237,13 +236,15 @@ export function RoleBasedTabBar({ state, navigation, descriptors, insets: tabNav
         router.push('/(tabs)/events');
         return;
       }
-      const event = navigation.emit({
+      const route = state.routes.find((r) => r.name === routeName);
+      if (!route) return;
+      const event = emitter.emit({
         type: 'tabPress',
-        target: state.routes.find((r) => r.name === routeName)?.key ?? '',
+        target: route.key,
         canPreventDefault: true,
       });
-      if (!event.defaultPrevented) {
-        navigation.navigate(routeName as never);
+      if (!event.defaultPrevented && state.routes[state.index]?.key !== route.key) {
+        navigateToTab(route.key);
       }
     });
   };

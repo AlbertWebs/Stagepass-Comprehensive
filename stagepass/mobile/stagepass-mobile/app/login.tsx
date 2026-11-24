@@ -5,20 +5,25 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
+import { StagepassText as Text } from '@/components/StagepassText';
+import { StagepassTextInput as TextInput } from '@/components/StagepassTextInput';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Image } from 'expo-image';
+import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch } from 'react-redux';
 import { api, getApiBase, setAuthToken, suppressUnauthorizedForMs } from '~/services/api';
@@ -32,6 +37,7 @@ import {
   hasBiometricStoredToken,
   isBiometricHardwareAvailable,
   refreshBiometricCredentialIfEnabled,
+  saveBiometricCredential,
   unlockWithBiometric,
 } from '~/store/biometricLogin';
 import {
@@ -44,9 +50,8 @@ import {
   setLoginLockoutUntil,
 } from '~/store/persistAuth';
 import { StagepassFaviconLogo } from '@/components/StagepassFaviconLogo';
-import { ThemedText } from '@/components/themed-text';
 import { useThemePreference } from '@/context/ThemePreferenceContext';
-import { Buttons, Cards, Form, Icons, Typography, UI } from '@/constants/ui';
+import { Icons } from '@/constants/ui';
 import { Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
 import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
@@ -62,6 +67,7 @@ export default function LoginScreen() {
   const [showPin, setShowPin] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
+  const isLocked = lockoutUntil != null && lockoutUntil > Date.now();
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [isExiting, setIsExiting] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
@@ -75,18 +81,24 @@ export default function LoginScreen() {
   >('finger-print-outline');
   const [serverAllowsBiometric, setServerAllowsBiometric] = useState(true);
   const [biometricLoading, setBiometricLoading] = useState(false);
+  const [biometricPromptVisible, setBiometricPromptVisible] = useState(false);
+  const [biometricPromptToken, setBiometricPromptToken] = useState<string | null>(null);
+  const [biometricPromptBusy, setBiometricPromptBusy] = useState(false);
+  const [biometricPromptError, setBiometricPromptError] = useState<string | null>(null);
   const dispatch = useDispatch();
   const router = useRouter();
   const handleNav = useNavigationPress();
   const exitOpacity = useSharedValue(1);
   const exitTranslateY = useSharedValue(0);
+  const fingerprintPulse = useSharedValue(0);
   const { colors, isDark } = useStagePassTheme();
   const { setPreference } = useThemePreference();
   const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const heroHeight = Math.max(160, Math.min(280, height * 0.29));
+  const [focusedField, setFocusedField] = useState<'username' | 'pin' | null>(null);
 
   useEffect(() => {
-    // Login should default to system appearance (auto), not forced light/dark.
-    setPreference('system');
     // Clear stale lockout locally so QA/dev users can retry immediately.
     clearLoginLockout().then(() => {
       setLockoutUntil(null);
@@ -152,6 +164,37 @@ export default function LoginScreen() {
 
   const navigateToHome = () => router.replace('/(tabs)');
 
+  const dismissBiometricPrompt = () => {
+    setBiometricPromptVisible(false);
+    setBiometricPromptToken(null);
+    setBiometricPromptError(null);
+    setIsExiting(true);
+  };
+
+  const enableBiometricFromPrompt = async () => {
+    if (!biometricPromptToken || biometricPromptBusy) return;
+    setBiometricPromptBusy(true);
+    setBiometricPromptError(null);
+    try {
+      await saveBiometricCredential(biometricPromptToken);
+      setBiometricOptIn(true);
+      setHasBiometricToken(true);
+      setBiometricPromptVisible(false);
+      setBiometricPromptToken(null);
+      setIsExiting(true);
+    } catch (error) {
+      setBiometricPromptError(
+        error instanceof Error && error.message === 'Cancelled'
+          ? 'Biometric confirmation was canceled. You can try again or enable it later in your profile.'
+          : error instanceof Error
+            ? error.message
+            : 'Could not enable biometric sign-in. You can try again from your profile.'
+      );
+    } finally {
+      setBiometricPromptBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (!isExiting) return;
     const duration = 380;
@@ -166,7 +209,6 @@ export default function LoginScreen() {
     transform: [{ translateY: exitTranslateY.value }],
   }));
 
-  const isLocked = lockoutUntil != null && lockoutUntil > Date.now();
   const lockoutMinsLeft =
     isLocked && lockoutUntil ? Math.ceil((lockoutUntil - Date.now()) / 60000) : 0;
 
@@ -278,7 +320,14 @@ export default function LoginScreen() {
         if (t) api.auth.updateProfile({ fcm_token: t }).catch(() => {});
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      setIsExiting(true);
+      if (serverAllowsBiometric && biometricAvailable && !biometricOptIn) {
+        setLoading(false);
+        setBiometricPromptToken(res.token);
+        setBiometricPromptError(null);
+        setBiometricPromptVisible(true);
+      } else {
+        setIsExiting(true);
+      }
       return;
     } catch (e: unknown) {
       setLoading(false);
@@ -318,285 +367,480 @@ export default function LoginScreen() {
     }
   }
 
-  const toggleTheme = () => {
-    setPreference(isDark ? 'light' : 'dark');
+  const toggleTheme = (x: number, y: number) => {
+    const nextPreference = isDark ? 'light' : 'dark';
+    setPreference(nextPreference, {
+      origin: { x, y },
+      color: nextPreference === 'dark' ? themeBlue : '#f2f4f8',
+    });
   };
 
-  const bgColor = isDark ? themeBlue : '#e8eaef';
-  const cardBg = isDark ? 'rgba(40,45,65,0.95)' : '#ffffff';
-  const inputBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
-  const inputBorder = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)';
-  const accentColor = themeYellow;
-  const titleColor = isDark ? '#fff' : colors.text;
-  const subtitleColor = isDark ? 'rgba(255,255,255,0.85)' : colors.textSecondary;
-  const welcomeTitle = firstName ? `Welcome Back ${firstName}` : 'Welcome Back';
+  const bgColor = isDark ? themeBlue : '#f2f4f8';
+  const inputBg = isDark ? 'rgba(255,255,255,0.08)' : '#ffffff';
+  const inputBorder = isDark ? 'rgba(195,205,229,0.55)' : 'rgba(17,24,39,0.18)';
+  const accentColor = isDark ? themeYellow : '#765400';
+  const titleColor = isDark ? '#fff' : '#111a31';
+  const subtitleColor = isDark ? '#d7dced' : '#596276';
+  const labelColor = isDark ? '#fff' : '#182138';
+  const inputTextColor = isDark ? '#fff' : '#111a31';
+  const placeholderColor = isDark ? '#aab3c9' : '#8991a1';
+  const welcomeTitle = firstName ? `Welcome back, ${firstName}` : 'Welcome back';
 
   const showBiometricSignIn =
-    serverAllowsBiometric && biometricOptIn && biometricAvailable;
-  const showBiometricHintProfile =
-    serverAllowsBiometric && biometricAvailable && !biometricOptIn;
-  const signInRowMarginTop = showBiometricHintProfile ? Spacing.md : Spacing.lg;
+    serverAllowsBiometric && biometricOptIn && biometricAvailable && hasBiometricToken;
+  const fingerprintPulseStyle = useAnimatedStyle(() => ({
+    opacity: 1 - fingerprintPulse.value * 0.16,
+    transform: [{ scale: 1 + fingerprintPulse.value * 0.1 }],
+  }));
+
+  useEffect(() => {
+    if (!showBiometricSignIn || biometricLoading) {
+      cancelAnimation(fingerprintPulse);
+      fingerprintPulse.value = 0;
+      return;
+    }
+    fingerprintPulse.value = withRepeat(
+      withTiming(1, { duration: 760, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      true
+    );
+    return () => cancelAnimation(fingerprintPulse);
+  }, [biometricLoading, fingerprintPulse, showBiometricSignIn]);
 
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
+      <StatusBar style="light" />
+      <Image
+        source={require('../assets/images/login-unbranded-crew.webp')}
+        contentFit="cover"
+        contentPosition="left center"
+        style={[styles.heroBackdrop, { height: heroHeight + insets.top + 32 }]}
+      />
+      <LinearGradient
+        colors={['rgba(5,10,28,0.3)', 'rgba(7,20,47,0.82)', bgColor]}
+        locations={[0, 0.62, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={[styles.heroGradient, { height: heroHeight + insets.top + 32 }]}
+      />
       <Animated.View style={[styles.keyboardWrap, exitAnimatedStyle]}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.keyboard}
-      >
-        <ScrollView
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingTop: insets.top + Spacing.lg, paddingBottom: insets.bottom + Spacing.xl * 2 },
-          ]}
-          keyboardShouldPersistTaps="always"
-          showsVerticalScrollIndicator={false}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.keyboard}
         >
-          {/* Theme toggle – top right */}
-          <View style={styles.headerRow}>
-            <View style={styles.headerSpacer} />
-            <Pressable onPress={toggleTheme} style={({ pressed }) => [styles.themeBtn, { opacity: pressed ? 0.7 : 1 }]}>
-              <Ionicons
-                name={isDark ? 'moon' : 'sunny'}
-                size={Icons.xl}
-                color={isDark ? '#fff' : colors.text}
-              />
-            </Pressable>
-          </View>
-
-          {/* Logo + wordmark */}
-          <View style={styles.logoSection}>
-            <View style={styles.logoIconWrap}>
-              <StagepassFaviconLogo size={64} />
-            </View>
-            <ThemedText type="titleLarge" style={[styles.wordmark, { color: isDark ? '#fff' : colors.text }]}>
-              Stagepass Crew
-            </ThemedText>
-          </View>
-
-          {/* Form card */}
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)' }]}>
-            <ThemedText style={[styles.welcomeTitle, { color: titleColor }]}>
-              {welcomeTitle}
-            </ThemedText>
-            <ThemedText type="bodySmall" style={[styles.welcomeSubtitle, { color: subtitleColor }]}>
-              Log in to manage your events and tickets
-            </ThemedText>
-
-            <View style={styles.fieldGroup}>
-              <ThemedText type="label" style={[styles.fieldLabel, { color: subtitleColor }]}>Username</ThemedText>
-              <View style={[styles.inputRow, { backgroundColor: inputBg, borderColor: inputBorder }]}>
-                <Ionicons name="person-outline" size={Icons.standard} color={accentColor} style={styles.inputIcon} />
-                <TextInput
-                  placeholder="Enter your username"
-                  placeholderTextColor={colors.placeholder}
-                  value={username}
-                  onChangeText={setUsername}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={!loading && !isLocked}
-                  autoComplete="username"
-                  style={[styles.input, { color: colors.text }]}
-                />
-              </View>
-            </View>
-
-            <View style={styles.fieldGroup}>
-              <View style={styles.pinLabelRow}>
-                <ThemedText type="label" style={[styles.fieldLabel, { color: subtitleColor }]}>4-Digit PIN</ThemedText>
-                <Pressable onPress={() => handleNav(() => router.push('/forgot-password'))} hitSlop={8} style={({ pressed }) => ({ opacity: pressed ? NAV_PRESSED_OPACITY : 1 })}>
-                  <ThemedText type="link" style={[styles.forgotLink, { color: accentColor }]}>Forgot PIN?</ThemedText>
-                </Pressable>
-              </View>
-              <View style={[styles.inputRow, { backgroundColor: inputBg, borderColor: inputBorder }]}>
-                <Ionicons name="lock-closed-outline" size={Icons.standard} color={accentColor} style={styles.inputIcon} />
-                <TextInput
-                  placeholder="••••"
-                  placeholderTextColor={colors.placeholder}
-                  value={pin}
-                  onChangeText={(text) => setPin(text.replace(/\D/g, '').slice(0, PIN_LENGTH))}
-                  secureTextEntry={!showPin}
-                  editable={!loading && !isLocked}
-                  keyboardType="number-pad"
-                  maxLength={PIN_LENGTH}
-                  style={[styles.input, styles.pinInput, { color: colors.text }]}
-                />
+          <ScrollView
+            contentContainerStyle={[
+              styles.scrollContent,
+              { paddingTop: insets.top + Spacing.sm, paddingBottom: insets.bottom + Spacing.xl },
+            ]}
+            keyboardShouldPersistTaps="always"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.content}>
+              <View style={styles.headerRow}>
+                <View style={styles.headerSpacer} />
                 <Pressable
-                  onPress={() => setShowPin((v) => !v)}
-                  disabled={loading || isLocked}
-                  style={({ pressed }) => [styles.pinToggleBtn, { opacity: pressed ? NAV_PRESSED_OPACITY : 1 }]}
-                  hitSlop={8}
+                  onPress={(event) => toggleTheme(event.nativeEvent.pageX, event.nativeEvent.pageY)}
                   accessibilityRole="button"
-                  accessibilityLabel={showPin ? 'Hide PIN' : 'Show PIN'}
+                  accessibilityLabel={`Switch to ${isDark ? 'light' : 'dark'} appearance`}
+                  style={({ pressed }) => [styles.themeBtn, { opacity: pressed ? 0.75 : 1 }]}
                 >
-                  <Ionicons
-                    name={showPin ? 'eye-off-outline' : 'eye-outline'}
-                    size={Icons.standard}
-                    color={accentColor}
-                  />
+                  <Ionicons name={isDark ? 'moon' : 'sunny'} size={Icons.standard} color="#fff" />
                 </Pressable>
               </View>
-            </View>
 
-            {isLocked ? (
-              <ThemedText type="bodySmall" style={[styles.lockoutText, { color: colors.error }]}>
-                Try again in {lockoutMinsLeft} minute{lockoutMinsLeft !== 1 ? 's' : ''}
-              </ThemedText>
-            ) : (
-              <>
-                {showBiometricHintProfile ? (
-                  <View style={styles.biometricHintBox}>
-                    <Ionicons name="finger-print-outline" size={Icons.small} color={subtitleColor} />
-                    <Text style={[styles.biometricHintText, { color: subtitleColor }]}>
-                      After you sign in, open{' '}
-                      <Text style={{ fontWeight: '700', color: colors.text }}>Profile</Text>
-                      {' '}to turn on{' '}
-                      <Text style={{ fontWeight: '700', color: colors.text }}>{biometricLabel}</Text>
-                      {' '}for faster sign-in next time.
-                    </Text>
+              <View style={[styles.brandBlock, { marginTop: heroHeight - 116 }]}>
+                <View style={styles.logoIconWrap}>
+                  <StagepassFaviconLogo size={64} />
+                </View>
+                <View style={styles.crewRow}>
+                  <View style={styles.crewRule} />
+                  <Text style={styles.crewLabel}>CREW</Text>
+                  <View style={styles.crewRule} />
+                </View>
+              </View>
+
+              <View style={[styles.card, { backgroundColor: isDark ? '#131f39' : '#fff' }]}>
+                <Text style={[styles.welcomeTitle, { color: titleColor }]}>{welcomeTitle}</Text>
+                <Text style={[styles.welcomeSubtitle, { color: subtitleColor }]}>
+                  Manage your assignments, attendance and shifts.
+                </Text>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={[styles.fieldLabel, { color: labelColor }]}>Username</Text>
+                  <View style={[styles.inputRow, { backgroundColor: inputBg, borderColor: focusedField === 'username' ? accentColor : inputBorder }]}>
+                    <Ionicons name="person-outline" size={Icons.standard} color={accentColor} style={styles.inputIcon} />
+                    <TextInput
+                      placeholder="Enter your username"
+                      accessibilityLabel="Username"
+                      onFocus={() => setFocusedField('username')}
+                      onBlur={() => setFocusedField(null)}
+                      placeholderTextColor={placeholderColor}
+                      value={username}
+                      onChangeText={setUsername}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      editable={!loading && !isLocked}
+                      autoComplete="username"
+                      style={[styles.input, { color: inputTextColor }]}
+                    />
                   </View>
-                ) : null}
-                {showBiometricSignIn ? (
-                  <View style={[styles.signInActionsRow, { marginTop: signInRowMarginTop }]}>
+                </View>
+
+                <View style={styles.fieldGroup}>
+                  <View style={styles.pinLabelRow}>
+                    <Text style={[styles.fieldLabel, { color: labelColor, marginBottom: 0 }]}>4-digit PIN</Text>
                     <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Sign in with ${biometricLabel}`}
-                      disabled={biometricLoading}
-                      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-                      onPress={handleBiometricLogin}
-                      style={({ pressed }) => [
-                        styles.biometricBtnSide,
-                        {
-                          borderColor: accentColor,
-                          opacity: biometricLoading
-                            ? 0.92
-                            : hasBiometricToken
-                              ? pressed
-                                ? 0.88
-                                : 1
-                              : 0.75,
-                        },
-                      ]}
+                      onPress={() => handleNav(() => router.push('/forgot-password'))}
+                      hitSlop={8}
+                      style={({ pressed }) => ({ opacity: pressed ? NAV_PRESSED_OPACITY : 1 })}
                     >
-                      {biometricLoading ? (
-                        <View style={styles.biometricBtnSideInner}>
-                          <ActivityIndicator size="small" color={accentColor} />
-                          <ThemedText
-                            numberOfLines={1}
-                            style={[styles.biometricBtnSideCaption, { color: accentColor }]}
-                          >
-                            Signing in…
-                          </ThemedText>
-                        </View>
-                      ) : (
-                        <View style={styles.biometricBtnSideInner}>
-                          <Ionicons name={biometricIconName} size={Icons.header} color={accentColor} />
-                          <ThemedText
-                            numberOfLines={2}
-                            style={[styles.biometricBtnSideCaption, { color: accentColor }]}
-                          >
-                            {biometricLabel}
-                          </ThemedText>
-                        </View>
-                      )}
+                      <Text style={[styles.forgotLink, { color: accentColor }]}>Forgot PIN?</Text>
                     </Pressable>
+                  </View>
+                  <View style={[styles.inputRow, { backgroundColor: inputBg, borderColor: focusedField === 'pin' ? accentColor : inputBorder }]}>
+                    <Ionicons name="lock-closed-outline" size={Icons.standard} color={accentColor} style={styles.inputIcon} />
+                    <TextInput
+                      placeholder="••••"
+                      accessibilityLabel="4-digit PIN"
+                      onFocus={() => setFocusedField('pin')}
+                      onBlur={() => setFocusedField(null)}
+                      placeholderTextColor={placeholderColor}
+                      value={pin}
+                      onChangeText={(text) => setPin(text.replace(/\D/g, '').slice(0, PIN_LENGTH))}
+                      secureTextEntry={!showPin}
+                      editable={!loading && !isLocked}
+                      keyboardType="number-pad"
+                      maxLength={PIN_LENGTH}
+                      style={[styles.input, styles.pinInput, { color: inputTextColor }]}
+                    />
+                    <Pressable
+                      onPress={() => setShowPin((v) => !v)}
+                      disabled={loading || isLocked}
+                      style={({ pressed }) => [styles.pinToggleBtn, { opacity: pressed ? NAV_PRESSED_OPACITY : 1 }]}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={showPin ? 'Hide PIN' : 'Show PIN'}
+                    >
+                      <Ionicons
+                        name={showPin ? 'eye-off-outline' : 'eye-outline'}
+                        size={Icons.standard}
+                        color={accentColor}
+                      />
+                    </Pressable>
+                  </View>
+                </View>
+
+                {isLocked ? (
+                  <Text style={[styles.lockoutText, { color: colors.error }]}>
+                    Try again in {lockoutMinsLeft} minute{lockoutMinsLeft !== 1 ? 's' : ''}
+                  </Text>
+                ) : (
+                  <>
                     <Pressable
                       onPress={handleLogin}
                       disabled={loading}
                       style={({ pressed }) => [
                         styles.loginBtn,
-                        styles.loginBtnWider,
-                        {
-                          backgroundColor: accentColor,
-                          opacity: loading ? 1 : pressed ? 0.9 : 1,
-                        },
+                        { backgroundColor: themeYellow, opacity: loading ? 1 : pressed ? 0.9 : 1 },
                       ]}
                     >
                       {loading ? (
                         <>
-                          <ActivityIndicator size="small" color="#fff" style={styles.loginSpinner} />
-                          <ThemedText type="buttonText" style={styles.loginBtnText}>Loading…</ThemedText>
+                          <ActivityIndicator size="small" color="#09142f" />
+                          <Text style={styles.loginBtnText}>Signing in…</Text>
                         </>
                       ) : (
                         <>
-                          <ThemedText type="buttonText" style={styles.loginBtnText}>Sign In</ThemedText>
-                          <Ionicons name="arrow-forward" size={Icons.standard} color="#fff" />
+                          <Text style={styles.loginBtnText}>Sign in</Text>
+                          <Ionicons name="arrow-forward" size={Icons.standard} color="#09142f" />
                         </>
                       )}
                     </Pressable>
-                  </View>
-                ) : (
-                  <Pressable
-                    onPress={handleLogin}
-                    disabled={loading}
-                    style={({ pressed }) => [
-                      styles.loginBtn,
-                      {
-                        backgroundColor: accentColor,
-                        opacity: loading ? 1 : pressed ? 0.9 : 1,
-                        marginTop: serverAllowsBiometric && biometricAvailable ? Spacing.md : 0,
-                      },
-                    ]}
-                  >
-                    {loading ? (
-                      <>
-                        <ActivityIndicator size="small" color="#fff" style={styles.loginSpinner} />
-                        <ThemedText type="buttonText" style={styles.loginBtnText}>Loading…</ThemedText>
-                      </>
-                    ) : (
-                      <>
-                        <ThemedText type="buttonText" style={styles.loginBtnText}>Sign In</ThemedText>
-                        <Ionicons name="arrow-forward" size={Icons.standard} color="#fff" />
-                      </>
-                    )}
-                  </Pressable>
-                )}
-              </>
-            )}
-          </View>
 
-          <View style={styles.footerIcons}>
-            <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-              <Ionicons name="help-circle-outline" size={Icons.header} color={subtitleColor} />
-            </Pressable>
-            <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-              <Ionicons name="globe-outline" size={Icons.header} color={subtitleColor} />
-            </Pressable>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+                    {showBiometricSignIn ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Sign in with ${biometricLabel}`}
+                        accessibilityState={{ busy: biometricLoading, disabled: biometricLoading }}
+                        disabled={biometricLoading}
+                        onPress={handleBiometricLogin}
+                        style={({ pressed }) => [
+                          styles.biometricBtn,
+                          {
+                            borderColor: isDark ? '#455471' : '#d5c59e',
+                            backgroundColor: isDark ? '#1d2d49' : '#fff7e2',
+                          },
+                          pressed && styles.biometricBtnPressed,
+                        ]}
+                      >
+                        {biometricLoading ? (
+                          <ActivityIndicator size="small" color={accentColor} />
+                        ) : (
+                          <View style={styles.fingerprintFrame} accessible={false}>
+                            <Ionicons
+                              name="scan-outline"
+                              size={40}
+                              color={accentColor}
+                              style={styles.fingerprintFrameCorners}
+                            />
+                            <Animated.View style={fingerprintPulseStyle}>
+                              <Ionicons name="finger-print-outline" size={27} color={accentColor} />
+                            </Animated.View>
+                          </View>
+                        )}
+                      </Pressable>
+                    ) : null}
+                  </>
+                )}
+              </View>
+
+              <View style={styles.footerGroup}>
+                <View style={styles.utilityRow}>
+                  <View style={styles.utilityItem}>
+                    <Ionicons name="help-circle-outline" size={Icons.standard} color={titleColor} />
+                    <Text style={[styles.utilityText, { color: titleColor }]}>Need help?</Text>
+                  </View>
+                  <View style={[styles.footerDivider, { backgroundColor: subtitleColor }]} />
+                  <View style={styles.utilityItem}>
+                    <Ionicons name="globe-outline" size={Icons.standard} color={titleColor} />
+                    <Text style={[styles.utilityText, { color: titleColor }]}>English</Text>
+                    <Ionicons name="chevron-down" size={Icons.small} color={accentColor} />
+                  </View>
+                </View>
+
+                <View style={styles.footerTagline}>
+                  <View style={styles.footerRule} />
+                  <Text style={[styles.footerTaglineText, { color: subtitleColor }]}>
+                    People <Text style={{ color: accentColor }}>•</Text> Technology{' '}
+                    <Text style={{ color: accentColor }}>•</Text> Impact
+                  </Text>
+                  <View style={styles.footerRule} />
+                </View>
+              </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Animated.View>
+      <Modal
+        visible={biometricPromptVisible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={dismissBiometricPrompt}
+      >
+        <View style={styles.biometricModalBackdrop}>
+          <View
+            style={[
+              styles.biometricModalCard,
+              {
+                backgroundColor: isDark ? '#101a34' : '#fff',
+                borderColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(17,24,39,0.1)',
+              },
+            ]}
+          >
+            <View style={styles.biometricModalIcon}>
+              <Ionicons name={biometricIconName} size={32} color={themeYellow} />
+            </View>
+            <Text style={styles.biometricModalEyebrow}>QUICK &amp; SECURE ACCESS</Text>
+            <Text style={[styles.biometricModalTitle, { color: titleColor }]}>Enable {biometricLabel}?</Text>
+            <Text style={[styles.biometricModalMessage, { color: subtitleColor }]}>
+              Use {biometricLabel.toLowerCase()} to sign in to Stagepass faster next time. Your biometric data stays on this device.
+            </Text>
+            {biometricPromptError ? (
+              <View style={styles.biometricModalError}>
+                <Ionicons name="alert-circle-outline" size={18} color={isDark ? '#ffd166' : '#9a5b00'} />
+                <Text style={[styles.biometricModalErrorText, { color: isDark ? '#ffd166' : '#9a5b00' }]}>
+                  {biometricPromptError}
+                </Text>
+              </View>
+            ) : null}
+            <View style={styles.biometricModalActions}>
+              <Pressable
+                onPress={dismissBiometricPrompt}
+                disabled={biometricPromptBusy}
+                style={({ pressed }) => [
+                  styles.biometricModalSecondary,
+                  {
+                    borderColor: isDark ? 'rgba(255,255,255,0.22)' : 'rgba(17,24,39,0.18)',
+                    opacity: biometricPromptBusy ? 0.55 : pressed ? 0.72 : 1,
+                  },
+                ]}
+              >
+                <Text style={[styles.biometricModalSecondaryText, { color: titleColor }]}>Not now</Text>
+              </Pressable>
+              <Pressable
+                onPress={enableBiometricFromPrompt}
+                disabled={biometricPromptBusy}
+                style={({ pressed }) => [styles.biometricModalPrimary, { opacity: biometricPromptBusy ? 0.8 : pressed ? 0.86 : 1 }]}
+              >
+                {biometricPromptBusy ? (
+                  <ActivityIndicator size="small" color="#09142f" />
+                ) : (
+                  <Ionicons name="finger-print-outline" size={19} color="#09142f" />
+                )}
+                <Text style={styles.biometricModalPrimaryText}>
+                  {biometricPromptBusy ? 'Enabling…' : 'Enable'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  heroBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+  },
+  heroGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+  },
   keyboardWrap: { flex: 1 },
   keyboard: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: Spacing.xl,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: 32,
+  },
+  content: {
+    width: '100%',
+    flexGrow: 1,
+    maxWidth: 520,
+    alignSelf: 'center',
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: UI.sectionGap,
+    justifyContent: 'flex-end',
+    minHeight: 40,
+    marginBottom: Spacing.md,
   },
-  headerSpacer: { width: 40 },
+  headerSpacer: { flex: 1 },
   themeBtn: {
-    width: 40,
-    height: 40,
+    width: 42,
+    height: 42,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.65)',
+    backgroundColor: 'rgba(7,15,35,0.52)',
   },
-  logoSection: {
+  biometricModalBackdrop: {
+    flex: 1,
     alignItems: 'center',
-    marginBottom: UI.sectionGap,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.xl,
+    backgroundColor: 'rgba(3,8,22,0.72)',
+  },
+  biometricModalCard: {
+    width: '100%',
+    maxWidth: 390,
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing.lg,
+    borderRadius: 26,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.28,
+    shadowRadius: 24,
+    elevation: 18,
+  },
+  biometricModalIcon: {
+    width: 68,
+    height: 68,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 34,
+    backgroundColor: 'rgba(255,194,0,0.13)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,194,0,0.28)',
+    marginBottom: Spacing.md,
+  },
+  biometricModalEyebrow: {
+    color: themeYellow,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: Spacing.xs,
+  },
+  biometricModalTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: Spacing.sm,
+  },
+  biometricModalMessage: {
+    fontSize: 15,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  biometricModalError: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    width: '100%',
+    padding: Spacing.md,
+    marginTop: Spacing.md,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,194,0,0.08)',
+  },
+  biometricModalErrorText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  biometricModalActions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    width: '100%',
+    marginTop: Spacing.xl,
+  },
+  biometricModalSecondary: {
+    flex: 1,
+    minHeight: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderRadius: 14,
+  },
+  biometricModalSecondaryText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  biometricModalPrimary: {
+    flex: 1,
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    borderRadius: 14,
+    backgroundColor: themeYellow,
+  },
+  biometricModalPrimaryText: {
+    color: '#09142f',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  brandBlock: {
+    gap: Spacing.sm,
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
   },
   logoIconWrap: {
-    marginBottom: Spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -605,135 +849,159 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
   },
-  wordmark: {
-    fontSize: Typography.titleHero,
-    fontWeight: Typography.titleLargeWeight,
-    letterSpacing: 0.5,
+  crewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.md,
+  },
+  crewRule: {
+    width: 30,
+    height: 2,
+    backgroundColor: themeYellow,
+  },
+  crewLabel: {
+    color: themeYellow,
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 1.4,
   },
   card: {
-    borderRadius: Cards.borderRadius,
-    padding: Cards.padding,
-    marginBottom: UI.sectionGap,
-    borderWidth: StyleSheet.hairlineWidth,
+    padding: Spacing.xl,
+    borderRadius: 22,
   },
   welcomeTitle: {
-    fontSize: Typography.titleWelcome,
-    fontWeight: Typography.titleWelcomeWeight,
-    marginBottom: Spacing.sm,
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: -0.45,
+    marginBottom: 4,
   },
   welcomeSubtitle: {
+    fontSize: 15,
+    lineHeight: 21,
     marginBottom: Spacing.xl,
   },
-  fieldGroup: { marginBottom: Spacing.lg },
-  fieldLabel: { marginBottom: Spacing.sm },
+  fieldGroup: { marginBottom: Spacing.md },
+  fieldLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: Spacing.sm,
+  },
   pinLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: Spacing.sm,
   },
-  forgotLink: {},
+  forgotLink: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: Form.inputBorderRadius,
-    minHeight: Form.inputMinHeight,
+    borderRadius: 15,
+    minHeight: 52,
   },
   inputIcon: { marginLeft: Spacing.lg },
   input: {
     flex: 1,
-    fontSize: Form.inputText,
+    fontSize: 16,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.md,
   },
   pinInput: { letterSpacing: 4 },
   pinToggleBtn: {
-    width: 40,
-    height: 40,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: Spacing.sm,
+    marginRight: 5,
   },
   lockoutText: {
     textAlign: 'center',
     marginTop: Spacing.lg,
-  },
-  biometricHintBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: Spacing.sm,
-    marginTop: Spacing.md,
-    paddingHorizontal: Spacing.sm,
-  },
-  biometricHintText: {
-    flex: 1,
-    fontSize: Typography.label,
-    lineHeight: 18,
-  },
-  signInActionsRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: Spacing.md,
-  },
-  biometricBtnSide: {
-    flex: 2,
-    minHeight: Buttons.minHeight,
-    minWidth: 0,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.sm,
-    borderRadius: Form.inputBorderRadius,
-    borderWidth: 2,
-    backgroundColor: 'transparent',
-    justifyContent: 'center',
-  },
-  biometricBtnSideInner: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.xs,
-    paddingVertical: 2,
-  },
-  biometricBtnSideCaption: {
-    fontSize: Typography.label,
-    fontWeight: '600',
-    textAlign: 'center',
-    lineHeight: 18,
+    fontSize: 14,
   },
   loginBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: UI.rowGap,
-    marginTop: Spacing.lg,
-    minHeight: Buttons.minHeight,
-    minWidth: 0,
-    borderRadius: Form.inputBorderRadius,
-  },
-  loginBtnWider: {
-    flex: 3,
-    marginTop: 0,
+    gap: Spacing.md,
+    marginTop: Spacing.sm,
+    minHeight: 54,
+    borderRadius: 16,
   },
   loginBtnText: {
-    fontSize: Buttons.fontSize,
-    fontWeight: Buttons.fontWeight,
-    color: '#fff',
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#09142f',
   },
-  loginSpinner: {
-    marginRight: UI.rowGap,
+  biometricBtn: {
+    alignSelf: 'center',
+    width: 58,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.md,
+    borderWidth: 1,
+    borderRadius: 17,
   },
-  footer: {
+  biometricBtnPressed: {
+    transform: [{ scale: 0.96 }],
+    opacity: 0.86,
+  },
+  fingerprintFrame: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fingerprintFrameCorners: {
+    position: 'absolute',
+    opacity: 0.5,
+  },
+  footerGroup: {
+    marginTop: 'auto',
+    paddingTop: Spacing.xl,
+  },
+  utilityRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: UI.rowGap,
-    marginBottom: Spacing.md,
+    gap: Spacing.lg,
+    marginTop: 0,
   },
-  footerText: {},
-  footerLink: {},
-  footerIcons: {
+  utilityItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  utilityText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  footerDivider: {
+    width: 1,
+    height: 24,
+    opacity: 0.5,
+  },
+  footerTagline: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.xl,
+    gap: Spacing.sm,
+    marginTop: Spacing.lg,
+  },
+  footerRule: {
+    width: 24,
+    height: 1.5,
+    backgroundColor: themeYellow,
+  },
+  footerTaglineText: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.2,
   },
 });

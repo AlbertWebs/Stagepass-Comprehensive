@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\DailyOfficeCheckin;
+use App\Models\EventAttendanceSession;
 use App\Models\EventUser;
 use App\Models\TimeOffRequest;
 use App\Models\User;
 use App\Services\ExpoPushSender;
 use App\Services\FcmSender;
+use App\Support\OfficeCheckinRequiredDays;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -48,6 +50,7 @@ class CheckinsController extends Controller
         }
 
         $tz = config('app.timezone', 'Africa/Nairobi');
+        $request->validate(['date' => 'sometimes|date_format:Y-m-d']);
         $date = $request->filled('date')
             ? Carbon::parse($request->date, $tz)->toDateString()
             : Carbon::now($tz)->toDateString();
@@ -71,13 +74,30 @@ class CheckinsController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'is_permanent_employee']);
 
-        $list = $users->map(function (User $u) use ($officeCheckins, $usersOffOnDate) {
+        $officeRequiredToday = OfficeCheckinRequiredDays::isRequiredForInstant(Carbon::parse($date, $tz));
+        $list = $users->map(function (User $u) use ($officeCheckins, $usersOffOnDate, $officeRequiredToday) {
             $checkin = $officeCheckins->get($u->id);
             $isOff = isset($usersOffOnDate[$u->id]);
             $expectedToReport = $u->is_permanent_employee
                 || $u->hasRole('admin')
                 || $u->hasRole('team_leader');
+            $expectedToReport = $expectedToReport && $officeRequiredToday && ! $isOff;
             $checkedOut = $checkin && $checkin->checkout_time !== null;
+            $totalHours = (float) ($checkin?->total_hours ?? 0);
+            $extraHours = (float) ($checkin?->extra_hours ?? 0);
+            if ($checkin && ! $checkedOut) {
+                $asOf = now()->timezone(config('app.timezone', 'Africa/Nairobi'));
+                if ($asOf->toDateString() !== $checkin->checkin_time->timezone(config('app.timezone', 'Africa/Nairobi'))->toDateString()) {
+                    $asOf = $checkin->checkin_time->copy()->timezone(config('app.timezone', 'Africa/Nairobi'))->endOfDay();
+                }
+                $calc = app(\App\Services\AttendanceOvertimeService::class)->calculate(
+                    $checkin->checkin_time,
+                    $asOf,
+                    config('app.timezone', 'Africa/Nairobi')
+                );
+                $totalHours = $calc['total_hours'];
+                $extraHours = $calc['extra_hours'];
+            }
             return [
                 'user_id' => $u->id,
                 'user_name' => $u->name,
@@ -88,8 +108,8 @@ class CheckinsController extends Controller
                 'checked_out' => $checkedOut,
                 'checkout_time' => $checkin && $checkin->checkout_time ? $checkin->checkout_time->format('H:i') : null,
                 'checkout_time_iso' => $checkin && $checkin->checkout_time ? $checkin->checkout_time->toIso8601String() : null,
-                'total_hours' => $checkin ? (float) ($checkin->total_hours ?? 0) : 0,
-                'extra_hours' => $checkin ? (float) ($checkin->extra_hours ?? 0) : 0,
+                'total_hours' => $totalHours,
+                'extra_hours' => $extraHours,
                 'is_sunday' => $checkin ? (bool) $checkin->is_sunday : false,
                 'is_holiday' => $checkin ? (bool) $checkin->is_holiday : false,
                 'holiday_name' => $checkin?->holiday_name,
@@ -195,13 +215,14 @@ class CheckinsController extends Controller
 
         $tz = config('app.timezone', 'Africa/Nairobi');
         if ($request->filled('date')) {
+            $request->validate(['date' => 'required|date_format:Y-m-d']);
             $date = Carbon::parse($request->date, $tz)->startOfDay();
             $from = $date->copy();
             $to = $date->copy()->endOfDay();
         } elseif ($request->filled('from') && $request->filled('to')) {
             $request->validate([
-                'from' => 'required|date',
-                'to' => 'required|date|after_or_equal:from',
+                'from' => 'required|date_format:Y-m-d',
+                'to' => 'required|date_format:Y-m-d|after_or_equal:from',
             ]);
             $from = Carbon::parse($request->from, $tz)->startOfDay();
             $to = Carbon::parse($request->to, $tz)->endOfDay();
@@ -234,12 +255,21 @@ class CheckinsController extends Controller
             ->orderBy('checkin_time')
             ->get();
 
-        $list = $this->buildCheckinsList($officeCheckins, $eventCheckins);
+        // Completed shifts for multi-day events are archived out of event_user into sessions.
+        $eventSessions = EventAttendanceSession::query()
+            // These session columns are SQL DATETIME values written in the app timezone.
+            ->whereBetween('checkin_time', [$from, $to])
+            ->with(['user:id,name,email', 'event:id,name,date,location_name'])
+            ->orderBy('checkin_time')
+            ->get();
+
+        $list = $this->buildCheckinsList($officeCheckins, $eventCheckins, $eventSessions);
 
         $summary = [
             'total' => count($list),
             'office' => $officeCheckins->count(),
-            'event' => $eventCheckins->count(),
+            'event' => $eventCheckins->count() + $eventSessions->count(),
+            'total_hours' => round(array_sum(array_map(fn (array $item) => (float) ($item['total_hours'] ?? 0), $list)), 2),
             'from' => $from->toIso8601String(),
             'to' => $to->toIso8601String(),
         ];
@@ -253,34 +283,44 @@ class CheckinsController extends Controller
     /**
      * @param  Collection<int, DailyOfficeCheckin>  $officeCheckins
      * @param  Collection<int, EventUser>  $eventCheckins
+     * @param  Collection<int, EventAttendanceSession>  $eventSessions
      * @return array<int, array<string, mixed>>
      */
-    private function buildCheckinsList(Collection $officeCheckins, Collection $eventCheckins): array
+    private function buildCheckinsList(Collection $officeCheckins, Collection $eventCheckins, Collection $eventSessions): array
     {
         $items = [];
 
         foreach ($officeCheckins as $c) {
             $dateStr = $c->date ? \Carbon\Carbon::parse($c->date)->format('Y-m-d') : '';
-            $checkinTime = $c->checkin_time ? \Carbon\Carbon::parse($c->checkin_time)->format('H:i') : '—';
-            $checkinTimeIso = $c->checkin_time ? \Carbon\Carbon::parse($c->checkin_time)->toIso8601String() : '';
-            $checkoutTime = $c->checkout_time ? \Carbon\Carbon::parse($c->checkout_time)->format('H:i') : null;
-            $checkoutTimeIso = $c->checkout_time ? \Carbon\Carbon::parse($c->checkout_time)->toIso8601String() : null;
+            $checkin = $c->checkin_time?->copy()->timezone(config('app.timezone', 'Africa/Nairobi'));
+            $checkout = $c->checkout_time?->copy()->timezone(config('app.timezone', 'Africa/Nairobi'));
+            $hours = (float) ($c->total_hours ?? 0);
+            $extraHours = (float) ($c->extra_hours ?? 0);
+            if ($checkin && ! $checkout) {
+                $asOf = now()->timezone(config('app.timezone', 'Africa/Nairobi'));
+                if ($asOf->toDateString() !== $checkin->toDateString()) {
+                    $asOf = $checkin->copy()->endOfDay();
+                }
+                $calc = app(\App\Services\AttendanceOvertimeService::class)->calculate($checkin, $asOf, config('app.timezone', 'Africa/Nairobi'));
+                $hours = $calc['total_hours'];
+                $extraHours = $calc['extra_hours'];
+            }
             $items[] = [
                 'type' => 'office',
                 'id' => 'office-' . $c->id,
                 'date' => $dateStr,
-                'checkin_time' => $checkinTime,
-                'checkin_time_iso' => $checkinTimeIso,
-                'checkout_time' => $checkoutTime,
-                'checkout_time_iso' => $checkoutTimeIso,
+                'checkin_time' => $checkin?->format('H:i') ?? '—',
+                'checkin_time_iso' => $checkin?->toIso8601String() ?? '',
+                'checkout_time' => $checkout?->format('H:i'),
+                'checkout_time_iso' => $checkout?->toIso8601String(),
                 'user_id' => $c->user_id,
                 'user_name' => $c->user?->name ?? 'User #' . $c->user_id,
                 'user_email' => $c->user?->email ?? null,
                 'event_id' => null,
                 'event_name' => null,
                 'location' => 'Office',
-                'total_hours' => (float) ($c->total_hours ?? 0),
-                'extra_hours' => (float) ($c->extra_hours ?? 0),
+                'total_hours' => $hours,
+                'extra_hours' => $extraHours,
                 'is_sunday' => (bool) $c->is_sunday,
                 'is_holiday' => (bool) $c->is_holiday,
                 'holiday_name' => $c->holiday_name,
@@ -292,19 +332,19 @@ class CheckinsController extends Controller
             $items[] = [
                 'type' => 'event',
                 'id' => 'event-' . $a->event_id . '-' . $a->user_id,
-                'date' => $a->event?->date?->format('Y-m-d') ?? $a->checkin_time?->format('Y-m-d'),
-                'checkin_time' => $a->checkin_time?->format('H:i') ?? '—',
-                'checkin_time_iso' => $a->checkin_time?->toIso8601String(),
-                'checkout_time' => $a->checkout_time ? $a->checkout_time->format('H:i') : null,
-                'checkout_time_iso' => $a->checkout_time?->toIso8601String(),
+                'date' => $a->checkin_time?->copy()->timezone(config('app.timezone', 'Africa/Nairobi'))->format('Y-m-d'),
+                'checkin_time' => $a->checkin_time?->copy()->timezone(config('app.timezone', 'Africa/Nairobi'))->format('H:i') ?? '—',
+                'checkin_time_iso' => $a->checkin_time?->copy()->timezone(config('app.timezone', 'Africa/Nairobi'))->toIso8601String(),
+                'checkout_time' => $a->checkout_time?->copy()->timezone(config('app.timezone', 'Africa/Nairobi'))->format('H:i'),
+                'checkout_time_iso' => $a->checkout_time?->copy()->timezone(config('app.timezone', 'Africa/Nairobi'))->toIso8601String(),
                 'user_id' => $a->user_id,
                 'user_name' => $a->user?->name ?? 'User #' . $a->user_id,
                 'user_email' => $a->user?->email ?? null,
                 'event_id' => $a->event_id,
                 'event_name' => $a->event?->name ?? 'Event #' . $a->event_id,
                 'location' => $a->event?->location_name ?? $a->event?->name ?? 'Event',
-                'total_hours' => (float) ($a->total_hours ?? 0),
-                'extra_hours' => (float) ($a->extra_hours ?? 0),
+                'total_hours' => $this->calculatedEventHours($a),
+                'extra_hours' => $this->calculatedEventHours($a, true),
                 'is_sunday' => (bool) $a->is_sunday,
                 'is_holiday' => (bool) $a->is_holiday,
                 'holiday_name' => $a->holiday_name,
@@ -313,6 +353,30 @@ class CheckinsController extends Controller
                 'is_paused' => (bool) ($a->is_paused ?? false),
                 'transport_type' => $a->transport_type,
                 'transport_amount' => $a->transport_amount !== null ? (float) $a->transport_amount : null,
+            ];
+        }
+
+        foreach ($eventSessions as $session) {
+            $items[] = [
+                'type' => 'event',
+                'id' => 'session-' . $session->id,
+                'date' => $session->checkin_time?->copy()->timezone(config('app.timezone', 'Africa/Nairobi'))->format('Y-m-d'),
+                'checkin_time' => $session->checkin_time?->copy()->timezone(config('app.timezone', 'Africa/Nairobi'))->format('H:i') ?? '—',
+                'checkin_time_iso' => $session->checkin_time?->copy()->timezone(config('app.timezone', 'Africa/Nairobi'))->toIso8601String(),
+                'checkout_time' => $session->checkout_time?->copy()->timezone(config('app.timezone', 'Africa/Nairobi'))->format('H:i'),
+                'checkout_time_iso' => $session->checkout_time?->copy()->timezone(config('app.timezone', 'Africa/Nairobi'))->toIso8601String(),
+                'user_id' => $session->user_id,
+                'user_name' => $session->user?->name ?? 'User #' . $session->user_id,
+                'user_email' => $session->user?->email,
+                'event_id' => $session->event_id,
+                'event_name' => $session->event?->name ?? 'Event #' . $session->event_id,
+                'location' => $session->event?->location_name ?? $session->event?->name ?? 'Event',
+                'total_hours' => (float) ($session->total_hours ?? 0),
+                'extra_hours' => (float) ($session->extra_hours ?? 0),
+                'is_sunday' => (bool) $session->is_sunday,
+                'is_holiday' => (bool) $session->is_holiday,
+                'holiday_name' => $session->holiday_name,
+                'day_type' => $session->is_holiday ? 'holiday' : ($session->is_sunday ? 'sunday' : 'normal'),
             ];
         }
 
@@ -325,6 +389,36 @@ class CheckinsController extends Controller
         });
 
         return array_values($items);
+    }
+
+    private function calculatedEventHours(EventUser $assignment, bool $extra = false): float
+    {
+        if ($assignment->checkout_time || ! $assignment->checkin_time) {
+            return (float) ($extra ? $assignment->extra_hours : $assignment->total_hours ?? 0);
+        }
+
+        $pausedMinutes = (int) ($assignment->pause_duration ?? 0);
+        if ($assignment->is_paused && $assignment->pause_start_time) {
+            $pausedMinutes += (int) $assignment->pause_start_time->diffInMinutes($this->attendanceAsOf($assignment->checkin_time));
+        }
+        $asOf = $this->attendanceAsOf($assignment->checkin_time);
+        $calc = app(\App\Services\AttendanceOvertimeService::class)->calculate(
+            $assignment->checkin_time,
+            $asOf,
+            config('app.timezone', 'Africa/Nairobi'),
+            $pausedMinutes
+        );
+
+        return (float) ($extra ? $calc['extra_hours'] : $calc['total_hours']);
+    }
+
+    private function attendanceAsOf(Carbon $checkin): Carbon
+    {
+        $tz = config('app.timezone', 'Africa/Nairobi');
+        $checkin = $checkin->copy()->timezone($tz);
+        $now = now()->timezone($tz);
+
+        return $now->toDateString() === $checkin->toDateString() ? $now : $checkin->endOfDay();
     }
 
     /**
