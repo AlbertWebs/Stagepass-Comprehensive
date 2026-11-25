@@ -22,6 +22,14 @@ The web and mobile apps must point their **API base URL** to your hosted Laravel
 - cPanel hosting with **PHP 8.1+** and **MySQL**
 - SSH or File Manager + PHP selector (if available)
 
+### API server access
+
+- SSH host: `s94.etcserver.com`
+- SSH user: `stagepassco`
+- Expected port: `22` (unless cPanel lists a custom SSH port)
+- Connect interactively with `ssh -p 22 stagepassco@s94.etcserver.com`; never put the account password in this guide, a shell command, or the repository.
+- SSH was not reachable from the development workstation on 2026-11-25: port 22 and common alternate ports (2022, 2222, 22022) did not accept a TCP connection. Enable SSH access for the cPanel account, check the server firewall/IP allowlist, and confirm the port in cPanel before retrying. HTTPS availability does not mean SSH is enabled.
+
 ### Steps
 
 1. **Upload the API**
@@ -58,6 +66,27 @@ The web and mobile apps must point their **API base URL** to your hosted Laravel
 
 7. **HTTPS**
    - Use SSL for the API (Let’s Encrypt in cPanel). Set `APP_URL` to `https://...`.
+
+### Firebase Cloud Messaging (Android push)
+
+The Laravel API sends Android pushes through the [FCM HTTP v1 API](https://firebase.google.com/docs/cloud-messaging/send/v1-api). This project reads `FIREBASE_CREDENTIALS` and optional `FIREBASE_CA_BUNDLE` from the API server's Laravel environment; setting only `GOOGLE_APPLICATION_CREDENTIALS` is not sufficient for this sender.
+
+1. Store the Firebase service-account JSON outside the web root and outside Git. Give the PHP process read access without making the file publicly downloadable.
+2. Set the production API `.env` values (use the actual absolute path on the server):
+
+   ```env
+   FIREBASE_CREDENTIALS=/absolute/private/path/firebase-service-account.json
+   FIREBASE_CA_BUNDLE=
+   ```
+
+   The service account's `project_id` must be `stagepassav-4b3f2`. For Linux hosting, leave `FIREBASE_CA_BUNDLE` blank to use the system CA store, or set it to a valid CA bundle path on that server. Do not reuse the Windows CA bundle used by a local Windows environment.
+
+3. In Google Cloud Console for `stagepassav-4b3f2`, enable **Firebase Cloud Messaging API (V1)** and grant the service account **Firebase Cloud Messaging API Admin** (`roles/firebasecloudmessaging.admin`). The service uses the `https://www.googleapis.com/auth/firebase.messaging` OAuth scope. See Firebase's [server environment guide](https://firebase.google.com/docs/cloud-messaging/server-environment) and [FCM IAM roles](https://docs.cloud.google.com/iam/docs/roles-permissions/firebasecloudmessaging) for authorization details.
+4. Allow outbound HTTPS on port 443 to `oauth2.googleapis.com` and `fcm.googleapis.com`; ensure the server's CA certificates are current.
+5. After updating `.env`, run `php artisan config:clear` then `php artisan config:cache` from the Laravel project root. Restart long-running PHP/queue workers so they load the new configuration.
+6. Verify the mobile app package and `google-services.json` belong to the same Firebase project (`com.stagepass.spmobile`). A recipient must have notifications allowed and a current native FCM token stored on their user record. Opening the latest installed app and signing in refreshes that token.
+
+**Troubleshooting:** `FCM: failed to get OAuth2 token` points to the server credential, CA, or outbound-network setup. An FCM `SENDER_ID_MISMATCH` or invalid registration token points to the recipient's stored device token or a Firebase project mismatch. Check `storage/logs/laravel.log` for the failing response; never include private keys, OAuth tokens, or full device tokens in a support log excerpt.
 
 **API base URL for the next steps:**  
 `https://your-api-domain.com`  
