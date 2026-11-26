@@ -13,10 +13,7 @@ class BackupController extends Controller
 {
     public function __invoke(Request $request): JsonResponse
     {
-        $user = $request->user();
-        if (! $user->hasRole('super_admin') && ! $user->hasRole('director')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        if ($denial = $this->denyUnlessAdminPermission($request, 'backup.manage')) return $denial;
 
         $users = User::with('roles:id,name,label')
             ->get(['id', 'name', 'email', 'username', 'phone', 'created_at', 'updated_at'])

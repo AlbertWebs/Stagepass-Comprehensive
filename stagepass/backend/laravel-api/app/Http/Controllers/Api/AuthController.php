@@ -90,9 +90,17 @@ class AuthController extends Controller
             $user->save();
         }
 
+        if (! $user->is_active) {
+            return response()->json(['message' => 'This account is inactive. Contact your administrator.'], 403);
+        }
+
         $this->sendAssignedEventPushOnLogin($request, $user);
 
-        $token = $user->createToken('mobile')->plainTextToken;
+        $isWebLogin = ! ($username !== null && $pin !== null);
+        if ($isWebLogin && ! $user->hasSuperAdminAccess() && ! $user->roles()->whereHas('permissions')->exists()) {
+            return response()->json(['message' => 'This account does not have admin portal access.'], 403);
+        }
+        $token = $user->createToken($isWebLogin ? 'web-admin' : 'mobile', [$isWebLogin ? 'admin-panel' : 'mobile'])->plainTextToken;
 
         return response()->json([
             'token' => $token,
@@ -385,10 +393,14 @@ class AuthController extends Controller
      */
     private function formatUserPayload(User $user): array
     {
+        $user->loadMissing('roles.permissions');
         $payload = $user->toArray();
         $payload['phone_number'] = $user->phone;
         $payload['address'] = $user->address;
         $payload['emergency_contact'] = $user->emergency_contact;
+        $payload['permissions'] = $user->hasSuperAdminAccess()
+            ? ['*']
+            : $user->roles->flatMap(fn ($role) => $role->permissions->pluck('name'))->unique()->values()->all();
 
         return $payload;
     }

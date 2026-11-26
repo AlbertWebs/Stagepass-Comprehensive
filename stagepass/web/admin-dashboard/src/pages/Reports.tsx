@@ -11,6 +11,8 @@ import {
 } from '@/services/api';
 import { PageHeader } from '@/components/PageHeader';
 import { SectionCard } from '@/components/SectionCard';
+import { useAuth } from '@/contexts/AuthContext';
+import { hasPermission } from '@/utils/permissions';
 
 const REPORT_TABS: { id: ReportType; label: string }[] = [
   { id: 'full-event', label: 'Comprehensive' },
@@ -55,6 +57,7 @@ function downloadCsv(filename: string, headers: string[], rows: (string | number
 
 export default function Reports() {
   const [searchParams] = useSearchParams();
+  const { user } = useAuth();
   const today = new Date();
   const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
   const eventIdFromUrl = (() => {
@@ -63,7 +66,12 @@ export default function Reports() {
     const n = Number(raw);
     return Number.isFinite(n) && n > 0 ? n : ('' as number | '');
   })();
-  const [activeTab, setActiveTab] = useState<ReportType>('full-event');
+  const [activeTab, setActiveTab] = useState<ReportType>(() => hasPermission(user, 'reports.all.view') ? 'full-event' : 'crew-attendance');
+  const visibleTabs = REPORT_TABS.filter((tab) => {
+    if (tab.id === 'full-event') return hasPermission(user, 'reports.all.view');
+    if (tab.id === 'allowances') return hasPermission(user, 'allowances.view');
+    return hasPermission(user, 'attendance.view');
+  });
   const [dateFrom, setDateFrom] = useState(toDateInputValue(firstDayOfMonth));
   const [dateTo, setDateTo] = useState(toDateInputValue(today));
   const [month, setMonth] = useState<number | ''>(today.getMonth() + 1);
@@ -299,7 +307,7 @@ export default function Reports() {
       />
 
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
-        {REPORT_TABS.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.id}
             type="button"

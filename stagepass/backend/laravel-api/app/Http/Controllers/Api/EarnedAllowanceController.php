@@ -13,6 +13,7 @@ use App\Notifications\AllowanceRequestDecisionNotification;
 use App\Notifications\WorkflowPushNotification;
 use App\Notifications\AllowanceRequestSubmittedNotification;
 use App\Services\MpesaB2cService;
+use App\Services\AuditTrail;
 use App\Support\EventTeamLeaderGate;
 use App\Support\EventTeamLeaderResolver;
 use Illuminate\Http\JsonResponse;
@@ -26,13 +27,25 @@ class EarnedAllowanceController extends Controller
     /** Reserved for automatic meal credits — not offered for manual receipt requests. */
     private const AUTOMATIC_MEAL_TYPE_NAMES = ['Breakfast', 'Lunch', 'Dinner'];
 
+    private function hasPanelPermission(Request $request, array $permissions): bool
+    {
+        $user = $request->user();
+        if (! $user || ! $user->is_active || ! in_array('admin-panel', $user->currentAccessToken()?->abilities ?? [], true)) {
+            return false;
+        }
+
+        return $user->hasSuperAdminAccess() || collect($permissions)->contains(fn (string $permission) => $user->hasPermission($permission));
+    }
+
     private function canManage(Request $request): bool
     {
         $u = $request->user();
 
-        return $u->hasRole('super_admin')
-            || $u->hasRole('director')
-            || $u->hasRole('admin')
+        if (in_array('admin-panel', $u->currentAccessToken()?->abilities ?? [], true)) {
+            return $this->hasPanelPermission($request, ['allowances.view', 'allowances.approve', 'payments.process']);
+        }
+
+        return $u->hasSuperAdminAccess()
             || $u->hasRole('team_leader')
             || $u->hasRole('teamleader');
     }
@@ -88,7 +101,9 @@ class EarnedAllowanceController extends Controller
 
     public function typeStore(Request $request): JsonResponse
     {
-        if (! $this->canManage($request)) {
+        $isPanel = in_array('admin-panel', $request->user()?->currentAccessToken()?->abilities ?? [], true);
+        if (($isPanel && ! $this->hasPanelPermission($request, ['settings.manage']))
+            || (! $isPanel && ! $request->user()->hasSuperAdminAccess())) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         $validated = $request->validate([
@@ -104,7 +119,9 @@ class EarnedAllowanceController extends Controller
 
     public function typeUpdate(Request $request, AllowanceType $allowanceType): JsonResponse
     {
-        if (! $this->canManage($request)) {
+        $isPanel = in_array('admin-panel', $request->user()?->currentAccessToken()?->abilities ?? [], true);
+        if (($isPanel && ! $this->hasPanelPermission($request, ['settings.manage']))
+            || (! $isPanel && ! $request->user()->hasSuperAdminAccess())) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         $validated = $request->validate([
@@ -127,6 +144,7 @@ class EarnedAllowanceController extends Controller
                 'recorder:id,name',
                 'approver:id,name',
                 'rejector:id,name',
+                'verifier:id,name',
             ]);
 
         if ($this->shouldRestrictEarnedAllowanceIndexToOwnCrew($request)) {
@@ -144,6 +162,11 @@ class EarnedAllowanceController extends Controller
         }
         if ($request->filled('status')) {
             $query->where('status', $request->status);
+        }
+        if ($request->input('verification_status') === 'pending') {
+            $query->whereNull('hr_verified_at')->where('status', EventAllowance::STATUS_PENDING);
+        } elseif ($request->input('verification_status') === 'verified') {
+            $query->whereNotNull('hr_verified_at');
         }
         if ($request->filled('team_leader_id')) {
             $query->whereHas('event', fn ($q) => $q->where('team_leader_id', (int) $request->team_leader_id));
@@ -222,6 +245,10 @@ class EarnedAllowanceController extends Controller
             'approval_comment' => $a->approval_comment,
             'approved_by' => $a->approver?->name,
             'approved_at' => $a->approved_at?->toIso8601String(),
+            'hr_verified' => $a->hr_verified_at !== null,
+            'hr_verified_by' => $a->verifier?->name,
+            'hr_verified_at' => $a->hr_verified_at?->toIso8601String(),
+            'hr_verification_note' => $a->hr_verification_note,
             'rejected_by' => $a->rejector?->name,
             'rejected_at' => $a->rejected_at?->toIso8601String(),
             'meal_slot' => $a->meal_slot,
@@ -277,6 +304,11 @@ class EarnedAllowanceController extends Controller
             'source' => EventAllowance::SOURCE_MANUAL,
             'attachment_path' => $path,
         ]);
+        app(AuditTrail::class)->record($request, 'allowance.created', $allowance, [], [
+            'event_id' => $allowance->event_id, 'crew_id' => $allowance->crew_id,
+            'allowance_type_id' => $allowance->allowance_type_id, 'amount' => (float) $allowance->amount,
+            'status' => $allowance->status, 'source' => $allowance->source,
+        ]);
 
         $allowance->load(['event', 'crew', 'type', 'recorder']);
 
@@ -308,7 +340,11 @@ class EarnedAllowanceController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        if (! $this->canManage($request)) {
+        $isPanel = in_array('admin-panel', $request->user()?->currentAccessToken()?->abilities ?? [], true);
+        $canCreate = $isPanel
+            ? $this->hasPanelPermission($request, ['allowances.create'])
+            : $this->canManage($request);
+        if (! $canCreate) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -342,7 +378,20 @@ class EarnedAllowanceController extends Controller
 
     public function updateStatus(Request $request, EventAllowance $eventAllowance): JsonResponse
     {
-        if (! $this->canAccessAllowance($request, $eventAllowance)) {
+        $isPanel = in_array('admin-panel', $request->user()?->currentAccessToken()?->abilities ?? [], true);
+        $requestedStatus = (string) $request->input('status', '');
+        if ($isPanel) {
+            $allowed = $requestedStatus === EventAllowance::STATUS_PAID
+                ? $this->hasPanelPermission($request, ['payments.process'])
+                : $this->hasPanelPermission($request, ['allowances.approve', 'payments.approve']);
+        } else {
+            $user = $request->user();
+            $eventLead = $eventAllowance->event && EventTeamLeaderGate::userCanManageEvent($eventAllowance->event, $user);
+            $allowed = $user->hasSuperAdminAccess()
+                || $user->hasRole('accounts')
+                || ($requestedStatus !== EventAllowance::STATUS_PAID && (bool) $eventLead);
+        }
+        if (! $allowed) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -353,6 +402,12 @@ class EarnedAllowanceController extends Controller
         $status = $validated['status'];
         $comment = isset($validated['comment']) ? trim((string) $validated['comment']) : '';
 
+        if ($isPanel && ! $request->user()->hasSuperAdminAccess()
+            && $status !== EventAllowance::STATUS_PENDING
+            && ! $eventAllowance->hr_verified_at) {
+            return response()->json(['message' => 'HR must verify this allowance before Accounts can approve or pay it.'], 422);
+        }
+
         if ($status === EventAllowance::STATUS_REJECTED && $comment === '') {
             return response()->json(['message' => 'A comment is required to reject an allowance request.'], 422);
         }
@@ -361,6 +416,7 @@ class EarnedAllowanceController extends Controller
             return response()->json(['message' => 'Automatic allowances cannot be rejected via this action.'], 422);
         }
 
+        $before = ['status' => $eventAllowance->status, 'amount' => (float) $eventAllowance->amount, 'paid_at' => $eventAllowance->paid_at?->toISOString()];
         $eventAllowance->status = $status;
 
         if ($status === EventAllowance::STATUS_APPROVED) {
@@ -380,6 +436,10 @@ class EarnedAllowanceController extends Controller
         }
 
         $eventAllowance->save();
+        app(AuditTrail::class)->record($request, 'allowance.status_changed', $eventAllowance, $before, [
+            'status' => $eventAllowance->status, 'amount' => (float) $eventAllowance->amount,
+            'paid_at' => $eventAllowance->paid_at?->toISOString(),
+        ]);
 
         $fresh = $eventAllowance->fresh()->load(['event', 'crew', 'type', 'recorder', 'approver', 'rejector']);
 
@@ -402,9 +462,40 @@ class EarnedAllowanceController extends Controller
         return response()->json($this->serializeDetail($fresh));
     }
 
+    public function verify(Request $request, EventAllowance $eventAllowance): JsonResponse
+    {
+        if ($denial = $this->denyUnlessAdminPermission($request, 'allowances.verify')) return $denial;
+
+        $validated = $request->validate([
+            'verified' => 'required|boolean',
+            'note' => 'nullable|string|max:2000',
+        ]);
+        if ($eventAllowance->status !== EventAllowance::STATUS_PENDING) {
+            return response()->json(['message' => 'Only pending allowances can be HR verified.'], 422);
+        }
+
+        $before = [
+            'hr_verified_by' => $eventAllowance->hr_verified_by,
+            'hr_verified_at' => $eventAllowance->hr_verified_at?->toISOString(),
+            'hr_verification_note' => $eventAllowance->hr_verification_note,
+        ];
+        $eventAllowance->hr_verified_by = $validated['verified'] ? $request->user()->id : null;
+        $eventAllowance->hr_verified_at = $validated['verified'] ? now() : null;
+        $eventAllowance->hr_verification_note = $validated['verified'] ? (isset($validated['note']) ? trim($validated['note']) : null) : null;
+        $eventAllowance->save();
+
+        app(AuditTrail::class)->record($request, $validated['verified'] ? 'allowance.hr_verified' : 'allowance.hr_verification_cleared', $eventAllowance, $before, [
+            'hr_verified_by' => $eventAllowance->hr_verified_by,
+            'hr_verified_at' => $eventAllowance->hr_verified_at?->toISOString(),
+            'hr_verification_note' => $eventAllowance->hr_verification_note,
+        ]);
+
+        return response()->json($this->serializeDetail($eventAllowance->fresh()->load(['event', 'crew', 'type', 'recorder', 'approver', 'rejector', 'verifier'])));
+    }
+
     public function export(Request $request)
     {
-        if (! $this->canManage($request)) {
+        if ($denial = $this->denyUnlessAdminPermission($request, 'allowances.export', ['accounts'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         $rows = EventAllowance::query()
@@ -438,7 +529,7 @@ class EarnedAllowanceController extends Controller
      */
     public function b2cPreview(Request $request, MpesaB2cService $mpesa): JsonResponse
     {
-        if (! $this->canManage($request)) {
+        if ($denial = $this->denyUnlessAdminPermission($request, 'payments.process', ['accounts'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -448,7 +539,7 @@ class EarnedAllowanceController extends Controller
             'user_ids.*' => 'integer|exists:users,id',
         ]);
 
-        $allowances = $this->approvedUnpaidQuery($validated)->get();
+        $allowances = $this->approvedUnpaidQuery($validated, ! $request->user()->hasSuperAdminAccess())->get();
         $payments = $mpesa->buildPayoutPreview($allowances);
         $eligible = array_values(array_filter($payments, fn ($p) => $p['phone_ok'] && $p['amount'] > 0));
         $blocked = array_values(array_filter($payments, fn ($p) => ! $p['phone_ok'] || $p['amount'] <= 0));
@@ -470,7 +561,7 @@ class EarnedAllowanceController extends Controller
      */
     public function b2cProcess(Request $request, MpesaB2cService $mpesa): JsonResponse
     {
-        if (! $this->canManage($request)) {
+        if ($denial = $this->denyUnlessAdminPermission($request, 'payments.process', ['accounts'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -488,7 +579,7 @@ class EarnedAllowanceController extends Controller
             ], 422);
         }
 
-        $allowances = $this->approvedUnpaidQuery($validated)->get();
+        $allowances = $this->approvedUnpaidQuery($validated, ! $request->user()->hasSuperAdminAccess())->get();
         if ($allowances->isEmpty()) {
             return response()->json(['message' => 'No approved unpaid allowances match the selection.'], 422);
         }
@@ -579,6 +670,10 @@ class EarnedAllowanceController extends Controller
             'conversation_id' => $i->conversation_id,
             'result_desc' => $i->result_desc,
         ])->values()->all();
+        app(AuditTrail::class)->record($request, 'payout.processed', $payout, [], [
+            'status' => $payout->status, 'total_amount' => (float) $payout->total_amount,
+            'line_count' => (int) $payout->line_count, 'dry_run' => (bool) $payout->dry_run,
+        ]);
 
         return response()->json([
             'message' => $payout->dry_run
@@ -599,12 +694,16 @@ class EarnedAllowanceController extends Controller
      * @param  array{event_id?:int|null,user_ids?:list<int>,allowance_ids?:list<int>}  $filters
      * @return \Illuminate\Database\Eloquent\Builder<\App\Models\EventAllowance>
      */
-    private function approvedUnpaidQuery(array $filters)
+    private function approvedUnpaidQuery(array $filters, bool $requireHrVerification)
     {
         $query = EventAllowance::query()
             ->with(['crew:id,name,phone', 'type:id,name', 'event:id,name'])
             ->where('status', EventAllowance::STATUS_APPROVED)
             ->whereNull('paid_at');
+
+        if ($requireHrVerification) {
+            $query->whereNotNull('hr_verified_at');
+        }
 
         if (! empty($filters['event_id'])) {
             $query->where('event_id', (int) $filters['event_id']);

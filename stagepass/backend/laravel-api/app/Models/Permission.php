@@ -10,7 +10,7 @@ class Permission extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'label'];
+    protected $fillable = ['name', 'label', 'module', 'action'];
 
     public function roles(): BelongsToMany
     {

@@ -10,7 +10,12 @@ class Role extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'label'];
+    protected $fillable = ['name', 'label', 'is_system'];
+
+    protected function casts(): array
+    {
+        return ['is_system' => 'boolean'];
+    }
 
     public function users(): BelongsToMany
     {
@@ -19,6 +24,6 @@ class Role extends Model
 
     public function permissions(): BelongsToMany
     {
-        return $this->belongsToMany(Permission::class, 'permission_role')->withTimestamps();
+        return $this->belongsToMany(Permission::class, 'permission_role');
     }
 }

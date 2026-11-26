@@ -1,32 +1,37 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { InstallPrompt } from '@/components/InstallPrompt';
 import { Preloader } from '@/components/Preloader';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminLayout from '@/layouts/AdminLayout';
-import Approvals from '@/pages/Approvals';
-import AuditLogs from '@/pages/AuditLogs';
-import Clients from '@/pages/Clients';
-import Communication from '@/pages/Communication';
-import Dashboard from '@/pages/Dashboard';
-import Equipment from '@/pages/Equipment';
-import EventDetail from '@/pages/EventDetail';
-import EventOperations from '@/pages/EventOperations';
-import Events from '@/pages/Events';
-import Login from '@/pages/Login';
-import Payments from '@/pages/Payments';
-import Allowances from '@/pages/Allowances';
-import Holidays from '@/pages/Holidays';
-import Help from '@/pages/Help';
-import Placeholder from '@/pages/Placeholder';
-import Checkins from '@/pages/Checkins';
-import Reports from '@/pages/Reports';
-import Transport from '@/pages/Transport';
-import Settings from '@/pages/Settings';
-import DangerZone from '@/pages/DangerZone';
-import Tasks from '@/pages/Tasks';
-import CrewMemberTimeOff from '@/pages/CrewMemberTimeOff';
-import TimeOff from '@/pages/TimeOff';
-import Users from '@/pages/Users';
+import { hasPermission, isSuperAdministrator } from '@/utils/permissions';
+
+const Approvals = lazy(() => import('@/pages/Approvals'));
+const AuditLogs = lazy(() => import('@/pages/AuditLogs'));
+const Clients = lazy(() => import('@/pages/Clients'));
+const Communication = lazy(() => import('@/pages/Communication'));
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const Equipment = lazy(() => import('@/pages/Equipment'));
+const EventDetail = lazy(() => import('@/pages/EventDetail'));
+const EventOperations = lazy(() => import('@/pages/EventOperations'));
+const Events = lazy(() => import('@/pages/Events'));
+const Login = lazy(() => import('@/pages/Login'));
+const Payments = lazy(() => import('@/pages/Payments'));
+const Allowances = lazy(() => import('@/pages/Allowances'));
+const Holidays = lazy(() => import('@/pages/Holidays'));
+const Help = lazy(() => import('@/pages/Help'));
+const Placeholder = lazy(() => import('@/pages/Placeholder'));
+const Checkins = lazy(() => import('@/pages/Checkins'));
+const Reports = lazy(() => import('@/pages/Reports'));
+const Transport = lazy(() => import('@/pages/Transport'));
+const Settings = lazy(() => import('@/pages/Settings'));
+const DangerZone = lazy(() => import('@/pages/DangerZone'));
+const Tasks = lazy(() => import('@/pages/Tasks'));
+const CrewMemberTimeOff = lazy(() => import('@/pages/CrewMemberTimeOff'));
+const TimeOff = lazy(() => import('@/pages/TimeOff'));
+const Users = lazy(() => import('@/pages/Users'));
+const RolesPermissions = lazy(() => import('@/pages/RolesPermissions'));
+const FinancialReports = lazy(() => import('@/pages/FinancialReports'));
 
 function getRoleNames(user: { roles?: Array<{ name?: string }> } | null): string[] {
   return (user?.roles ?? [])
@@ -37,13 +42,6 @@ function getRoleNames(user: { roles?: Array<{ name?: string }> } | null): string
 function hasAdminAccess(user: { roles?: Array<{ name?: string }> } | null): boolean {
   const names = getRoleNames(user);
   return names.some((n) => n === 'admin' || n === 'super_admin' || n === 'director');
-}
-
-function isTeamLeaderOnly(user: { roles?: Array<{ name?: string }> } | null): boolean {
-  const names = getRoleNames(user);
-  const isTeamLeader = names.includes('team_leader') || names.includes('teamleader');
-  const isAdmin = names.some((n) => n === 'admin' || n === 'super_admin' || n === 'director');
-  return isTeamLeader && !isAdmin;
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -58,12 +56,18 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function RoleRoute({
   children,
   requireAdmin = false,
+  requirePermission,
+  requireAnyPermission,
+  requireSuperAdministrator = false,
 }: {
   children: React.ReactNode;
   requireAdmin?: boolean;
+  requirePermission?: string;
+  requireAnyPermission?: string[];
+  requireSuperAdministrator?: boolean;
 }) {
   const { user } = useAuth();
-  if (requireAdmin && !hasAdminAccess(user)) {
+  if ((requireAdmin && !hasAdminAccess(user)) || (requirePermission && !hasPermission(user, requirePermission)) || (requireAnyPermission && !requireAnyPermission.some((permission) => hasPermission(user, permission))) || (requireSuperAdministrator && !isSuperAdministrator(user))) {
     return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;
@@ -71,12 +75,14 @@ function RoleRoute({
 
 export default function App() {
   const location = useLocation();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const financialOnly = hasPermission(user, 'reports.financial.view') && !hasPermission(user, 'reports.hr.view') && !hasPermission(user, 'reports.all.view');
   const showInstallPrompt = !token && location.pathname === '/login';
 
   return (
     <>
       {showInstallPrompt ? <InstallPrompt /> : null}
+      <Suspense fallback={<Preloader message="Loading page…" />}>
       <Routes>
       <Route path="/login" element={<Login />} />
       <Route
@@ -88,13 +94,13 @@ export default function App() {
         }
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="events" element={<Events />} />
-        <Route path="events/:id" element={<EventDetail />} />
+        <Route path="dashboard" element={<RoleRoute requirePermission="dashboard.view"><Dashboard /></RoleRoute>} />
+        <Route path="events" element={<RoleRoute requirePermission="events.view"><Events /></RoleRoute>} />
+        <Route path="events/:id" element={<RoleRoute requirePermission="events.view"><EventDetail /></RoleRoute>} />
         <Route
           path="crew"
           element={
-            <Users
+            <RoleRoute requirePermission="employees.view"><Users
               title="Crew"
               subtitle="Manage crew members. Search, create, edit or delete and assign roles. Download an Excel template to add many people at once."
               sectionLabel="Crew members"
@@ -102,34 +108,36 @@ export default function App() {
               showPushTestActions
               showExcelImport
               showDeleteAllCrew
-            />
+            /></RoleRoute>
           }
         />
-        <Route path="event-operations" element={<EventOperations />} />
-        <Route path="tasks" element={<Tasks />} />
-        <Route path="equipment" element={<RoleRoute requireAdmin><Equipment /></RoleRoute>} />
-        <Route path="transport" element={<RoleRoute requireAdmin><Transport /></RoleRoute>} />
-        <Route path="payments" element={<RoleRoute requireAdmin><Payments /></RoleRoute>} />
-        <Route path="allowances" element={<Allowances />} />
-        <Route path="holidays" element={<RoleRoute requireAdmin><Holidays /></RoleRoute>} />
-        <Route path="clients" element={<RoleRoute requireAdmin><Clients /></RoleRoute>} />
-        <Route path="reports" element={<RoleRoute requireAdmin><Reports /></RoleRoute>} />
-        <Route path="checkins" element={<RoleRoute requireAdmin><Checkins /></RoleRoute>} />
-        <Route path="communication" element={<Communication />} />
-        <Route path="approvals" element={<RoleRoute requireAdmin><Approvals /></RoleRoute>} />
-        <Route path="users" element={<RoleRoute requireAdmin><Users title="Users & Permissions" subtitle="Manage users and assign roles. Full access for admins." sectionLabel="Users" createButtonLabel="Create user" /></RoleRoute>} />
-        <Route path="settings" element={<RoleRoute requireAdmin><Settings /></RoleRoute>} />
-        <Route path="audit-logs" element={<RoleRoute requireAdmin><AuditLogs /></RoleRoute>} />
+        <Route path="event-operations" element={<RoleRoute requirePermission="events.view"><EventOperations /></RoleRoute>} />
+        <Route path="tasks" element={<RoleRoute requirePermission="tasks.view"><Tasks /></RoleRoute>} />
+        <Route path="equipment" element={<RoleRoute requirePermission="equipment.view"><Equipment /></RoleRoute>} />
+        <Route path="transport" element={<RoleRoute requirePermission="transport.view"><Transport /></RoleRoute>} />
+        <Route path="payments" element={<RoleRoute requirePermission="payments.view"><Payments /></RoleRoute>} />
+        <Route path="allowances" element={<RoleRoute requirePermission="allowances.view"><Allowances /></RoleRoute>} />
+        <Route path="holidays" element={<RoleRoute requirePermission="holidays.view"><Holidays /></RoleRoute>} />
+        <Route path="clients" element={<RoleRoute requirePermission="clients.view"><Clients /></RoleRoute>} />
+        <Route path="reports" element={<RoleRoute requireAnyPermission={['reports.all.view', 'reports.hr.view', 'reports.financial.view']}>{financialOnly ? <FinancialReports /> : <Reports />}</RoleRoute>} />
+        <Route path="checkins" element={<RoleRoute requirePermission="attendance.view"><Checkins /></RoleRoute>} />
+        <Route path="communication" element={<RoleRoute requirePermission="communications.manage"><Communication /></RoleRoute>} />
+        <Route path="approvals" element={<RoleRoute requirePermission="approvals.manage"><Approvals /></RoleRoute>} />
+        <Route path="users" element={<RoleRoute requireSuperAdministrator><Users title="Users & Permissions" subtitle="Manage users and assign roles." sectionLabel="Users" createButtonLabel="Create user" /></RoleRoute>} />
+        <Route path="roles" element={<RoleRoute requireSuperAdministrator><RolesPermissions /></RoleRoute>} />
+        <Route path="settings" element={<RoleRoute requirePermission="settings.manage"><Settings /></RoleRoute>} />
+        <Route path="audit-logs" element={<RoleRoute requirePermission="audit.view"><AuditLogs /></RoleRoute>} />
         <Route path="help" element={<Help />} />
-        <Route path="time-off" element={<RoleRoute requireAdmin><TimeOff /></RoleRoute>} />
-        <Route path="time-off/crew/:userId" element={<RoleRoute requireAdmin><CrewMemberTimeOff /></RoleRoute>} />
+        <Route path="time-off" element={<RoleRoute requirePermission="timeoff.view"><TimeOff /></RoleRoute>} />
+        <Route path="time-off/crew/:userId" element={<RoleRoute requirePermission="timeoff.view"><CrewMemberTimeOff /></RoleRoute>} />
         <Route path="profile" element={<Settings />} />
-        <Route path="backup" element={<RoleRoute requireAdmin><Settings /></RoleRoute>} />
-        <Route path="danger-zone" element={<RoleRoute requireAdmin><DangerZone /></RoleRoute>} />
+        <Route path="backup" element={<RoleRoute requirePermission="backup.manage"><Settings /></RoleRoute>} />
+        <Route path="danger-zone" element={<RoleRoute requireSuperAdministrator><DangerZone /></RoleRoute>} />
         <Route path="more" element={<Placeholder title="More" />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+      </Suspense>
     </>
   );
 }

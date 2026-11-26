@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Preloader } from '@/components/Preloader';
-import { api, type Event, type Paginated } from '@/services/api';
+import { api, type AdminDashboardSummary, type Event, type Paginated } from '@/services/api';
+import { isSuperAdministrator } from '@/utils/permissions';
+import {
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart,
+  Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from 'recharts';
 
 const today = () => {
   const date = new Date();
@@ -203,8 +208,97 @@ function StatCard({
   return <div className={className}>{content}</div>;
 }
 
+function SummaryMetrics({ items }: { items: { label: string; value: string | number; detail?: string; to?: string }[] }) {
+  return <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{items.map((item) => {
+    const content = <><p className="text-sm font-medium text-slate-500">{item.label}</p><p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{item.value}</p>{item.detail && <p className="mt-1 text-xs text-slate-500">{item.detail}</p>}</>;
+    return item.to ? <Link key={item.label} to={item.to} className="dashboard-stat-card p-5 transition hover:border-amber-300">{content}</Link> : <div key={item.label} className="dashboard-stat-card p-5">{content}</div>;
+  })}</div>;
+}
+
+function DashboardAnalytics({ summary }: { summary: AdminDashboardSummary }) {
+  const trend = summary.attendance?.trend ?? [];
+  const financeTrend = summary.finance?.monthly_trend ?? [];
+  return (
+    <div className="space-y-5">
+      {summary.attendance && <div className="grid gap-5 xl:grid-cols-2">
+        <section className="card-elegant min-w-0 p-5">
+          <div className="mb-4"><h2 className="font-semibold text-slate-900">Attendance activity</h2><p className="mt-1 text-sm text-slate-500">People with recorded check-ins and check-outs</p></div>
+          {trend.some((row) => row.present > 0) ? <div className="h-72" role="img" aria-label="Line chart showing daily check-ins and check-outs"><ResponsiveContainer width="100%" height="100%"><LineChart data={trend} margin={{ top: 8, right: 12, left: -18, bottom: 2 }}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="date" tickFormatter={(value: string) => value.slice(5)} tick={{ fontSize: 12 }} /><YAxis allowDecimals={false} tick={{ fontSize: 12 }} /><Tooltip labelFormatter={(value) => `Date ${value}`} /><Legend /><Line type="monotone" dataKey="present" name="Checked in" stroke="#172455" strokeWidth={2.5} dot={false} /><Line type="monotone" dataKey="checked_out" name="Checked out" stroke="#ca8a04" strokeWidth={2.5} dot={false} /></LineChart></ResponsiveContainer></div> : <div className="flex h-72 items-center justify-center text-sm text-slate-500">No attendance records for this period.</div>}
+        </section>
+        <section className="card-elegant min-w-0 p-5">
+          <div className="mb-4"><h2 className="font-semibold text-slate-900">Recorded hours</h2><p className="mt-1 text-sm text-slate-500">Completed shift hours and overtime from attendance records</p></div>
+          {trend.some((row) => row.working_hours > 0 || row.overtime_hours > 0) ? <div className="h-72" role="img" aria-label="Area chart showing recorded work hours and overtime"><ResponsiveContainer width="100%" height="100%"><AreaChart data={trend} margin={{ top: 8, right: 12, left: -18, bottom: 2 }}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="date" tickFormatter={(value: string) => value.slice(5)} tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} /><Tooltip labelFormatter={(value) => `Date ${value}`} /><Legend /><Area type="monotone" dataKey="working_hours" name="Work hours" stroke="#172455" fill="#172455" fillOpacity={0.12} /><Area type="monotone" dataKey="overtime_hours" name="Overtime" stroke="#ca8a04" fill="#ca8a04" fillOpacity={0.22} /></AreaChart></ResponsiveContainer></div> : <div className="flex h-72 items-center justify-center text-sm text-slate-500">Hours appear after shifts have been checked out.</div>}
+        </section>
+      </div>}
+      {summary.finance && <section className="card-elegant min-w-0 p-5">
+        <div className="mb-4"><h2 className="font-semibold text-slate-900">Allowance and payment activity</h2><p className="mt-1 text-sm text-slate-500">KES totals from existing allowance and payout records by month</p></div>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(15rem,1fr)]">
+          {financeTrend.some((row) => row.allowances || row.approved_payments || row.completed_payouts) ? <div className="h-72" role="img" aria-label="Bar chart of monthly allowances and payments in Kenyan shillings"><ResponsiveContainer width="100%" height="100%"><BarChart data={financeTrend} margin={{ top: 8, right: 12, left: 8, bottom: 2 }}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="month" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} /><Tooltip formatter={(value) => new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', maximumFractionDigits: 0 }).format(Number(value))} /><Legend /><Bar dataKey="allowances" name="Allowances recorded" fill="#ca8a04" radius={[4, 4, 0, 0]} /><Bar dataKey="approved_payments" name="Approved payments" fill="#172455" radius={[4, 4, 0, 0]} /><Bar dataKey="completed_payouts" name="Completed payouts" fill="#15803d" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div> : <div className="flex h-72 items-center justify-center text-sm text-slate-500">No allowance or payment records for the last six months.</div>}
+          <div className="min-h-64 rounded-xl bg-slate-50/70 p-3"><p className="px-2 text-sm font-medium text-slate-700">Allowance status</p>{[summary.finance.allowances.pending_count, summary.finance.allowances.approved_count, summary.finance.allowances.paid_count, summary.finance.allowances.rejected_count].some(Boolean) ? <div className="h-60" role="img" aria-label="Donut chart showing allowance status distribution"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={[{ name: 'Pending', value: summary.finance.allowances.pending_count }, { name: 'Approved', value: summary.finance.allowances.approved_count }, { name: 'Paid', value: summary.finance.allowances.paid_count }, { name: 'Rejected', value: summary.finance.allowances.rejected_count }].filter((item) => item.value > 0)} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="78%" paddingAngle={2}>{['#ca8a04', '#172455', '#15803d', '#64748b'].map((color) => <Cell key={color} fill={color} />)}</Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer></div> : <div className="flex h-60 items-center justify-center text-sm text-slate-500">No allowance records.</div>}</div>
+        </div>
+      </section>}
+      {summary.tasks && <div className="grid gap-4 sm:grid-cols-2">
+        <section className="card-elegant p-5"><div className="flex items-center justify-between"><div><p className="text-sm text-slate-500">Task completion</p><p className="mt-2 text-2xl font-semibold text-slate-900">{summary.tasks.completion_rate}%</p></div><Link to="/tasks" className="text-sm font-semibold text-brand-700">View tasks</Link></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${summary.tasks.completion_rate}%` }} /></div><p className="mt-2 text-xs text-slate-500">{summary.tasks.completed} of {summary.tasks.total} tasks completed</p></section>
+        <section className="card-elegant p-5"><h2 className="font-semibold text-slate-900">Needs attention</h2>{summary.attention.length ? <ul className="mt-2 divide-y divide-slate-100">{summary.attention.map((item) => <li key={item.type} className="py-2"><Link to={item.href} className="flex items-center justify-between gap-3 text-sm hover:text-brand-700"><span>{item.label}</span><span className="rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-800">{item.count}</span></Link></li>)}</ul> : <p className="mt-2 text-sm text-slate-500">No outstanding items for the current view.</p>}</section>
+      </div>}
+    </div>
+  );
+}
+
+function RoleDashboard({ summary, from, to, setFrom, setTo }: {
+  summary: AdminDashboardSummary;
+  from: string;
+  to: string;
+  setFrom: (value: string) => void;
+  setTo: (value: string) => void;
+}) {
+  const finance = summary.finance;
+  const attendance = summary.attendance;
+  const kes = (value: number) => new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', maximumFractionDigits: 0 }).format(value || 0);
+  const items = summary.role === 'hr' ? [
+    { label: 'Active employees & crew', value: summary.workforce.active, to: '/crew' },
+    { label: 'Present today', value: attendance?.present_today ?? 0, to: '/checkins' },
+    { label: 'Currently checked in', value: attendance?.checked_in_now ?? 0, to: '/checkins' },
+    { label: 'Checked out today', value: attendance?.checked_out_today ?? 0, to: '/checkins' },
+    { label: 'Missing check-outs', value: attendance?.missing_checkouts_today ?? 0, to: '/checkins' },
+    { label: 'Hours recorded today', value: `${(attendance?.working_hours_today ?? 0).toFixed(1)} h` },
+    { label: 'Overtime recorded today', value: `${(attendance?.overtime_hours_today ?? 0).toFixed(1)} h` },
+    { label: 'Allowances awaiting review', value: finance?.allowances.pending_count ?? 0, to: '/allowances' },
+  ] : summary.role === 'team_leader' ? [
+    { label: 'Assigned crew', value: summary.workforce.active, to: '/events' },
+    { label: 'Upcoming events', value: summary.events?.upcoming ?? 0, to: '/events' },
+    { label: 'Ongoing events', value: summary.events?.ongoing ?? 0, to: '/events' },
+    { label: 'Open tasks', value: summary.tasks?.pending ?? 0, to: '/tasks' },
+    { label: 'Completed tasks', value: summary.tasks?.completed ?? 0, to: '/tasks' },
+    { label: 'Task completion', value: `${summary.tasks?.completion_rate ?? 0}%`, to: '/tasks' },
+  ] : [
+    { label: 'Allowances pending', value: kes(finance?.allowances.pending_total ?? 0), detail: `${finance?.allowances.pending_count ?? 0} records`, to: '/allowances' },
+    { label: 'Approved allowances', value: kes(finance?.allowances.approved_total ?? 0), detail: `${finance?.allowances.approved_count ?? 0} records`, to: '/allowances' },
+    { label: 'Allowances paid', value: kes(finance?.allowances.paid_total ?? 0), detail: `${finance?.allowances.paid_count ?? 0} records`, to: '/allowances' },
+    { label: 'Payments awaiting approval', value: finance?.payments.pending_count ?? 0, to: '/payments' },
+    { label: 'Approved payment obligations', value: kes(finance?.payments.approved_total ?? 0), to: '/payments' },
+    { label: 'Completed payouts', value: kes(finance?.payouts.completed_total ?? 0), to: '/payments' },
+    { label: 'Pending payouts', value: kes(finance?.payouts.pending_total ?? 0), to: '/payments' },
+    { label: 'Failed payout batches', value: finance?.payouts.failed_count ?? 0, to: '/payments' },
+  ];
+  const title = summary.role === 'hr' ? 'Workforce overview' : summary.role === 'team_leader' ? 'Team operations' : 'Finance overview';
+  return <div className="space-y-7 pb-8">
+    <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Stagepass · {summary.role === 'hr' ? 'People operations' : summary.role === 'team_leader' ? 'Team leader' : 'Accounts'}</p><h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{title}</h1><p className="mt-1 text-sm text-slate-500">Verified operational records for {summary.period.from} through {summary.period.to}.</p></div>
+      <div className="flex flex-wrap items-end gap-3"><label className="text-xs font-medium text-slate-600">From<input aria-label="Dashboard period from" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className="form-input mt-1 min-w-36 px-3 py-2" /></label><label className="text-xs font-medium text-slate-600">To<input aria-label="Dashboard period to" type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} className="form-input mt-1 min-w-36 px-3 py-2" /></label></div>
+    </div>
+    <SummaryMetrics items={items} />
+    <DashboardAnalytics summary={summary} />
+    {attendance && summary.role === 'hr' && <section className="card-elegant overflow-hidden">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-5 py-4"><div><h2 className="font-semibold text-slate-900">Today’s attendance</h2><p className="mt-1 text-sm text-slate-500">Office and event check-ins. Expected office reporting times are not configured in this system.</p></div><Link to="/checkins" className="text-sm font-semibold text-brand-700">Open attendance records</Link></div>
+      <div className="overflow-x-auto"><table className="min-w-full divide-y divide-slate-100 text-sm"><thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Employee</th><th className="px-4 py-3">Location / event</th><th className="px-4 py-3">Expected</th><th className="px-4 py-3">Check-in</th><th className="px-4 py-3">Check-out</th><th className="px-4 py-3">Hours</th><th className="px-4 py-3">Overtime</th><th className="px-4 py-3">Status</th></tr></thead><tbody className="divide-y divide-slate-100">{attendance.daily_rows.length ? attendance.daily_rows.map((row) => <tr key={row.key} className="hover:bg-slate-50/70"><td className="whitespace-nowrap px-4 py-3 font-medium text-slate-800">{row.employee}</td><td className="px-4 py-3">{row.location}</td><td className="px-4 py-3">{row.expected_time ?? 'Not set'}</td><td className="px-4 py-3">{row.checkin_time ?? '—'}</td><td className="px-4 py-3">{row.checkout_time ?? '—'}</td><td className="px-4 py-3">{row.working_hours == null ? '—' : `${row.working_hours.toFixed(1)} h`}</td><td className="px-4 py-3">{row.overtime_hours == null ? '—' : `${row.overtime_hours.toFixed(1)} h`}</td><td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.status === 'On shift' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{row.status}</span></td></tr>) : <tr><td colSpan={8} className="px-5 py-12 text-center text-slate-500">No attendance recorded today.</td></tr>}</tbody></table></div>
+    </section>}
+    <section className="card-elegant p-5"><h2 className="font-semibold text-slate-900">Action centre</h2>{summary.attention.length ? <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{summary.attention.map((item) => <Link key={item.type} to={item.href} className="flex items-center justify-between rounded-xl border border-slate-200 p-4 transition hover:border-amber-300 hover:bg-amber-50/30"><span className="text-sm font-medium text-slate-700">{item.label}</span><span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-900">{item.count}</span></Link>)}</div> : <p className="mt-2 text-sm text-slate-500">No items currently require action.</p>}</section>
+  </div>;
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
+  const isSuperAdmin = isSuperAdministrator(user);
   const [allEvents, setAllEvents] = useState<Paginated<Event> | null>(null);
   const [activeEvents, setActiveEvents] = useState<Event[]>([]);
   const [createdEvents, setCreatedEvents] = useState<Event[]>([]);
@@ -212,8 +306,34 @@ export default function Dashboard() {
   const [equipmentTotal, setEquipmentTotal] = useState<number | null>(null);
   const [officeCheckinsToday, setOfficeCheckinsToday] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [summary, setSummary] = useState<AdminDashboardSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [summaryError, setSummaryError] = useState('');
+  const [dateTo, setDateTo] = useState(today());
+  const [dateFrom, setDateFrom] = useState(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 13);
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  });
 
   useEffect(() => {
+    if (!user) return;
+    setSummaryLoading(true);
+    setSummaryError('');
+    api.dashboard.summary({ from: dateFrom, to: dateTo })
+      .then(setSummary)
+      .catch((error: unknown) => setSummaryError(error instanceof Error ? error.message : 'Could not load dashboard analytics.'))
+      .finally(() => setSummaryLoading(false));
+  }, [user?.id, dateFrom, dateTo]);
+
+  useEffect(() => {
+    if (!isSuperAdmin) {
+      setLoading(false);
+      return;
+    }
     const todayStr = today();
     setLoading(true);
     Promise.all([
@@ -245,13 +365,19 @@ export default function Dashboard() {
         setOfficeCheckinsToday(0);
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [isSuperAdmin]);
 
   const firstName = user?.name?.split(' ')[0] ?? 'there';
   const recentEvents = (allEvents?.data ?? []).slice(0, 5);
   const totalEvents = allEvents?.total ?? 0;
   const crewOnActive = activeEvents.reduce((sum, e) => sum + (e.crew?.length ?? 0), 0);
   const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  if (!isSuperAdmin) {
+    if (summaryError) return <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-800">{summaryError}</div>;
+    if (summaryLoading || !summary) return <Preloader message="Loading your dashboard…" fullScreen />;
+    return <RoleDashboard summary={summary} from={dateFrom} to={dateTo} setFrom={setDateFrom} setTo={setDateTo} />;
+  }
 
   if (loading && allEvents === null) {
     return <Preloader message="Loading dashboard…" fullScreen />;
@@ -341,6 +467,11 @@ export default function Dashboard() {
           </div>
         )}
       </section>
+
+      {summary && <section className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="dashboard-section-title">Operational analytics</h2><p className="mt-2 text-sm text-slate-500">Recorded attendance and finance activity across the selected period.</p></div><div className="flex gap-3"><label className="text-xs font-medium text-slate-600">From<input type="date" value={dateFrom} max={dateTo} onChange={(e) => setDateFrom(e.target.value)} className="form-input mt-1 px-3 py-2" /></label><label className="text-xs font-medium text-slate-600">To<input type="date" value={dateTo} min={dateFrom} onChange={(e) => setDateTo(e.target.value)} className="form-input mt-1 px-3 py-2" /></label></div></div>
+        <DashboardAnalytics summary={summary} />
+      </section>}
 
       {/* Live crew strip */}
       {!loading && activeEvents.length > 0 && (
@@ -474,7 +605,7 @@ export default function Dashboard() {
                     <Icon className="h-5 w-5" />
                   </div>
                   {label}
-                  <ChevronRightIcon className="ml-auto h-4 w-4 flex-shrink-0 opacity-60" style={{ color: BRAND['600'] }} />
+                  <ChevronRightIcon className="ml-auto h-4 w-4 flex-shrink-0 text-slate-400 opacity-60" />
                 </Link>
               ))}
             </nav>

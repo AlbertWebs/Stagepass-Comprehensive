@@ -1,12 +1,21 @@
-stagepass/backend/laravel-api/storage/app/public
-stagepass/backend/laravel-api/public/storage
-.git/
-**/.git/
-**/node_modules/
-**/.expo/
-**/dist/
-**/dist-buildcheck/
-**/coverage/
-**/.env
-**/.env.*
-**/database.sqlite
+# The Expo app lives in a monorepo. Keep EAS uploads scoped to that app.
+*
+!.easignore
+!stagepass
+stagepass/*
+!stagepass/mobile
+stagepass/mobile/*
+!stagepass/mobile/stagepass-mobile
+!stagepass/mobile/stagepass-mobile/**
+
+# Exclude generated and local-only artifacts even if they are tracked.
+stagepass/mobile/stagepass-mobile/node_modules/
+stagepass/mobile/stagepass-mobile/dist/
+stagepass/mobile/stagepass-mobile/dist-buildcheck/
+stagepass/mobile/stagepass-mobile/web-build/
+stagepass/mobile/stagepass-mobile/coverage/
+stagepass/mobile/stagepass-mobile/.expo/
+stagepass/mobile/stagepass-mobile/android/
+stagepass/mobile/stagepass-mobile/ios/
+stagepass/mobile/stagepass-mobile/.env
+stagepass/mobile/stagepass-mobile/.env.*

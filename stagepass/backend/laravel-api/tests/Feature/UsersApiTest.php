@@ -20,9 +20,16 @@ class UsersApiTest extends TestCase
         return ['Authorization' => 'Bearer ' . $token];
     }
 
+    private function adminUser(): User
+    {
+        $user = User::factory()->create();
+        $user->roles()->attach(Role::where('name', 'super_admin')->firstOrFail()->id);
+        return $user;
+    }
+
     public function test_users_index_returns_paginated_list(): void
     {
-        $admin = User::factory()->create();
+        $admin = $this->adminUser();
         User::factory()->count(2)->create();
         $response = $this->withHeaders($this->auth($admin))->getJson('/api/users');
         $response->assertStatus(200);
@@ -31,7 +38,7 @@ class UsersApiTest extends TestCase
 
     public function test_users_show_returns_user(): void
     {
-        $admin = User::factory()->create();
+        $admin = $this->adminUser();
         $target = User::factory()->create(['name' => 'Target User']);
         $response = $this->withHeaders($this->auth($admin))
             ->getJson('/api/users/' . $target->id);
@@ -41,8 +48,7 @@ class UsersApiTest extends TestCase
     public function test_users_store_creates_user(): void
     {
         Mail::fake();
-        Role::firstOrCreate(['name' => 'super_admin'], ['label' => 'Super Admin']);
-        $admin = User::factory()->create();
+        $admin = $this->adminUser();
         $response = $this->withHeaders($this->auth($admin))
             ->postJson('/api/users', [
                 'name' => 'New Crew',
@@ -64,9 +70,7 @@ class UsersApiTest extends TestCase
     public function test_super_admin_can_send_welcome_email_for_existing_user(): void
     {
         Mail::fake();
-        Role::firstOrCreate(['name' => 'super_admin'], ['label' => 'Super Admin']);
-        $admin = User::factory()->create();
-        $admin->roles()->attach(Role::where('name', 'super_admin')->firstOrFail()->id);
+        $admin = $this->adminUser();
         $target = User::factory()->create(['email' => 'existing@example.com', 'name' => 'Existing User']);
 
         $this->withHeaders($this->auth($admin))
@@ -85,9 +89,7 @@ class UsersApiTest extends TestCase
     public function test_send_welcome_email_updates_password_when_provided(): void
     {
         Mail::fake();
-        Role::firstOrCreate(['name' => 'super_admin'], ['label' => 'Super Admin']);
-        $admin = User::factory()->create();
-        $admin->roles()->attach(Role::where('name', 'super_admin')->firstOrFail()->id);
+        $admin = $this->adminUser();
         $target = User::factory()->create(['email' => 'pwtest@example.com']);
 
         $this->withHeaders($this->auth($admin))
@@ -123,7 +125,7 @@ class UsersApiTest extends TestCase
 
     public function test_users_update_modifies_user(): void
     {
-        $admin = User::factory()->create();
+        $admin = $this->adminUser();
         $target = User::factory()->create(['name' => 'Old Name']);
         $response = $this->withHeaders($this->auth($admin))
             ->putJson('/api/users/' . $target->id, ['name' => 'New Name']);

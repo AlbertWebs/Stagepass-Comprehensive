@@ -16,6 +16,8 @@ class CommunicationController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
+        if ($denial = $this->denyUnlessAdminPermission($request, 'communications.view', ['team_leader', 'teamleader'])) return $denial;
+
         $query = Communication::query()
             ->with(['sentBy:id,name,email', 'event:id,name,date'])
             ->orderByDesc('created_at');
@@ -28,6 +30,8 @@ class CommunicationController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        if ($denial = $this->denyUnlessAdminPermission($request, 'communications.manage', ['team_leader', 'teamleader'])) return $denial;
+
         $validated = $request->validate([
             'subject' => 'required|string|max:255',
             'body' => 'required|string|max:10000',
@@ -82,13 +86,17 @@ class CommunicationController extends Controller
             return $comm;
         });
 
+        app(\App\Services\AuditTrail::class)->record($request, 'communication.created', $communication, [], $communication->only(['subject', 'recipient_scope', 'event_id', 'send_as_message', 'send_as_email']));
+
         $communication->load(['sentBy:id,name,email', 'event:id,name,date']);
 
         return response()->json($communication, 201);
     }
 
-    public function show(Communication $communication): JsonResponse
+    public function show(Request $request, Communication $communication): JsonResponse
     {
+        if ($denial = $this->denyUnlessAdminPermission($request, 'communications.view', ['team_leader', 'teamleader'])) return $denial;
+
         $communication->load(['sentBy:id,name,email', 'event:id,name,date']);
         $recipients = $this->resolveRecipients(
             $communication->recipient_scope,
@@ -128,9 +136,13 @@ class CommunicationController extends Controller
         ]));
     }
 
-    public function destroy(Communication $communication): JsonResponse
+    public function destroy(Request $request, Communication $communication): JsonResponse
     {
+        if ($denial = $this->denyUnlessAdminPermission($request, 'communications.manage', ['team_leader', 'teamleader'])) return $denial;
+
+        $before = $communication->only(['subject', 'recipient_scope', 'event_id', 'send_as_message', 'send_as_email', 'sent_at']);
         $communication->delete();
+        app(\App\Services\AuditTrail::class)->record($request, 'communication.deleted', $communication, $before);
         return response()->json(null, 204);
     }
 

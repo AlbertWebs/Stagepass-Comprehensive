@@ -10,6 +10,7 @@ use App\Models\TimeOffRequest;
 use App\Models\User;
 use App\Services\ExpoPushSender;
 use App\Services\FcmSender;
+use App\Services\AuditTrail;
 use App\Support\OfficeCheckinRequiredDays;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -18,6 +19,13 @@ use Illuminate\Support\Collection;
 
 class CheckinsController extends Controller
 {
+    private function canViewAttendance(Request $request): bool
+    {
+        $user = $request->user();
+        return $user->hasSuperAdminAccess()
+            || (in_array('admin-panel', $user->currentAccessToken()?->abilities ?? [], true) && $user->hasPermission('attendance.view'));
+    }
+
     /**
      * Return the server's current date in the app timezone (YYYY-MM-DD).
      * Use this so the Checkins page "Today" matches the date used when recording office check-ins.
@@ -25,7 +33,7 @@ class CheckinsController extends Controller
     public function serverDate(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user->hasRole('super_admin') && ! $user->hasRole('director') && ! $user->hasRole('admin')) {
+        if (! $this->canViewAttendance($request)) {
             return response()->json(['message' => 'Only admins can view check-ins.'], 403);
         }
 
@@ -45,7 +53,7 @@ class CheckinsController extends Controller
     public function dailyEmployeeStatus(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user->hasRole('super_admin') && ! $user->hasRole('director') && ! $user->hasRole('admin')) {
+        if (! $this->canViewAttendance($request)) {
             return response()->json(['message' => 'Only admins can view daily status.'], 403);
         }
 
@@ -134,9 +142,7 @@ class CheckinsController extends Controller
     public function setEmployeeOff(Request $request): JsonResponse
     {
         $admin = $request->user();
-        if (! $admin->hasRole('super_admin') && ! $admin->hasRole('director') && ! $admin->hasRole('admin')) {
-            return response()->json(['message' => 'Only admins can set employee off/on.'], 403);
-        }
+        if ($denial = $this->denyUnlessAdminPermission($request, 'attendance.edit')) return $denial;
 
         $request->validate([
             'user_id' => 'required|integer|exists:users,id',
@@ -157,7 +163,7 @@ class CheckinsController extends Controller
             if ($exists) {
                 return response()->json(['message' => 'User is already marked off for this date.', 'ok' => true]);
             }
-            TimeOffRequest::create([
+            $timeOff = TimeOffRequest::create([
                 'user_id' => $userId,
                 'start_date' => $date,
                 'end_date' => $date,
@@ -165,6 +171,9 @@ class CheckinsController extends Controller
                 'status' => TimeOffRequest::STATUS_APPROVED,
                 'processed_by' => $admin->id,
                 'processed_at' => now(),
+            ]);
+            app(AuditTrail::class)->record($request, 'attendance.off_day_set', $timeOff, [], [
+                'user_id' => $userId, 'date' => $date, 'status' => TimeOffRequest::STATUS_APPROVED,
             ]);
             return response()->json(['message' => 'User marked off for this date.', 'ok' => true]);
         }
@@ -189,10 +198,14 @@ class CheckinsController extends Controller
             ], 422);
         }
 
+        $before = ['user_id' => $userId, 'date' => $date, 'status' => $timeOffRequest->status];
         $timeOffRequest->update([
             'status' => TimeOffRequest::STATUS_REJECTED,
             'processed_by' => $admin->id,
             'processed_at' => now(),
+        ]);
+        app(AuditTrail::class)->record($request, 'attendance.off_day_removed', $timeOffRequest, $before, [
+            'user_id' => $userId, 'date' => $date, 'status' => $timeOffRequest->status,
         ]);
 
         return response()->json(['message' => 'User marked on for this date.', 'ok' => true]);
@@ -206,7 +219,7 @@ class CheckinsController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user->hasRole('super_admin') && ! $user->hasRole('director') && ! $user->hasRole('admin')) {
+        if (! $this->canViewAttendance($request)) {
             return response()->json(['message' => 'Only admins can view check-ins.'], 403);
         }
 
@@ -428,9 +441,7 @@ class CheckinsController extends Controller
     public function sendPush(Request $request): JsonResponse
     {
         $admin = $request->user();
-        if (! $admin->hasRole('super_admin') && ! $admin->hasRole('director') && ! $admin->hasRole('admin')) {
-            return response()->json(['message' => 'Only admins can send push notifications.'], 403);
-        }
+        if ($denial = $this->denyUnlessAdminPermission($request, 'notifications.manage')) return $denial;
 
         $request->validate([
             'user_id' => 'required|integer|exists:users,id',

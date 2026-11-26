@@ -1,5 +1,3 @@
-import React from 'react';
-
 type PreloaderProps = {
   /** Optional message below the logo */
   message?: string;

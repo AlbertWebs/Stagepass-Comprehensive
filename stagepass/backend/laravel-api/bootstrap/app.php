@@ -14,6 +14,11 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->append(AuditLogMiddleware::class);
+        $middleware->alias([
+            'admin.permission' => \App\Http\Middleware\EnsureAdminPermission::class,
+            'admin.super' => \App\Http\Middleware\EnsureSuperAdministrator::class,
+            'active.user' => \App\Http\Middleware\EnsureActiveUser::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

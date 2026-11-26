@@ -16,7 +16,17 @@ class AuditLog extends Model
         'ip_address',
         'user_agent',
         'response_status',
+        'action',
+        'subject_type',
+        'subject_id',
+        'before_values',
+        'after_values',
     ];
+
+    protected function casts(): array
+    {
+        return ['before_values' => 'array', 'after_values' => 'array'];
+    }
 
     public const SOURCE_WEB = 'web';
     public const SOURCE_MOBILE = 'mobile';

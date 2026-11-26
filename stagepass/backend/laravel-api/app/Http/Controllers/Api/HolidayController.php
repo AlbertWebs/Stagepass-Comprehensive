@@ -4,25 +4,15 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Holiday;
+use App\Services\AuditTrail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class HolidayController extends Controller
 {
-    private function canManage(Request $request): bool
-    {
-        $user = $request->user();
-
-        return $user->hasRole('super_admin')
-            || $user->hasRole('director')
-            || $user->hasRole('admin');
-    }
-
     public function index(Request $request): JsonResponse
     {
-        if (! $this->canManage($request)) {
-            return response()->json(['message' => 'Only admins can manage holidays.'], 403);
-        }
+        if ($denial = $this->denyUnlessAdminPermission($request, 'holidays.view')) return $denial;
 
         $query = Holiday::query()->orderBy('date');
         if ($request->filled('active')) {
@@ -34,9 +24,7 @@ class HolidayController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        if (! $this->canManage($request)) {
-            return response()->json(['message' => 'Only admins can manage holidays.'], 403);
-        }
+        if ($denial = $this->denyUnlessAdminPermission($request, 'holidays.manage')) return $denial;
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
@@ -49,15 +37,16 @@ class HolidayController extends Controller
             ...$validated,
             'is_active' => $validated['is_active'] ?? true,
         ]);
+        app(AuditTrail::class)->record($request, 'holiday.created', $holiday, [], $holiday->only(['name', 'date', 'is_active']));
 
         return response()->json($holiday, 201);
     }
 
     public function update(Request $request, Holiday $holiday): JsonResponse
     {
-        if (! $this->canManage($request)) {
-            return response()->json(['message' => 'Only admins can manage holidays.'], 403);
-        }
+        if ($denial = $this->denyUnlessAdminPermission($request, 'holidays.manage')) return $denial;
+
+        $before = $holiday->only(['name', 'date', 'is_active']);
 
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
@@ -67,17 +56,18 @@ class HolidayController extends Controller
         ]);
 
         $holiday->update($validated);
+        app(AuditTrail::class)->record($request, 'holiday.updated', $holiday, $before, $holiday->fresh()->only(['name', 'date', 'is_active']));
 
         return response()->json($holiday->fresh());
     }
 
     public function destroy(Request $request, Holiday $holiday): JsonResponse
     {
-        if (! $this->canManage($request)) {
-            return response()->json(['message' => 'Only admins can manage holidays.'], 403);
-        }
+        if ($denial = $this->denyUnlessAdminPermission($request, 'holidays.manage')) return $denial;
 
+        $before = $holiday->only(['name', 'date', 'is_active']);
         $holiday->delete();
+        app(AuditTrail::class)->record($request, 'holiday.deleted', $holiday, $before);
 
         return response()->json(null, 204);
     }

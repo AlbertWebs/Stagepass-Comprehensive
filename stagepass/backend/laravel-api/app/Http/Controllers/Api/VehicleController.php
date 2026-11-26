@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Vehicle;
+use App\Services\AuditTrail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -11,6 +12,8 @@ class VehicleController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
+        if ($denial = $this->denyUnlessAdminPermission($request, 'transport.view', ['logistics'])) return $denial;
+
         $query = Vehicle::query();
 
         if ($request->filled('search')) {
@@ -33,6 +36,8 @@ class VehicleController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        if ($denial = $this->denyUnlessAdminPermission($request, 'transport.create', ['logistics'])) return $denial;
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'registration_number' => 'nullable|string|max:100',
@@ -43,17 +48,24 @@ class VehicleController extends Controller
 
         $validated['status'] = $validated['status'] ?? Vehicle::STATUS_AVAILABLE;
         $vehicle = Vehicle::create($validated);
+        app(AuditTrail::class)->record($request, 'vehicle.created', $vehicle, [], $vehicle->only(['name', 'registration_number', 'capacity', 'status']));
 
         return response()->json($vehicle, 201);
     }
 
-    public function show(Vehicle $vehicle): JsonResponse
+    public function show(Request $request, Vehicle $vehicle): JsonResponse
     {
+        if ($denial = $this->denyUnlessAdminPermission($request, 'transport.view', ['logistics'])) return $denial;
+
         return response()->json($vehicle);
     }
 
     public function update(Request $request, Vehicle $vehicle): JsonResponse
     {
+        if ($denial = $this->denyUnlessAdminPermission($request, 'transport.edit', ['logistics'])) return $denial;
+
+        $before = $vehicle->only(['name', 'registration_number', 'capacity', 'status']);
+
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
             'registration_number' => 'nullable|string|max:100',
@@ -63,13 +75,18 @@ class VehicleController extends Controller
         ]);
 
         $vehicle->update($validated);
+        app(AuditTrail::class)->record($request, 'vehicle.updated', $vehicle, $before, $vehicle->fresh()->only(['name', 'registration_number', 'capacity', 'status']));
 
         return response()->json($vehicle);
     }
 
-    public function destroy(Vehicle $vehicle): JsonResponse
+    public function destroy(Request $request, Vehicle $vehicle): JsonResponse
     {
+        if ($denial = $this->denyUnlessAdminPermission($request, 'transport.delete', ['logistics'])) return $denial;
+
+        $before = $vehicle->only(['name', 'registration_number', 'capacity', 'status']);
         $vehicle->delete();
+        app(AuditTrail::class)->record($request, 'vehicle.deleted', $vehicle, $before);
         return response()->json(null, 204);
     }
 }

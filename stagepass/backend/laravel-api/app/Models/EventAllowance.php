@@ -31,6 +31,9 @@ class EventAllowance extends Model
         'status',
         'approved_by',
         'approved_at',
+        'hr_verified_by',
+        'hr_verified_at',
+        'hr_verification_note',
         'paid_at',
         'source',
         'attachment_path',
@@ -49,6 +52,7 @@ class EventAllowance extends Model
             'amount' => 'decimal:2',
             'recorded_at' => 'datetime',
             'approved_at' => 'datetime',
+            'hr_verified_at' => 'datetime',
             'paid_at' => 'datetime',
             'meal_grant_date' => 'date',
             'rejected_at' => 'datetime',
@@ -78,6 +82,11 @@ class EventAllowance extends Model
     public function approver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function verifier(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'hr_verified_by');
     }
 
     public function rejector(): BelongsTo

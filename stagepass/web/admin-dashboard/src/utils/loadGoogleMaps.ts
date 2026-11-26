@@ -7,7 +7,7 @@ declare global {
   interface Window {
     __googleMapsResolve?: () => void;
     gm_authFailure?: () => void;
-    google?: typeof google;
+    google?: { maps?: { places?: unknown } };
   }
 }
 

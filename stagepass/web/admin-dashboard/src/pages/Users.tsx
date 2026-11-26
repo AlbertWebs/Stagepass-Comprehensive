@@ -5,12 +5,8 @@ import { PageHeader } from '@/components/PageHeader';
 import { Preloader } from '@/components/Preloader';
 import { SectionCard } from '@/components/SectionCard';
 import { useAuth } from '@/contexts/AuthContext';
-import {
-  downloadCrewExcelTemplate,
-  parseCrewExcelFile,
-  resolveRoleIdsFromCell,
-  type CrewExcelRow,
-} from '@/utils/crewExcelImport';
+import { hasPermission } from '@/utils/permissions';
+import type { CrewExcelRow } from '@/utils/crewExcelImport';
 
 function hasAdminAccess(user: { roles?: Array<{ name?: string }> } | null): boolean {
   const names = (user?.roles ?? [])
@@ -27,6 +23,7 @@ type UserFormState = {
   pin: string;
   phone: string;
   role_ids: number[];
+  is_active: boolean;
 };
 
 function emptyForm(): UserFormState {
@@ -38,6 +35,7 @@ function emptyForm(): UserFormState {
     pin: '',
     phone: '',
     role_ids: [],
+    is_active: true,
   };
 }
 
@@ -50,6 +48,7 @@ function userToForm(u: User): UserFormState {
     pin: '',
     phone: (u as { phone?: string }).phone ?? '',
     role_ids: u.roles?.map((r) => r.id) ?? [],
+    is_active: u.is_active ?? true,
   };
 }
 
@@ -76,6 +75,9 @@ export default function Users({
   showDeleteAllCrew = false,
 }: UsersPageProps = {}) {
   const { user: authUser } = useAuth();
+  const canCreateUsers = hasPermission(authUser, 'employees.create');
+  const canEditUsers = hasPermission(authUser, 'employees.edit');
+  const canDeleteUsers = hasPermission(authUser, 'employees.delete');
   const canSendTestPush = showPushTestActions && hasAdminAccess(authUser);
   const canDeleteAllCrew = showDeleteAllCrew && hasAdminAccess(authUser);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -194,8 +196,8 @@ export default function Users({
     setImportResult(null);
     setError(null);
     try {
-      const buffer = await file.arrayBuffer();
-      const { rows, errors } = parseCrewExcelFile(buffer);
+      const [{ parseCrewExcelFile }, buffer] = await Promise.all([import('@/utils/crewExcelImport'), file.arrayBuffer()]);
+      const { rows, errors } = await parseCrewExcelFile(buffer);
       setImportPreview(rows);
       setImportParseErrors(errors);
       if (rows.length === 0 && errors.length === 0) {
@@ -218,6 +220,7 @@ export default function Users({
     setError(null);
     const failed: { rowNumber: number; email: string; message: string }[] = [];
     let created = 0;
+    const { resolveRoleIdsFromCell } = await import('@/utils/crewExcelImport');
 
     for (const row of importPreview) {
       const { roleIds, unknownNames } = resolveRoleIdsFromCell(row.roles, roles);
@@ -254,6 +257,15 @@ export default function Users({
     if (created > 0) fetchUsers();
   };
 
+  const handleDownloadTemplate = async () => {
+    try {
+      const { downloadCrewExcelTemplate } = await import('@/utils/crewExcelImport');
+      await downloadCrewExcelTemplate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not prepare the Excel template.');
+    }
+  };
+
   const toggleRole = (roleId: number) => {
     setForm((f) => ({
       ...f,
@@ -276,6 +288,7 @@ export default function Users({
         pin: form.pin || undefined,
         phone: form.phone || undefined,
         role_ids: form.role_ids.length ? form.role_ids : undefined,
+          is_active: form.is_active,
       });
       closeModals();
       fetchUsers();
@@ -300,6 +313,7 @@ export default function Users({
         pin: form.pin || undefined,
         phone: form.phone || undefined,
         role_ids: form.role_ids,
+          is_active: form.is_active,
       });
       closeModals();
       fetchUsers();
@@ -476,6 +490,10 @@ export default function Users({
             ))}
           </div>
         </div>
+        <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-4 text-sm">
+          <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))} className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
+          <span><span className="block font-medium text-slate-800">Account active</span><span className="mt-0.5 block text-slate-500">Inactive accounts cannot sign in to web or mobile.</span></span>
+        </label>
         <div className="form-actions">
           <button type="button" onClick={closeModals} className="btn-secondary">
             Cancel
@@ -495,11 +513,11 @@ export default function Users({
         subtitle={subtitle}
         action={
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {showExcelImport ? (
+            {showExcelImport && canCreateUsers ? (
               <>
                 <button
                   type="button"
-                  onClick={downloadCrewExcelTemplate}
+                  onClick={() => void handleDownloadTemplate()}
                   className="btn-secondary"
                 >
                   Download Excel template
@@ -522,9 +540,7 @@ export default function Users({
                 Delete all crew
               </button>
             ) : null}
-            <button type="button" onClick={openCreate} className="btn-brand">
-              {createButtonLabel}
-            </button>
+            {canCreateUsers && <button type="button" onClick={openCreate} className="btn-brand">{createButtonLabel}</button>}
           </div>
         }
       />
@@ -575,6 +591,7 @@ export default function Users({
                 <th>Email</th>
                 <th>Username</th>
                 <th>Roles</th>
+                <th>Status</th>
                 <th className="text-right whitespace-nowrap">Actions</th>
               </tr>
             </thead>
@@ -594,6 +611,7 @@ export default function Users({
                       )}
                     </span>
                   </td>
+                  <td className="px-6 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${u.is_active === false ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-700'}`}>{u.is_active === false ? 'Inactive' : 'Active'}</span></td>
                   <td className="px-6 py-4 font-medium text-slate-900">{u.name}</td>
                   <td className="px-6 py-4 text-slate-600">{u.email}</td>
                   <td className="px-6 py-4 text-slate-600">{u.username ?? '–'}</td>
@@ -619,7 +637,7 @@ export default function Users({
                           {pushTestUserId === u.id ? 'Sending…' : 'Test push'}
                         </button>
                       ) : null}
-                      <button
+                      {canEditUsers && <button
                         type="button"
                         onClick={() => {
                           setWelcomeUser(u);
@@ -631,15 +649,15 @@ export default function Users({
                         aria-label={`Send welcome email to ${u.name}`}
                       >
                         Welcome email
-                      </button>
-                      <button
+                      </button>}
+                      {canEditUsers && <button
                         type="button"
                         onClick={() => openEdit(u)}
                         className="link-brand"
                       >
                         Edit
-                      </button>
-                      <button
+                      </button>}
+                      {canDeleteUsers && <button
                         type="button"
                         onClick={() => {
                           setDeleteUser(u);
@@ -648,7 +666,7 @@ export default function Users({
                         className="text-sm font-medium text-red-600 hover:underline"
                       >
                         Delete
-                      </button>
+                      </button>}
                     </span>
                   </td>
                 </tr>
@@ -700,7 +718,7 @@ export default function Users({
               <code className="text-xs">crew</code>).
             </p>
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={downloadCrewExcelTemplate} className="btn-secondary">
+              <button type="button" onClick={handleDownloadTemplate} className="btn-secondary">
                 Download template
               </button>
               <button

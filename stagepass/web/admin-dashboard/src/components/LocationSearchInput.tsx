@@ -82,8 +82,8 @@ export function LocationSearchInput({
 
           const loc = place.geometry?.location;
           if ((lat === undefined || lng === undefined) && loc) {
-            lat = typeof loc.lat === 'function' ? loc.lat() : (loc as { lat: number }).lat;
-            lng = typeof loc.lng === 'function' ? loc.lng() : (loc as { lng: number }).lng;
+            lat = loc.lat();
+            lng = loc.lng();
             if (address && lat != null && lng != null) {
               void api.locationCache
                 .store({

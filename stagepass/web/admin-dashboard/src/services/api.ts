@@ -144,6 +144,47 @@ export interface Role {
   id: number;
   name: string;
   label?: string;
+  is_system?: boolean;
+  users_count?: number;
+  permissions?: Permission[];
+}
+
+export interface Permission {
+  id: number;
+  name: string;
+  label?: string;
+  module?: string;
+  action?: string;
+}
+
+export interface PermissionGroup {
+  module: string;
+  permissions: Permission[];
+}
+
+export interface AdminDashboardSummary {
+  role: 'super_admin' | 'hr' | 'accounts' | 'team_leader';
+  period: { from: string; to: string; timezone: string };
+  workforce: { active: number };
+  attendance: null | {
+    present_today: number;
+    checked_in_now: number;
+    checked_out_today: number;
+    missing_checkouts_today: number;
+    working_hours_today: number;
+    overtime_hours_today: number;
+    trend: { date: string; present: number; checked_out: number; working_hours: number; overtime_hours: number }[];
+    daily_rows: { key: string; employee: string; location: string; expected_time: string | null; checkin_time: string | null; checkout_time: string | null; working_hours: number | null; overtime_hours: number | null; status: string }[];
+  };
+  events: null | { upcoming: number; ongoing: number };
+  tasks: null | { pending: number; completed: number; total: number; completion_rate: number };
+  finance: null | {
+    allowances: { pending_count: number; pending_total: number; approved_count: number; approved_total: number; paid_count: number; paid_total: number; rejected_count: number };
+    payments: { pending_count: number; approved_count: number; approved_total: number };
+    payouts: { completed_total: number; failed_count: number; pending_total: number };
+    monthly_trend: { month: string; allowances: number; approved_payments: number; completed_payouts: number }[];
+  };
+  attention: { type: string; label: string; count: number; href: string }[];
 }
 
 export interface User {
@@ -153,6 +194,8 @@ export interface User {
   username?: string;
   avatar_url?: string | null;
   roles?: Role[];
+  permissions?: string[];
+  is_active?: boolean;
 }
 
 export interface EventEquipmentAssignment {
@@ -310,6 +353,10 @@ export interface EarnedAllowanceDetail {
   rejection_comment?: string | null;
   approval_comment?: string | null;
   approved_at?: string | null;
+  hr_verified?: boolean;
+  hr_verified_by?: string | null;
+  hr_verified_at?: string | null;
+  hr_verification_note?: string | null;
   rejected_at?: string | null;
   meal_slot?: string | null;
   meal_grant_date?: string | null;
@@ -373,6 +420,9 @@ export interface B2cPayoutProcessResponse {
 }
 
 export const api = {
+  dashboard: {
+    summary: (params?: { from?: string; to?: string }) => request<AdminDashboardSummary>('/admin/dashboard', { params }),
+  },
   locationCache: {
     lookup: (params: { place_id?: string; address?: string }) => requestLocationCacheLookup(params),
     store: (body: { location_name: string; latitude: number; longitude: number; place_id?: string | null }) =>
@@ -435,14 +485,20 @@ export const api = {
   },
   roles: {
     list: () => request<Role[]>('/roles'),
+    permissions: () => request<PermissionGroup[]>('/admin/permissions'),
+    create: (body: { name: string; label: string; permission_ids: number[] }) =>
+      request<Role>('/admin/roles', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: number, body: { name?: string; label?: string; permission_ids?: number[] }) =>
+      request<Role>(`/admin/roles/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (id: number) => request<void>(`/admin/roles/${id}`, { method: 'DELETE' }),
   },
   users: {
     list: (params?: { search?: string; role?: string; page?: number; per_page?: number }) =>
       request<Paginated<User>>('/users', { params: params as Record<string, string | number> }),
     get: (id: number) => request<User>(`/users/${id}`),
-    create: (body: { name: string; email: string; password: string; username?: string; pin?: string; phone?: string; role_ids?: number[] }) =>
+    create: (body: { name: string; email: string; password: string; username?: string; pin?: string; phone?: string; role_ids?: number[]; is_active?: boolean }) =>
       request<User>('/users', { method: 'POST', body: JSON.stringify(body) }),
-    update: (id: number, body: { name?: string; email?: string; password?: string; username?: string; pin?: string; phone?: string; role_ids?: number[] }) =>
+    update: (id: number, body: { name?: string; email?: string; password?: string; username?: string; pin?: string; phone?: string; role_ids?: number[]; is_active?: boolean }) =>
       request<User>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (id: number) => request<void>(`/users/${id}`, { method: 'DELETE' }),
     /** Admin: delete all non-admin users (excludes admins/directors and the current user). */
@@ -586,6 +642,11 @@ export const api = {
       request<EarnedAllowanceDetail>(`/payments/earned-allowances/${id}/status`, {
         method: 'POST',
         body: JSON.stringify({ status, comment: comment ?? undefined }),
+      }),
+    verifyAllowance: (id: number, verified = true, note?: string) =>
+      request<EarnedAllowanceDetail>(`/payments/earned-allowances/${id}/verify`, {
+        method: 'POST',
+        body: JSON.stringify({ verified, note: note ?? undefined }),
       }),
     exportEarnedAllowances: (format: 'csv' | 'pdf' | 'excel') =>
       request<Blob | unknown>(`/payments/earned-allowances/export`, { params: { format } }),

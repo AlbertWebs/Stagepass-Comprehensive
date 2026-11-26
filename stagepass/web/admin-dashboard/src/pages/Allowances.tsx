@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type EarnedAllowanceDetail, type Event, type Paginated, type PaymentItem } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
+import { hasPermission } from '@/utils/permissions';
 import { PageHeader } from '@/components/PageHeader';
 import { SectionCard } from '@/components/SectionCard';
 
@@ -62,7 +64,22 @@ function purposeBadgeClass(purpose: string | null | undefined): string {
   return 'bg-slate-100 text-slate-700';
 }
 
+async function loadAllEarnedAllowanceRows(): Promise<EarnedAllowanceDetail[]> {
+  const first = await api.payments.earnedAllowances({ per_page: 100, page: 1 });
+  const lastPage = Math.max(1, first.pagination?.last_page ?? 1);
+  const rest = [];
+  for (let page = 2; page <= lastPage; page += 10) {
+    const pages = Array.from({ length: Math.min(10, lastPage - page + 1) }, (_, index) => page + index);
+    rest.push(...await Promise.all(pages.map((currentPage) => api.payments.earnedAllowances({ per_page: 100, page: currentPage }))));
+  }
+  return [first, ...rest].flatMap((result) => Array.isArray(result.flat) ? result.flat : []);
+}
+
 export default function Allowances() {
+  const { user } = useAuth();
+  const canViewEvents = hasPermission(user, 'events.view');
+  const canViewPayments = hasPermission(user, 'payments.view');
+  const canVerifyAllowances = hasPermission(user, 'allowances.verify');
   const [events, setEvents] = useState<Event[]>([]);
   const [payments, setPayments] = useState<PaymentItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,22 +89,23 @@ export default function Allowances() {
   const [earnedRows, setEarnedRows] = useState<EarnedAllowanceDetail[]>([]);
   const [earnedEventId, setEarnedEventId] = useState<string>('');
   const [earnedStatus, setEarnedStatus] = useState<string>('');
+  const [earnedVerification, setEarnedVerification] = useState<string>('');
+  const [verifyingId, setVerifyingId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [eventsRes, payRes, earnedRes] = await Promise.all([
-        api.events.list({ per_page: 100 }),
-        api.payments.list({ status: 'approved', per_page: 100 }),
-        api.payments.earnedAllowances({ per_page: 200 }),
+        canViewEvents ? api.events.list({ per_page: 100 }) : Promise.resolve({ data: [] }),
+        canViewPayments ? api.payments.list({ status: 'approved', per_page: 100 }) : Promise.resolve({ data: [] }),
+        loadAllEarnedAllowanceRows(),
       ]);
       const ev = (eventsRes as Paginated<Event>)?.data ?? [];
       const pay = (payRes as Paginated<PaymentItem>)?.data ?? [];
       setEvents(Array.isArray(ev) ? ev : []);
       setPayments(Array.isArray(pay) ? pay : []);
-      const flat = (earnedRes as { flat?: EarnedAllowanceDetail[] })?.flat;
-      setEarnedRows(Array.isArray(flat) ? flat : []);
+      setEarnedRows(Array.isArray(earnedRes) ? earnedRes : []);
     } catch {
       setEvents([]);
       setPayments([]);
@@ -96,7 +114,7 @@ export default function Allowances() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canViewEvents, canViewPayments]);
 
   useEffect(() => {
     void load();
@@ -140,8 +158,19 @@ export default function Allowances() {
     if (earnedStatus) {
       rows = rows.filter((r) => (r.status ?? '') === earnedStatus);
     }
+    if (earnedVerification === 'pending') rows = rows.filter((r) => r.status === 'pending' && !r.hr_verified);
+    if (earnedVerification === 'verified') rows = rows.filter((r) => r.hr_verified);
     return rows;
-  }, [earnedRows, earnedEventId, earnedStatus]);
+  }, [earnedRows, earnedEventId, earnedStatus, earnedVerification]);
+
+  const allowanceEventOptions = useMemo(() => {
+    const byId = new Map<number, string>();
+    events.forEach((event) => byId.set(event.id, event.name));
+    earnedRows.forEach((row) => {
+      if (row.event_id && row.event_name) byId.set(row.event_id, row.event_name);
+    });
+    return Array.from(byId, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [events, earnedRows]);
 
   const stats = useMemo(() => {
     const withAllowance = todayEvents.filter((e) => e.daily_allowance != null && Number(e.daily_allowance) > 0).length;
@@ -154,8 +183,23 @@ export default function Allowances() {
       approvedCount: payments.length,
       sumAllowances,
       sumTotal,
+      pendingVerificationCount: earnedRows.filter((row) => row.status === 'pending' && !row.hr_verified).length,
+      pendingVerificationTotal: earnedRows.filter((row) => row.status === 'pending' && !row.hr_verified).reduce((sum, row) => sum + Number(row.amount), 0),
     };
-  }, [todayEvents, payments]);
+  }, [todayEvents, payments, earnedRows]);
+
+  const handleVerify = async (row: EarnedAllowanceDetail) => {
+    setVerifyingId(row.id);
+    setError(null);
+    try {
+      await api.payments.verifyAllowance(row.id, true);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not verify this allowance.');
+    } finally {
+      setVerifyingId(null);
+    }
+  };
 
   const headerActions = (
     <div className="flex flex-wrap items-center gap-2">
@@ -168,12 +212,8 @@ export default function Allowances() {
       >
         {loading ? 'Refreshing…' : 'Refresh'}
       </button>
-      <Link to="/events" className="btn-secondary">
-        Events
-      </Link>
-      <Link to="/payments" className="btn-primary">
-        Payments
-      </Link>
+      {canViewEvents ? <Link to="/events" className="btn-secondary">Events</Link> : null}
+      {canViewPayments ? <Link to="/payments" className="btn-primary">Payments</Link> : null}
     </div>
   );
 
@@ -181,31 +221,47 @@ export default function Allowances() {
     <div className="space-y-8">
       <PageHeader
         title="Allowances"
-        subtitle="Per-event daily rates for crew on today’s calendar, plus approved allowance lines from Payments—use this view to cross-check rates and what was paid."
+        subtitle={canVerifyAllowances ? 'Review allowance records against attendance evidence, verify eligible items, and leave payment approvals to Accounts.' : 'Review allowance eligibility, approval status, and payment records available to your role.'}
         action={headerActions}
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Events today</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">{loading ? '…' : stats.todayCount}</p>
-          <p className="mt-1 text-xs text-slate-500">{formatTodayHeading()}</p>
-        </div>
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-emerald-800">Daily rate set</p>
-          <p className="mt-2 text-2xl font-semibold text-emerald-950">{loading ? '…' : stats.todayWithRate}</p>
-          <p className="mt-1 text-xs text-emerald-800">Of today’s events</p>
-        </div>
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-amber-800">Approved rows</p>
-          <p className="mt-2 text-2xl font-semibold text-amber-950">{loading ? '…' : stats.approvedCount}</p>
-          <p className="mt-1 text-xs text-amber-800">Up to 100 loaded</p>
-        </div>
-        <div className="rounded-2xl border border-indigo-200 bg-indigo-50/80 p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-indigo-800">Allowances total</p>
-          <p className="mt-2 text-lg font-semibold text-indigo-950 tabular-nums">{loading ? '…' : formatMoney(stats.sumAllowances)}</p>
-          <p className="mt-1 text-xs text-indigo-800">Paid total {loading ? '' : formatMoney(stats.sumTotal)}</p>
-        </div>
+        {canViewEvents ? <>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Events today</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">{loading ? '…' : stats.todayCount}</p>
+            <p className="mt-1 text-xs text-slate-500">{formatTodayHeading()}</p>
+          </div>
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-emerald-800">Daily rate set</p>
+            <p className="mt-2 text-2xl font-semibold text-emerald-950">{loading ? '…' : stats.todayWithRate}</p>
+            <p className="mt-1 text-xs text-emerald-800">Of today’s events</p>
+          </div>
+        </> : null}
+        {canViewPayments ? <>
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-amber-800">Approved payment rows</p>
+            <p className="mt-2 text-2xl font-semibold text-amber-950">{loading ? '…' : stats.approvedCount}</p>
+            <p className="mt-1 text-xs text-amber-800">Up to 100 loaded</p>
+          </div>
+          <div className="rounded-2xl border border-indigo-200 bg-indigo-50/80 p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-indigo-800">Allowances total</p>
+            <p className="mt-2 text-lg font-semibold text-indigo-950 tabular-nums">{loading ? '…' : formatMoney(stats.sumAllowances)}</p>
+            <p className="mt-1 text-xs text-indigo-800">Payment total {loading ? '' : formatMoney(stats.sumTotal)}</p>
+          </div>
+        </> : null}
+        {canVerifyAllowances ? <>
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-amber-800">Awaiting HR verification</p>
+            <p className="mt-2 text-2xl font-semibold text-amber-950">{loading ? '…' : stats.pendingVerificationCount}</p>
+            <p className="mt-1 text-xs text-amber-800">Pending allowance records</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Value to review</p>
+            <p className="mt-2 text-lg font-semibold text-slate-900 tabular-nums">{loading ? '…' : formatMoney(stats.pendingVerificationTotal)}</p>
+            <p className="mt-1 text-xs text-slate-500">Pending HR verification</p>
+          </div>
+        </> : null}
       </div>
 
       {error ? (
@@ -217,7 +273,7 @@ export default function Allowances() {
         </div>
       ) : null}
 
-      <SectionCard sectionLabel={`Today’s events · ${today}`}>
+      {canViewEvents ? <SectionCard sectionLabel={`Today’s events · ${today}`}>
         <div className="p-5 sm:p-6">
           <p className="mb-4 text-sm text-slate-600">
             Daily allowance is stored on each event. Crew see today’s rate in the mobile app.{' '}
@@ -287,9 +343,9 @@ export default function Allowances() {
             </div>
           )}
         </div>
-      </SectionCard>
+      </SectionCard> : null}
 
-      <SectionCard sectionLabel="Approved allowance payments">
+      {canViewPayments ? <SectionCard sectionLabel="Approved allowance payments">
         <div className="p-5 sm:p-6">
           <p className="mb-4 text-sm text-slate-600">
             Rows are approved in{' '}
@@ -362,12 +418,12 @@ export default function Allowances() {
             </div>
           )}
         </div>
-      </SectionCard>
+      </SectionCard> : null}
 
       <SectionCard sectionLabel="Earned allowance requests (mobile &amp; automatic)">
         <div className="p-5 sm:p-6">
           <p className="mb-4 text-sm text-slate-600">
-            Manual requests, approvals, automatic meal lines, and attachment receipts from the API.
+            Review manual requests and automatic meal lines. HR verifies attendance evidence here; Accounts handles financial approval and payment.
           </p>
           <div className="mb-4 flex flex-wrap gap-3">
             <select
@@ -378,9 +434,9 @@ export default function Allowances() {
               disabled={loading && earnedRows.length === 0}
             >
               <option value="">All events</option>
-              {events.map((e) => (
-                <option key={e.id} value={String(e.id)}>
-                  {e.name}
+              {allowanceEventOptions.map((event) => (
+                <option key={event.id} value={String(event.id)}>
+                  {event.name}
                 </option>
               ))}
             </select>
@@ -397,6 +453,16 @@ export default function Allowances() {
               <option value="rejected">Rejected</option>
               <option value="paid">Paid</option>
             </select>
+            <select
+              className="input max-w-xs"
+              aria-label="Filter by HR verification"
+              value={earnedVerification}
+              onChange={(e) => setEarnedVerification(e.target.value)}
+            >
+              <option value="">All HR verification states</option>
+              <option value="pending">Awaiting HR verification</option>
+              <option value="verified">HR verified</option>
+            </select>
           </div>
           {loading && earnedRows.length === 0 ? (
             <p className="py-10 text-center text-sm text-slate-500">Loading earned allowances…</p>
@@ -404,7 +470,7 @@ export default function Allowances() {
             <p className="py-8 text-center text-sm text-slate-500">No rows match your filters.</p>
           ) : (
             <div className="overflow-x-auto scrollbar-thin -mx-5 sm:-mx-6">
-              <table className="w-full min-w-[960px] table-header-brand">
+              <table className="w-full min-w-[1080px] table-header-brand">
                 <thead>
                   <tr>
                     <th>User</th>
@@ -412,6 +478,7 @@ export default function Allowances() {
                     <th>Type</th>
                     <th className="text-right">Amount</th>
                     <th>Status</th>
+                    <th>HR verification</th>
                     <th>Requested</th>
                     <th>Approved</th>
                     <th>Attachment</th>
@@ -430,6 +497,22 @@ export default function Allowances() {
                       </td>
                       <td className="px-6 py-4 text-right tabular-nums text-slate-700">{formatMoney(Number(r.amount))}</td>
                       <td className="px-6 py-4 text-sm capitalize text-slate-800">{r.status}</td>
+                      <td className="px-6 py-4 text-sm">
+                        {r.hr_verified ? (
+                          <span className="text-emerald-700">Verified{r.hr_verified_by ? ` · ${r.hr_verified_by}` : ' · legacy approval'}</span>
+                        ) : canVerifyAllowances && r.status === 'pending' ? (
+                          <button
+                            type="button"
+                            className="btn-secondary whitespace-nowrap"
+                            disabled={verifyingId === r.id}
+                            onClick={() => void handleVerify(r)}
+                          >
+                            {verifyingId === r.id ? 'Saving…' : 'Verify record'}
+                          </button>
+                        ) : (
+                          <span className="text-amber-700">Awaiting review</span>
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-sm text-slate-600">{r.recorded_at ? formatPayDate(r.recorded_at) : '—'}</td>
                       <td className="px-6 py-4 text-sm text-slate-600">{r.approved_at ? formatPayDate(r.approved_at) : '—'}</td>
                       <td className="px-6 py-4 text-sm">

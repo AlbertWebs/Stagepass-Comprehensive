@@ -6,6 +6,7 @@ use App\Models\Event;
 use App\Models\Role;
 use App\Models\User;
 use App\Notifications\TeamLeaderAssignedNotification;
+use App\Notifications\WorkflowPushNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
@@ -18,6 +19,13 @@ class EventsApiTest extends TestCase
     {
         $token = $user->createToken('test')->plainTextToken;
         return ['Authorization' => 'Bearer ' . $token];
+    }
+
+    private function adminUser(): User
+    {
+        $user = User::factory()->create();
+        $user->roles()->attach(Role::where('name', 'super_admin')->firstOrFail()->id);
+        return $user;
     }
 
     public function test_my_event_today_returns_null_when_no_event(): void
@@ -102,7 +110,7 @@ class EventsApiTest extends TestCase
 
     public function test_events_store_creates_event(): void
     {
-        $user = User::factory()->create();
+        $user = $this->adminUser();
         $payload = [
             'name' => 'New Event',
             'date' => now()->addDays(2)->toDateString(),
@@ -190,7 +198,8 @@ class EventsApiTest extends TestCase
             ->putJson('/api/events/'.$event->id, ['name' => 'Renamed only', 'team_leader_id' => $leader->id]);
 
         $response->assertStatus(200);
-        Notification::assertNothingSent();
+        Notification::assertSentTo($leader, WorkflowPushNotification::class);
+        Notification::assertNotSentTo($leader, TeamLeaderAssignedNotification::class);
     }
 
     public function test_events_destroy_deletes_event_for_admin(): void

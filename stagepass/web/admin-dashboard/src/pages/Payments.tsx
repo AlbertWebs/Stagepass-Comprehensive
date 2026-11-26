@@ -148,9 +148,9 @@ export default function Payments() {
     setAllowancesLoading(true);
     api.payments
       .earnedAllowances({
-        status: allowanceStatusFilter || undefined,
-        search: allowanceSearch || undefined,
-        event_id: eventFilter ? Number(eventFilter) : undefined,
+        ...(allowanceStatusFilter ? { status: allowanceStatusFilter } : {}),
+        ...(allowanceSearch ? { search: allowanceSearch } : {}),
+        ...(eventFilter ? { event_id: Number(eventFilter) } : {}),
       })
       .then((r) => setAllowancesData(r.data ?? []))
       .catch(() => setAllowancesData([]))

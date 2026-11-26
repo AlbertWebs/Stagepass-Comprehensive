@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Models\Role;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -16,6 +17,7 @@ class AuthApiTest extends TestCase
             'email' => 'admin@stagepass.test',
             'password' => bcrypt('secret123'),
         ]);
+        $user->roles()->attach(Role::where('name', 'super_admin')->firstOrFail()->id);
 
         $response = $this->postJson('/api/login', [
             'email' => 'admin@stagepass.test',

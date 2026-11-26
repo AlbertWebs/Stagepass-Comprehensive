@@ -23,9 +23,13 @@ class ReportsController extends Controller
 {
     private const REPORT_TYPES = ['events', 'crew-attendance', 'crew-payments', 'tasks', 'financial', 'end-of-day', 'full-event', 'allowances'];
 
-    private function canAccessReports(Request $request): bool
+    private function canAccessReports(Request $request, string $permission = 'reports.all.view'): bool
     {
         $user = $request->user();
+
+        if ($user && in_array('admin-panel', $user->currentAccessToken()?->abilities ?? [], true)) {
+            return $user->is_active && $user->hasPermission($permission);
+        }
 
         return $user && (
             $user->hasRole('super_admin') ||
@@ -87,7 +91,7 @@ class ReportsController extends Controller
      */
     public function __invoke(Request $request): JsonResponse
     {
-        if (! $this->canAccessReports($request)) {
+        if (! $this->canAccessReports($request, 'reports.all.view')) {
             return response()->json(['message' => 'You do not have access to reports.'], 403);
         }
 
@@ -113,7 +117,7 @@ class ReportsController extends Controller
      */
     public function events(Request $request): JsonResponse
     {
-        if (! $this->canAccessReports($request)) {
+        if (! $this->canAccessReports($request, 'events.view')) {
             return response()->json(['message' => 'You do not have access to reports.'], 403);
         }
 
@@ -150,7 +154,7 @@ class ReportsController extends Controller
      */
     public function crewAttendance(Request $request): JsonResponse
     {
-        if (! $this->canAccessReports($request)) {
+        if (! $this->canAccessReports($request, 'attendance.view')) {
             return response()->json(['message' => 'You do not have access to reports.'], 403);
         }
 
@@ -398,7 +402,7 @@ class ReportsController extends Controller
      */
     public function crewPayments(Request $request): JsonResponse
     {
-        if (! $this->canAccessReports($request)) {
+        if (! $this->canAccessReports($request, 'payments.view')) {
             return response()->json(['message' => 'You do not have access to reports.'], 403);
         }
 
@@ -453,7 +457,7 @@ class ReportsController extends Controller
      */
     public function tasks(Request $request): JsonResponse
     {
-        if (! $this->canAccessReports($request)) {
+        if (! $this->canAccessReports($request, 'tasks.view')) {
             return response()->json(['message' => 'You do not have access to reports.'], 403);
         }
 
@@ -504,7 +508,7 @@ class ReportsController extends Controller
      */
     public function financial(Request $request): JsonResponse
     {
-        if (! $this->canAccessReports($request)) {
+        if (! $this->canAccessReports($request, 'reports.financial.view')) {
             return response()->json(['message' => 'You do not have access to reports.'], 403);
         }
 
@@ -546,7 +550,7 @@ class ReportsController extends Controller
      */
     public function endOfDay(Request $request): JsonResponse
     {
-        if (! $this->canAccessReports($request)) {
+        if (! $this->canAccessReports($request, 'reports.all.view')) {
             return response()->json(['message' => 'You do not have access to reports.'], 403);
         }
 
@@ -562,7 +566,7 @@ class ReportsController extends Controller
      */
     public function fullEvent(Request $request): JsonResponse
     {
-        if (! $this->canAccessReports($request)) {
+        if (! $this->canAccessReports($request, 'reports.all.view')) {
             return response()->json(['message' => 'You do not have access to reports.'], 403);
         }
 
@@ -578,7 +582,7 @@ class ReportsController extends Controller
      */
     public function allowances(Request $request): JsonResponse
     {
-        if (! $this->canAccessReports($request)) {
+        if (! $this->canAccessReports($request, 'allowances.view')) {
             return response()->json(['message' => 'You do not have access to reports.'], 403);
         }
 
@@ -751,13 +755,21 @@ class ReportsController extends Controller
      */
     public function export(Request $request)
     {
-        if (! $this->canAccessReports($request)) {
-            return response()->json(['message' => 'You do not have access to reports.'], 403);
-        }
-
         $type = $request->input('type', 'events');
         if (! in_array($type, self::REPORT_TYPES, true)) {
             return response()->json(['message' => 'Invalid report type.'], 422);
+        }
+        $exportPermissions = match ($type) {
+            'crew-attendance' => ['reports.hr.export', 'reports.all.export'],
+            'allowances' => ['reports.hr.export', 'reports.financial.export', 'reports.all.export'],
+            'crew-payments', 'financial' => ['reports.financial.export', 'reports.all.export'],
+            default => ['reports.all.export'],
+        };
+        $canExport = in_array('admin-panel', $request->user()->currentAccessToken()?->abilities ?? [], true)
+            ? collect($exportPermissions)->contains(fn ($permission) => $request->user()->hasPermission($permission))
+            : $this->canAccessReports($request);
+        if (! $canExport) {
+            return response()->json(['message' => 'You do not have permission to export this report.'], 403);
         }
 
         [$from, $to] = $this->parseDateRange($request);
@@ -1912,7 +1924,7 @@ tr{page-break-inside:avoid;break-inside:avoid;}
             $extraSections = '';
             if ($allowanceRowsHtml !== '') {
                 $extraSections .= '<div class="secondary">'
-                    .'<h3>Other allowances (non-meal) — KES '.number_format($otherAllowanceTotal, 2).'</h3>'
+                    .'<h3>Earned allowances (full breakdown) — Other allowances (non-meal), KES '.number_format($otherAllowanceTotal, 2).'</h3>'
                     .'<table><thead><tr><th>Crew</th><th>Type</th><th class="r">Amount</th><th>Status</th><th>Description</th></tr></thead>'
                     .'<tbody>'.$allowanceRowsHtml.'</tbody></table></div>';
             }

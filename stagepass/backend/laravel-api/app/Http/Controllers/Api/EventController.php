@@ -64,13 +64,11 @@ class EventController extends Controller
     {
         $query = Event::query()->with(['teamLeader', 'crew', 'client']);
 
-        if (
-            $request->user()->hasRole('super_admin')
-            || $request->user()->hasRole('director')
-            || $request->user()->hasRole('admin')
-        ) {
+        $user = $request->user();
+        $isTeamLeader = $user->hasRole('team_leader') || $user->hasRole('teamleader');
+        if ($user->hasSuperAdminAccess() || (! $isTeamLeader && in_array('admin-panel', $user->currentAccessToken()?->abilities ?? [], true) && $user->hasPermission('events.view'))) {
             // full-admin roles see all events
-        } elseif ($request->user()->hasRole('team_leader')) {
+        } elseif ($isTeamLeader) {
             $query->where(function ($q) use ($request) {
                 $q->where('team_leader_id', $request->user()->id)
                     ->orWhere('created_by_id', $request->user()->id)
@@ -123,6 +121,14 @@ class EventController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        $user = $request->user();
+        $abilities = $user->currentAccessToken()?->abilities ?? [];
+        $isMobileTeamLeader = ($user->hasRole('team_leader') || $user->hasRole('teamleader'))
+            && (in_array('mobile', $abilities, true) || in_array('*', $abilities, true));
+        if (! $this->hasPanelPermission($request, 'events.create') && ! $isMobileTeamLeader) {
+            return response()->json(['message' => 'You do not have permission to create events.'], 403);
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
@@ -156,8 +162,18 @@ class EventController extends Controller
         return response()->json($event->load(['teamLeader', 'client']), 201);
     }
 
-    public function show(Event $event): JsonResponse
+    public function show(Request $request, Event $event): JsonResponse
     {
+        $user = $request->user();
+        $isTeamLeader = $user->hasRole('team_leader') || $user->hasRole('teamleader');
+        $canViewAll = $user->hasSuperAdminAccess()
+            || (! $isTeamLeader && in_array('admin-panel', $user->currentAccessToken()?->abilities ?? [], true) && $user->hasPermission('events.view'));
+        if (! $canViewAll && (int) $event->created_by_id !== (int) $user->id
+            && (int) $event->team_leader_id !== (int) $user->id
+            && ! $event->crew()->where('users.id', $user->id)->exists()) {
+            return response()->json(['message' => 'You do not have access to this event.'], 403);
+        }
+
         $event->load(['teamLeader', 'crew', 'client', 'notes.user', 'eventEquipment.equipment', 'endedBy', 'closedBy']);
         $assignments = EventUser::where('event_id', $event->id)->get()->keyBy('user_id');
         $data = $event->toArray();
@@ -274,6 +290,19 @@ class EventController extends Controller
 
     public function update(Request $request, Event $event): JsonResponse
     {
+        $user = $request->user();
+        $abilities = $user->currentAccessToken()?->abilities ?? [];
+        if (in_array('admin-panel', $abilities, true) && ! $this->hasPanelPermission($request, 'events.edit')) {
+            return response()->json(['message' => 'You do not have permission to edit events.'], 403);
+        }
+        if (! $user->hasSuperAdminAccess() && ! in_array('admin-panel', $abilities, true)) {
+            $assignedToEvent = (int) $event->team_leader_id === (int) $user->id
+                || (int) $event->created_by_id === (int) $user->id;
+            if (! $assignedToEvent) {
+                return response()->json(['message' => 'Only event administrators and the assigned Team Leader can edit this event.'], 403);
+            }
+        }
+
         if (! EventTeamLeaderGate::userCanManageEvent($event, $request->user())) {
             return response()->json(['message' => 'You cannot update this event.'], 403);
         }
@@ -375,8 +404,9 @@ class EventController extends Controller
     public function destroy(Request $request, Event $event): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->hasRole('super_admin') || $user->hasRole('director') || $user->hasRole('admin');
-        if (! $isAdmin) {
+        $isWebAuthorized = in_array('admin-panel', $user->currentAccessToken()?->abilities ?? [], true)
+            && ($user->hasSuperAdminAccess() || $user->hasPermission('events.delete'));
+        if (! $isWebAuthorized && ! $user->hasSuperAdminAccess()) {
             return response()->json(['message' => 'Only an admin can delete events. Use the web admin portal.'], 403);
         }
 
@@ -391,6 +421,15 @@ class EventController extends Controller
         $event->delete();
 
         return response()->json(null, 204);
+    }
+
+    private function hasPanelPermission(Request $request, string $permission): bool
+    {
+        $user = $request->user();
+        if (! $user) return false;
+        if ($user->hasSuperAdminAccess()) return true;
+        return in_array('admin-panel', $user->currentAccessToken()?->abilities ?? [], true)
+            && $user->is_active && $user->hasPermission($permission);
     }
 
     private function notifyEventParticipants(Event $event, int $actorId, string $title, string $body, string $type): void

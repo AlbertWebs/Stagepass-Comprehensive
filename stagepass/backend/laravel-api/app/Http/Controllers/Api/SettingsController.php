@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Setting;
+use App\Services\AuditTrail;
 use App\Support\OfficeCheckinRequiredDays;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -97,10 +98,7 @@ class SettingsController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $user = $request->user();
-        if (! $user->hasRole('super_admin') && ! $user->hasRole('director') && ! $user->hasRole('admin')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        if ($denial = $this->denyUnlessAdminPermission($request, 'settings.manage')) return $denial;
         return response()
             ->json(Setting::getAll())
             ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
@@ -109,9 +107,7 @@ class SettingsController extends Controller
     public function update(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user->hasRole('super_admin') && ! $user->hasRole('director') && ! $user->hasRole('admin')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        if ($denial = $this->denyUnlessAdminPermission($request, 'settings.manage')) return $denial;
 
         // Accept JSON body: { "settings": { "app_name": "...", ... } } or flat { "app_name": "...", ... }
         // Prefer Laravel-parsed JSON first (works behind proxies / PHP input quirks); fall back to raw body.
@@ -168,6 +164,8 @@ class SettingsController extends Controller
             ], 422);
         }
 
+        $settingsBefore = Setting::getAll();
+        $before = collect($settingsBefore)->only(array_keys($toSet))->all();
         try {
             Setting::setMany($toSet);
         } catch (\Throwable $e) {
@@ -177,6 +175,9 @@ class SettingsController extends Controller
                 'error' => config('app.debug') ? $e->getMessage() : null,
             ], 500);
         }
+
+        $settingsAfter = Setting::getAll();
+        app(AuditTrail::class)->record($request, 'settings.updated', new Setting(), $before, collect($settingsAfter)->only(array_keys($toSet))->all());
 
         return response()
             ->json(Setting::getAll())

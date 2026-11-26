@@ -1,0 +1,1 @@
+import{j as e}from"./index-D4szddaY.js";function a({sectionLabel:r,children:s,className:t=""}){return e.jsxs("section",{className:t,children:[r&&e.jsx("h2",{className:"mb-3 text-xs font-semibold uppercase tracking-wider text-brand-accent",children:r}),e.jsx("div",{className:"card-elegant overflow-hidden",children:s})]})}export{a as S};

@@ -5,7 +5,6 @@ import {
   type Event,
   type User,
 } from '@/services/api';
-import { FormModal } from '@/components/FormModal';
 import { PageHeader } from '@/components/PageHeader';
 import { Preloader } from '@/components/Preloader';
 import { SectionCard } from '@/components/SectionCard';

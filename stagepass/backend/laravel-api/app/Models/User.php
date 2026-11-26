@@ -56,6 +56,21 @@ class User extends Authenticatable
         return $this->roles()->where('name', $name)->exists();
     }
 
+    public function hasSuperAdminAccess(): bool
+    {
+        // Keep existing production administrator role names privileged during transition.
+        return $this->roles()->whereIn('name', ['super_admin', 'admin', 'director'])->exists();
+    }
+
+    public function hasPermission(string $permission): bool
+    {
+        if ($this->hasSuperAdminAccess()) {
+            return true;
+        }
+
+        return $this->roles()->whereHas('permissions', fn ($query) => $query->where('name', $permission))->exists();
+    }
+
     public function assignedTasks(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
     {
         return $this->belongsToMany(Task::class, 'task_user')->withTimestamps();
@@ -98,6 +113,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'pin' => 'hashed',
             'is_permanent_employee' => 'boolean',
+            'is_active' => 'boolean',
             'homepage_preferences' => 'array',
         ];
     }

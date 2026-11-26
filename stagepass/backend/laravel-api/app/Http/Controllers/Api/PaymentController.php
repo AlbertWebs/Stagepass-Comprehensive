@@ -7,6 +7,7 @@ use App\Models\Event;
 use App\Models\EventPayment;
 use App\Models\EventUser;
 use App\Notifications\WorkflowPushNotification;
+use App\Services\AuditTrail;
 use App\Services\EventCrewAttendanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,8 +21,11 @@ class PaymentController extends Controller
     private function canManageEventPayments(Request $request, Event $event): bool
     {
         $user = $request->user();
-        if ($user->hasRole('super_admin') || $user->hasRole('director')) {
+        if ($user->hasSuperAdminAccess()) {
             return true;
+        }
+        if (in_array('admin-panel', $user->currentAccessToken()?->abilities ?? [], true)) {
+            return $user->hasPermission('payments.process') || $user->hasPermission('payments.approve');
         }
         return (int) $event->team_leader_id === (int) $user->id;
     }
@@ -31,7 +35,11 @@ class PaymentController extends Controller
         $query = EventPayment::query()->with(['event', 'user', 'approvedBy']);
 
         $user = $request->user();
-        if (! $user->hasRole('super_admin') && ! $user->hasRole('director')) {
+        $abilities = $user->currentAccessToken()?->abilities ?? [];
+        if (in_array('admin-panel', $abilities, true) && ! $user->hasSuperAdminAccess() && ! $user->hasPermission('payments.view')) {
+            return response()->json(['message' => 'You do not have permission to view financial payments.'], 403);
+        }
+        if (! $user->hasSuperAdminAccess() && ! (in_array('admin-panel', $user->currentAccessToken()?->abilities ?? [], true) && $user->hasPermission('payments.view'))) {
             $query->where(function ($q) use ($user) {
                 $q->where('user_id', $user->id)
                     ->orWhereHas('event', fn ($eq) => $eq->where('team_leader_id', $user->id));
@@ -100,6 +108,12 @@ class PaymentController extends Controller
             ? $request->date('payment_date')
             : now()->toDateString();
 
+        $existing = EventPayment::query()->where('event_id', $request->event_id)->where('user_id', $request->user_id)->first();
+        $before = $existing ? [
+            'status' => $existing->status, 'payment_date' => $existing->payment_date?->toDateString(),
+            'per_diem' => (float) $existing->per_diem, 'allowances' => (float) $existing->allowances,
+            'total_amount' => (float) $existing->total_amount,
+        ] : [];
         $payment = EventPayment::updateOrCreate(
             [
                 'event_id' => $request->event_id,
@@ -115,6 +129,11 @@ class PaymentController extends Controller
                 'status' => EventPayment::STATUS_PENDING,
             ]
         );
+        app(AuditTrail::class)->record($request, $existing ? 'payment.updated' : 'payment.created', $payment, $before, [
+            'event_id' => $payment->event_id, 'user_id' => $payment->user_id, 'status' => $payment->status,
+            'payment_date' => $payment->payment_date?->toDateString(), 'per_diem' => (float) $payment->per_diem,
+            'allowances' => (float) $payment->allowances, 'total_amount' => (float) $payment->total_amount,
+        ]);
 
         $attendance = EventUser::query()
             ->where('event_id', $event->id)
@@ -138,11 +157,15 @@ class PaymentController extends Controller
         if ($payment->status !== EventPayment::STATUS_PENDING) {
             return response()->json(['message' => 'Payment is not pending.'], 422);
         }
+        $before = ['status' => $payment->status, 'total_amount' => (float) $payment->total_amount, 'approved_by' => $payment->approved_by];
 
         $payment->update([
             'status' => EventPayment::STATUS_APPROVED,
             'approved_by' => $request->user()->id,
             'approved_at' => now(),
+        ]);
+        app(AuditTrail::class)->record($request, 'payment.approved', $payment, $before, [
+            'status' => $payment->status, 'total_amount' => (float) $payment->total_amount, 'approved_by' => $payment->approved_by,
         ]);
         $payment->user?->notify(new WorkflowPushNotification(
             'Payment approved',
@@ -168,12 +191,17 @@ class PaymentController extends Controller
         if ($payment->status !== EventPayment::STATUS_PENDING) {
             return response()->json(['message' => 'Payment is not pending.'], 422);
         }
+        $before = ['status' => $payment->status, 'total_amount' => (float) $payment->total_amount, 'approved_by' => $payment->approved_by];
 
         $payment->update([
             'status' => EventPayment::STATUS_REJECTED,
             'approved_by' => $request->user()->id,
             'approved_at' => now(),
             'rejection_reason' => $request->rejection_reason,
+        ]);
+        app(AuditTrail::class)->record($request, 'payment.rejected', $payment, $before, [
+            'status' => $payment->status, 'total_amount' => (float) $payment->total_amount,
+            'approved_by' => $payment->approved_by, 'rejection_reason' => $payment->rejection_reason,
         ]);
         $payment->user?->notify(new WorkflowPushNotification(
             'Payment declined',

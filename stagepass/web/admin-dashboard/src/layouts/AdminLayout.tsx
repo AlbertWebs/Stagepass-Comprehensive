@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import type { ComponentType } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { hasPermission, isSuperAdministrator } from '@/utils/permissions';
 
 /** Sidebar: section headers only when multiple links follow; single-link sections are just links. */
 const nav: Array<
@@ -29,6 +30,7 @@ const nav: Array<
   { type: 'section', label: 'System Control' },
   { type: 'link', to: '/approvals', label: 'Approvals', icon: ApprovalsIcon },
   { type: 'link', to: '/users', label: 'Users & Permissions', icon: UsersIcon },
+  { type: 'link', to: '/roles', label: 'Roles & Permissions', icon: UsersIcon },
   { type: 'link', to: '/settings', label: 'System Settings', icon: SettingsIcon },
   { type: 'section', label: 'Support & System' },
   { type: 'link', to: '/audit-logs', label: 'Audit Logs', icon: AuditLogsIcon },
@@ -52,6 +54,7 @@ const pathToTitle: Record<string, string> = {
   '/communication': 'Communication',
   '/approvals': 'Approvals',
   '/users': 'Users & Permissions',
+  '/roles': 'Roles & Permissions',
   '/profile': 'Profile',
   '/settings': 'System Settings',
   '/backup': 'Backup',
@@ -258,30 +261,80 @@ export default function AdminLayout() {
   const isTeamLeader = roleNames.includes('team_leader') || roleNames.includes('teamleader');
   const isAdminRole = roleNames.some((n) => n === 'admin' || n === 'super_admin' || n === 'director');
   const isTeamLeaderOnly = isTeamLeader && !isAdminRole;
-  const adminOnlyLinks = new Set([
-    '/equipment',
-    '/transport',
-    '/payments',
-    '/allowances',
-    '/holidays',
-    '/clients',
-    '/reports',
-    '/checkins',
-    '/time-off',
-    '/approvals',
-    '/users',
-    '/settings',
-    '/audit-logs',
-  ]);
-  const filteredNav = nav.filter((item) => {
-    if (item.type !== 'link') return true;
-    if (isAdminRole) return true;
-    return !adminOnlyLinks.has(item.to);
-  });
+  const requiredPermission: Record<string, string> = {
+    '/dashboard': 'dashboard.view', '/events': 'events.view', '/event-operations': 'events.view',
+    '/tasks': 'tasks.view', '/crew': 'employees.view', '/allowances': 'allowances.view',
+    '/equipment': 'equipment.view', '/transport': 'transport.view', '/holidays': 'holidays.view',
+    '/clients': 'clients.view',
+    '/payments': 'payments.view', '/reports': 'reports.all.view', '/checkins': 'attendance.view',
+    '/time-off': 'timeoff.view',
+    '/communication': 'communications.manage', '/approvals': 'approvals.manage', '/users': 'users.view',
+    '/roles': 'roles.manage', '/settings': 'settings.manage', '/audit-logs': 'audit.view',
+  };
+  const isSuperAdmin = isSuperAdministrator(user);
+  const canViewNavLink = (item: Extract<(typeof nav)[number], { type: 'link' }>) => {
+    if (isSuperAdmin) return true;
+    if (item.to === '/reports') {
+      return hasPermission(user, 'reports.hr.view') || hasPermission(user, 'reports.financial.view');
+    }
+    const permission = requiredPermission[item.to];
+    if (permission) return hasPermission(user, permission);
+    return isAdminRole;
+  };
+  const sectionHasVisibleLink = (sectionIndex: number) => {
+    for (let index = sectionIndex + 1; index < nav.length; index += 1) {
+      const candidate = nav[index];
+      if (candidate.type === 'section') break;
+      if (canViewNavLink(candidate)) return true;
+    }
+    return false;
+  };
+  const filteredNav = nav.reduce<Array<(typeof nav)[number]>>((visible, item, index) => {
+    if (item.type === 'link') {
+      if (canViewNavLink(item)) visible.push(item);
+      return visible;
+    }
+    if (sectionHasVisibleLink(index)) visible.push(item);
+    return visible;
+  }, []);
+  const getSectionLinkCount = (sectionIndex: number) => {
+    let count = 0;
+    for (let index = sectionIndex + 1; index < filteredNav.length && filteredNav[index].type !== 'section'; index += 1) {
+      if (filteredNav[index].type === 'link') count += 1;
+    }
+    return count;
+  };
+  const activeSection = (() => {
+    let section: string | null = null;
+    for (const item of filteredNav) {
+      if (item.type === 'section') {
+        section = item.label;
+      } else if (location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)) {
+        return section;
+      }
+    }
+    return null;
+  })();
   const pageTitle = getPageTitle(location.pathname);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('stagepass.admin.navSections') ?? '{}') as Record<string, boolean>;
+    } catch {
+      return {};
+    }
+  });
   const userMenuRef = useRef<HTMLDivElement>(null);
   useClickOutside(userMenuRef, () => setUserMenuOpen(false));
+
+  useEffect(() => {
+    localStorage.setItem('stagepass.admin.navSections', JSON.stringify(collapsedSections));
+  }, [collapsedSections]);
+  useEffect(() => {
+    if (activeSection && collapsedSections[activeSection]) {
+      setCollapsedSections((current) => ({ ...current, [activeSection]: false }));
+    }
+  }, [activeSection, location.pathname]);
 
   const handleLogout = async () => {
     setUserMenuOpen(false);
@@ -313,18 +366,23 @@ export default function AdminLayout() {
         <nav className="flex-1 space-y-0.5 overflow-y-auto scrollbar-thin px-3 py-4">
           {filteredNav.map((item, idx) => {
             if (item.type === 'section') {
-              const linksInSection = filteredNav.slice(idx + 1).findIndex((i) => i.type === 'section');
-              const count = linksInSection === -1 ? filteredNav.length - idx - 1 : linksInSection;
+              const count = getSectionLinkCount(idx);
               if (count < 2) return null;
               return (
-                <div
+                <button
                   key={`section-${idx}`}
-                  className={`mb-1.5 px-4 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#94a3c2] ${idx > 0 ? 'mt-4' : 'mt-2'}`}
+                  type="button"
+                  aria-expanded={!collapsedSections[item.label]}
+                  onClick={() => setCollapsedSections((current) => ({ ...current, [item.label]: !current[item.label] }))}
+                  className={`mb-1.5 flex w-full items-center justify-between px-4 py-1 text-left text-[10px] font-semibold uppercase tracking-wider text-[#94a3c2] hover:text-white ${idx > 0 ? 'mt-4' : 'mt-2'}`}
                 >
                   {item.label}
-                </div>
+                  <svg className={`h-3.5 w-3.5 transition-transform ${collapsedSections[item.label] ? '-rotate-90' : ''}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.09 1.03l-4.25 4.51a.75.75 0 01-1.09 0l-4.25-4.51a.75.75 0 01.02-1.05z" clipRule="evenodd" /></svg>
+                </button>
               );
             }
+            const sectionBefore = filteredNav.slice(0, idx).reverse().find((candidate) => candidate.type === 'section');
+            if (sectionBefore?.type === 'section' && getSectionLinkCount(filteredNav.indexOf(sectionBefore)) >= 2 && collapsedSections[sectionBefore.label]) return null;
             const { to, label, icon: Icon } = item;
             return (
               <NavLink
@@ -370,7 +428,7 @@ export default function AdminLayout() {
       </aside>
 
       {/* Main content – entrance animation when layout mounts (e.g. after login) */}
-      <div className="flex min-h-screen flex-1 flex-col animate-[page-enter_0.45s_ease-out_forwards] lg:ml-64">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col animate-[page-enter_0.45s_ease-out_forwards] lg:ml-64">
         {/* Header */}
         <header className="sticky top-0 z-20 flex h-16 flex-shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/95 px-4 backdrop-blur-sm shadow-header sm:px-6 lg:px-8">
           <h1 className="text-xl font-semibold tracking-tight text-slate-900">{pageTitle}</h1>
@@ -463,9 +521,7 @@ export default function AdminLayout() {
 
         {/* Content area */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto max-w-7xl">
-            <Outlet />
-          </div>
+          <Outlet />
         </main>
       </div>
     </div>

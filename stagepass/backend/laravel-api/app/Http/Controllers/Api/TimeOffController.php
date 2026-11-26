@@ -7,6 +7,7 @@ use App\Models\TimeOffRequest;
 use App\Models\User;
 use App\Notifications\TimeOffRequestSubmittedNotification;
 use App\Notifications\WorkflowPushNotification;
+use App\Services\AuditTrail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -18,7 +19,7 @@ class TimeOffController extends Controller
     public function store(Request $request): JsonResponse
     {
         $admin = $request->user();
-        if (! $admin->hasRole('super_admin') && ! $admin->hasRole('director') && ! $admin->hasRole('admin')) {
+        if (! $admin->hasSuperAdminAccess() && ! $admin->hasPermission('timeoff.edit')) {
             return response()->json(['message' => 'Only admins can create time off for users.'], 403);
         }
 
@@ -43,6 +44,10 @@ class TimeOffController extends Controller
             'processed_at' => in_array($status, [TimeOffRequest::STATUS_APPROVED, TimeOffRequest::STATUS_REJECTED], true) ? now() : null,
         ]);
         $timeOff->load('user');
+        app(AuditTrail::class)->record($request, 'timeoff.created', $timeOff, [], [
+            'user_id' => $timeOff->user_id, 'start_date' => $timeOff->start_date?->toDateString(),
+            'end_date' => $timeOff->end_date?->toDateString(), 'status' => $timeOff->status,
+        ]);
         if ($timeOff->user) {
             $timeOff->user->notify(new WorkflowPushNotification(
                 $status === TimeOffRequest::STATUS_APPROVED ? 'Time-off approved' : 'Time-off added',
@@ -61,11 +66,12 @@ class TimeOffController extends Controller
     public function update(Request $request, int $id): JsonResponse
     {
         $admin = $request->user();
-        if (! $admin->hasRole('super_admin') && ! $admin->hasRole('director') && ! $admin->hasRole('admin')) {
+        if (! $admin->hasSuperAdminAccess() && ! $admin->hasPermission('timeoff.edit')) {
             return response()->json(['message' => 'Only admins can edit time off.'], 403);
         }
 
         $timeOff = TimeOffRequest::findOrFail($id);
+        $before = ['user_id' => $timeOff->user_id, 'start_date' => $timeOff->start_date?->toDateString(), 'end_date' => $timeOff->end_date?->toDateString(), 'status' => $timeOff->status];
 
         $request->validate([
             'start_date' => 'sometimes|date',
@@ -97,6 +103,10 @@ class TimeOffController extends Controller
         $datesChanged = (isset($updates['start_date']) && (string) $updates['start_date'] !== (string) $timeOff->start_date)
             || (isset($updates['end_date']) && (string) $updates['end_date'] !== (string) $timeOff->end_date);
         $timeOff->update($updates);
+        app(AuditTrail::class)->record($request, 'timeoff.updated', $timeOff, $before, [
+            'user_id' => $timeOff->user_id, 'start_date' => $timeOff->start_date?->toDateString(),
+            'end_date' => $timeOff->end_date?->toDateString(), 'status' => $timeOff->status,
+        ]);
         if ($timeOff->user && ($statusChanged || $datesChanged)) {
             $approved = $timeOff->status === TimeOffRequest::STATUS_APPROVED;
             $timeOff->user->notify(new WorkflowPushNotification(
@@ -123,6 +133,9 @@ class TimeOffController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = TimeOffRequest::query()->with(['user', 'processedBy', 'attachments']);
+        if (! $request->user()->hasSuperAdminAccess() && ! $request->user()->hasPermission('timeoff.view')) {
+            $query->where('user_id', $request->user()->id);
+        }
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
@@ -132,7 +145,7 @@ class TimeOffController extends Controller
             $query->where('user_id', (int) $request->user_id);
         }
 
-        $perPage = min((int) $request->input('per_page', 20), 100);
+        $perPage = min(max((int) $request->input('per_page', 20), 1), 100);
         $items = $query->orderByDesc('created_at')->paginate($perPage);
 
         return response()->json($items);
@@ -164,9 +177,8 @@ class TimeOffController extends Controller
     private function notifyAdminsOfSubmittedRequest(TimeOffRequest $timeOff): void
     {
         $adminUsers = User::query()
-            ->whereHas('roles', function ($query): void {
-                $query->whereIn('name', ['super_admin', 'director', 'admin']);
-            })
+            ->where('is_active', true)
+            ->whereHas('roles.permissions', fn ($query) => $query->where('permissions.name', 'timeoff.approve'))
             ->get();
 
         foreach ($adminUsers as $adminUser) {
@@ -206,14 +218,22 @@ class TimeOffController extends Controller
 
     public function approve(Request $request): JsonResponse
     {
+        if (! $request->user()->hasSuperAdminAccess() && ! $request->user()->hasPermission('timeoff.approve')) {
+            return response()->json(['message' => 'You do not have permission to approve time-off requests.'], 403);
+        }
         $request->validate(['request_id' => 'required|exists:time_off_requests,id']);
 
         $timeOff = TimeOffRequest::findOrFail($request->request_id);
+        $before = ['user_id' => $timeOff->user_id, 'start_date' => $timeOff->start_date?->toDateString(), 'end_date' => $timeOff->end_date?->toDateString(), 'status' => $timeOff->status];
         $statusChanged = $timeOff->status !== TimeOffRequest::STATUS_APPROVED;
         $timeOff->update([
             'status' => TimeOffRequest::STATUS_APPROVED,
             'processed_by' => $request->user()->id,
             'processed_at' => now(),
+        ]);
+        app(AuditTrail::class)->record($request, 'timeoff.approved', $timeOff, $before, [
+            'user_id' => $timeOff->user_id, 'start_date' => $timeOff->start_date?->toDateString(),
+            'end_date' => $timeOff->end_date?->toDateString(), 'status' => $timeOff->status,
         ]);
         if ($statusChanged && $timeOff->user) {
             $timeOff->user->notify(new WorkflowPushNotification(
@@ -229,14 +249,22 @@ class TimeOffController extends Controller
 
     public function reject(Request $request): JsonResponse
     {
+        if (! $request->user()->hasSuperAdminAccess() && ! $request->user()->hasPermission('timeoff.approve')) {
+            return response()->json(['message' => 'You do not have permission to reject time-off requests.'], 403);
+        }
         $request->validate(['request_id' => 'required|exists:time_off_requests,id']);
 
         $timeOff = TimeOffRequest::findOrFail($request->request_id);
+        $before = ['user_id' => $timeOff->user_id, 'start_date' => $timeOff->start_date?->toDateString(), 'end_date' => $timeOff->end_date?->toDateString(), 'status' => $timeOff->status];
         $statusChanged = $timeOff->status !== TimeOffRequest::STATUS_REJECTED;
         $timeOff->update([
             'status' => TimeOffRequest::STATUS_REJECTED,
             'processed_by' => $request->user()->id,
             'processed_at' => now(),
+        ]);
+        app(AuditTrail::class)->record($request, 'timeoff.rejected', $timeOff, $before, [
+            'user_id' => $timeOff->user_id, 'start_date' => $timeOff->start_date?->toDateString(),
+            'end_date' => $timeOff->end_date?->toDateString(), 'status' => $timeOff->status,
         ]);
         if ($statusChanged && $timeOff->user) {
             $timeOff->user->notify(new WorkflowPushNotification(

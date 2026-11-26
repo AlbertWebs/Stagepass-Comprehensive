@@ -26,7 +26,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "softwareKeyboardLayoutMode": "resize",
-      "versionCode": 7
+      "versionCode": 9
     },
     "web": {
       "output": "static",

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Mail\UserCreatedMail;
 use App\Models\User;
 use App\Services\TestDataWiper;
+use App\Services\AuditTrail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -16,7 +17,17 @@ class UserController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
+        $actor = $request->user();
+        $isTeamLeader = $actor->hasRole('team_leader') || $actor->hasRole('teamleader');
+        if (! $this->canAdminPanel($request, 'employees.view') && ! $isTeamLeader) {
+            return response()->json(['message' => 'You do not have permission to view the crew directory.'], 403);
+        }
+
         $query = User::query()->with('roles');
+        if ($isTeamLeader && ! $this->canAdminPanel($request, 'employees.view')) {
+            // Team leaders need the crew picker, not access to administrative or HR accounts.
+            $query->whereDoesntHave('roles', fn ($roles) => $roles->whereIn('name', ['super_admin', 'admin', 'director', 'hr', 'accounts']));
+        }
 
         if ($request->filled('search')) {
             $q = $request->search;
@@ -31,13 +42,17 @@ class UserController extends Controller
             $query->whereHas('roles', fn ($q) => $q->where('name', $request->role));
         }
 
-        $users = $query->orderBy('name')->paginate($request->input('per_page', 20));
+        $users = $query->orderBy('name')->paginate(min(max((int) $request->input('per_page', 20), 1), 100));
 
         return response()->json($users);
     }
 
     public function store(Request $request): JsonResponse
     {
+        if (! $this->canAdminPanel($request, 'employees.create')) {
+            return response()->json(['message' => 'You do not have permission to create employee accounts.'], 403);
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
@@ -47,12 +62,18 @@ class UserController extends Controller
             'phone' => 'nullable|string|max:20',
             'role_ids' => 'nullable|array',
             'role_ids.*' => 'exists:roles,id',
+            'is_active' => 'sometimes|boolean',
         ]);
+
+        if (! $request->user()->hasSuperAdminAccess() && ! empty($validated['role_ids'])) {
+            return response()->json(['message' => 'Only a Super Administrator can assign account roles.'], 403);
+        }
 
         $user = new User;
         $user->name = $validated['name'];
         $user->email = $validated['email'];
         $user->password = $validated['password'];
+        $user->is_active = $validated['is_active'] ?? true;
         if (! empty($validated['username'])) {
             $user->username = $validated['username'];
         }
@@ -67,6 +88,15 @@ class UserController extends Controller
         if (! empty($validated['role_ids'])) {
             $user->roles()->sync($validated['role_ids']);
         }
+        if (array_key_exists('is_active', $validated)) {
+            $user->is_active = $validated['is_active'];
+            $user->save();
+        }
+        app(AuditTrail::class)->record($request, 'user.created', $user, [], [
+            'name' => $user->name, 'email' => $user->email, 'username' => $user->username,
+            'phone' => $user->phone, 'is_active' => $user->is_active,
+            'roles' => $user->roles()->pluck('name')->all(),
+        ]);
 
         if ($user->email) {
             try {
@@ -91,14 +121,27 @@ class UserController extends Controller
         return response()->json($user->load('roles'), 201);
     }
 
-    public function show(User $user): JsonResponse
+    public function show(Request $request, User $user): JsonResponse
     {
+        $actor = $request->user();
+        $isTeamLeader = $actor->hasRole('team_leader') || $actor->hasRole('teamleader');
+        if (! $this->canAdminPanel($request, 'employees.view') && ! $isTeamLeader) {
+            return response()->json(['message' => 'You do not have permission to view this employee.'], 403);
+        }
+        if ($isTeamLeader && ! $this->canAdminPanel($request, 'employees.view') && $user->roles()->whereIn('name', ['super_admin', 'admin', 'director', 'hr', 'accounts'])->exists()) {
+            return response()->json(['message' => 'You do not have permission to view this account.'], 403);
+        }
+
         $user->load('roles');
         return response()->json($user);
     }
 
     public function update(Request $request, User $user): JsonResponse
     {
+        if (! $this->canAdminPanel($request, 'employees.edit')) {
+            return response()->json(['message' => 'You do not have permission to edit employee accounts.'], 403);
+        }
+
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
             'email' => ['sometimes', 'email', Rule::unique('users', 'email')->ignore($user->id)],
@@ -108,7 +151,24 @@ class UserController extends Controller
             'phone' => 'nullable|string|max:20',
             'role_ids' => 'nullable|array',
             'role_ids.*' => 'exists:roles,id',
+            'is_active' => 'sometimes|boolean',
         ]);
+
+        $actor = $request->user();
+        if (! $actor->hasSuperAdminAccess() && (array_key_exists('password', $validated) || array_key_exists('pin', $validated))) {
+            return response()->json(['message' => 'Only a Super Administrator can reset sign-in credentials.'], 403);
+        }
+        if (array_key_exists('role_ids', $validated) && ! $actor->hasSuperAdminAccess()) {
+            return response()->json(['message' => 'Only a Super Administrator can assign account roles.'], 403);
+        }
+        $before = [
+            'name' => $user->name, 'email' => $user->email, 'username' => $user->username,
+            'phone' => $user->phone, 'is_active' => $user->is_active,
+            'roles' => $user->roles()->pluck('name')->all(),
+        ];
+        if (array_key_exists('role_ids', $validated) && collect($validated['role_ids'] ?? [])->contains(fn ($id) => \App\Models\Role::whereKey($id)->where('name', 'super_admin')->exists()) && ! $actor->hasSuperAdminAccess()) {
+            return response()->json(['message' => 'Only a Super Administrator can grant Super Administrator access.'], 403);
+        }
 
         if (isset($validated['name'])) {
             $user->name = $validated['name'];
@@ -128,13 +188,35 @@ class UserController extends Controller
         if (array_key_exists('phone', $validated)) {
             $user->phone = $validated['phone'] ?: null;
         }
+        if (array_key_exists('is_active', $validated)) {
+            if (! $actor->hasSuperAdminAccess()) {
+                return response()->json(['message' => 'Only a Super Administrator can activate or deactivate accounts.'], 403);
+            }
+            if (! $validated['is_active'] && $this->isLastActiveSuperAdministrator($user)) {
+                return response()->json(['message' => 'The last active Super Administrator cannot be deactivated.'], 422);
+            }
+            $user->is_active = $validated['is_active'];
+        }
         $user->save();
 
         if (array_key_exists('role_ids', $validated)) {
+            if ($this->isLastActiveSuperAdministrator($user) && ! collect($validated['role_ids'] ?? [])->contains(fn ($id) => \App\Models\Role::whereKey($id)->whereIn('name', ['super_admin', 'admin', 'director'])->exists())) {
+                return response()->json(['message' => 'At least one active Super Administrator must remain.'], 422);
+            }
             $user->roles()->sync($validated['role_ids'] ?? []);
         }
+        if (! $user->is_active) {
+            $user->tokens()->delete();
+        }
+        $updatedUser = $user->fresh();
+        app(AuditTrail::class)->record($request, 'user.updated', $updatedUser, $before, [
+            'name' => $updatedUser->name, 'email' => $updatedUser->email, 'username' => $updatedUser->username,
+            'phone' => $updatedUser->phone, 'is_active' => $updatedUser->is_active,
+            'roles' => $updatedUser->roles()->pluck('name')->all(),
+            'credentials_reset' => ! empty($validated['password']) || ! empty($validated['pin']),
+        ]);
 
-        return response()->json($user->fresh()->load('roles'));
+        return response()->json($updatedUser->load('roles'));
     }
 
     /**
@@ -143,7 +225,7 @@ class UserController extends Controller
     public function sendWelcomeEmail(Request $request, User $user): JsonResponse
     {
         $admin = $request->user();
-        if (! $admin->hasRole('super_admin') && ! $admin->hasRole('director') && ! $admin->hasRole('admin')) {
+        if (! $admin->hasSuperAdminAccess()) {
             return response()->json(['message' => 'Only admins can send welcome emails.'], 403);
         }
 
@@ -195,10 +277,29 @@ class UserController extends Controller
         return response()->json(['message' => 'Welcome email sent.']);
     }
 
-    public function destroy(User $user): JsonResponse
+    public function destroy(Request $request, User $user): JsonResponse
     {
+        if (! $request->user()->hasSuperAdminAccess()) {
+            return response()->json(['message' => 'Only a Super Administrator can delete employee accounts.'], 403);
+        }
+        if ($this->isLastActiveSuperAdministrator($user)) {
+            return response()->json(['message' => 'The last active Super Administrator cannot be deleted.'], 422);
+        }
+        app(AuditTrail::class)->record($request, 'user.deleted', $user, [
+            'name' => $user->name, 'email' => $user->email,
+            'roles' => $user->roles()->pluck('name')->all(), 'is_active' => $user->is_active,
+        ]);
         $user->delete();
         return response()->json(null, 204);
+    }
+
+    private function isLastActiveSuperAdministrator(User $user): bool
+    {
+        $isSuper = $user->roles()->whereIn('name', ['super_admin', 'admin', 'director'])->exists();
+        if (! $isSuper || ! $user->is_active) return false;
+
+        return ! User::query()->where('is_active', true)->where('id', '<>', $user->id)
+            ->whereHas('roles', fn ($query) => $query->whereIn('name', ['super_admin', 'admin', 'director']))->exists();
     }
 
     /**
@@ -208,7 +309,7 @@ class UserController extends Controller
     public function destroyAllCrew(Request $request, TestDataWiper $wiper): JsonResponse
     {
         $admin = $request->user();
-        if (! $admin->hasRole('super_admin') && ! $admin->hasRole('director') && ! $admin->hasRole('admin')) {
+        if (! $admin->hasSuperAdminAccess()) {
             return response()->json(['message' => 'Only admins can delete all crew members.'], 403);
         }
 
@@ -232,7 +333,7 @@ class UserController extends Controller
     public function setPin(Request $request, User $user): JsonResponse
     {
         $admin = $request->user();
-        if (! $admin->hasRole('super_admin') && ! $admin->hasRole('director') && ! $admin->hasRole('admin')) {
+        if (! $admin->hasSuperAdminAccess()) {
             return response()->json(['message' => 'Only admins can set a user\'s PIN.'], 403);
         }
 
@@ -245,5 +346,14 @@ class UserController extends Controller
         $user->save();
 
         return response()->json($user->fresh()->load('roles'));
+    }
+
+    private function canAdminPanel(Request $request, string $permission): bool
+    {
+        $actor = $request->user();
+        if (! $actor) return false;
+        if ($actor->hasSuperAdminAccess()) return true;
+        $abilities = $actor->currentAccessToken()?->abilities ?? [];
+        return in_array('admin-panel', $abilities, true) && $actor->is_active && $actor->hasPermission($permission);
     }
 }

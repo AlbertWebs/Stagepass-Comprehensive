@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, type Client, type Event, type Paginated, type User } from '@/services/api';
+import { api, type Client, type Event, type Paginated } from '@/services/api';
 import { FormModal } from '@/components/FormModal';
 import { LocationSearchInput } from '@/components/LocationSearchInput';
 import { PageHeader } from '@/components/PageHeader';
@@ -100,7 +100,6 @@ export default function Events() {
   const { user: authUser } = useAuth();
   const isAdmin = hasAdminAccess(authUser);
   const [data, setData] = useState<Paginated<Event> | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
@@ -135,9 +134,6 @@ export default function Events() {
     fetchEvents();
   }, [fetchEvents]);
 
-  useEffect(() => {
-    api.users.list({}).then((r) => setUsers(r.data ?? [])).catch(() => setUsers([]));
-  }, []);
   useEffect(() => {
     api.clients.list({ per_page: 500 }).then((r) => setClients(r.data ?? [])).catch(() => setClients([]));
   }, []);
