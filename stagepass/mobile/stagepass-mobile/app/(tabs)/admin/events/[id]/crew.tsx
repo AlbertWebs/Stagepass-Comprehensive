@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 /**
  * Team leader / admin: onboard crew onto an event — select people and add them.
  */
@@ -6,7 +7,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -67,7 +67,7 @@ export default function AdminEventCrewScreen() {
       const e = await api.events.get(eventId);
       setEvent(e);
     } catch {
-      Alert.alert('Error', 'Failed to load event.');
+      AppAlert.show('Error', 'Failed to load event.');
     }
   }, [eventId]);
 
@@ -81,7 +81,7 @@ export default function AdminEventCrewScreen() {
       setUsers(Array.isArray(res?.data) ? res.data : []);
     } catch {
       setUsers([]);
-      Alert.alert('Could not load people', 'Check your connection and try again.');
+      AppAlert.show('Could not load people', 'Check your connection and try again.');
     } finally {
       setUsersLoading(false);
     }
@@ -154,24 +154,24 @@ export default function AdminEventCrewScreen() {
 
     if (added > 0 && failed.length === 0) {
       closeAddModal();
-      Alert.alert('Crew onboarded', `${added} ${added === 1 ? 'person was' : 'people were'} added to this event.`);
+      AppAlert.show('Crew onboarded', `${added} ${added === 1 ? 'person was' : 'people were'} added to this event.`);
       return;
     }
     if (added > 0 && failed.length > 0) {
       closeAddModal();
-      Alert.alert(
+      AppAlert.show(
         'Partially added',
         `${added} added. ${failed.length} could not be added:\n${failed.slice(0, 4).join('\n')}`
       );
       return;
     }
-    Alert.alert('Could not add crew', failed[0] ?? 'Try again.');
+    AppAlert.show('Could not add crew', failed[0] ?? 'Try again.');
   };
 
   const handleCheckInOnBehalf = async (userId: number) => {
     if (!eventId || !event) return;
     if (!canLeaderManualCheckIn(event)) {
-      Alert.alert(
+      AppAlert.show(
         'Cannot check in',
         getLeaderManualCheckInBlockedMessage(event) ?? 'This event is no longer open for check-in.'
       );
@@ -182,7 +182,7 @@ export default function AdminEventCrewScreen() {
       await api.attendance.checkinOnBehalf(eventId, userId);
       await loadEvent();
     } catch (e) {
-      Alert.alert('Check-in failed', e instanceof Error ? e.message : 'Could not check in.');
+      AppAlert.show('Check-in failed', e instanceof Error ? e.message : 'Could not check in.');
     } finally {
       setCheckingInId(null);
     }
@@ -190,7 +190,7 @@ export default function AdminEventCrewScreen() {
 
   const handleRemove = (userId: number) => {
     if (!eventId) return;
-    Alert.alert('Remove from crew', 'Remove this person from the event crew?', [
+    AppAlert.show('Remove from crew', 'Remove this person from the event crew?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Remove',
@@ -201,7 +201,7 @@ export default function AdminEventCrewScreen() {
             await api.events.removeUser(eventId, userId);
             await loadEvent();
           } catch (e) {
-            Alert.alert('Error', e instanceof Error ? e.message : 'Could not remove.');
+            AppAlert.show('Error', e instanceof Error ? e.message : 'Could not remove.');
           } finally {
             setRemovingId(null);
           }

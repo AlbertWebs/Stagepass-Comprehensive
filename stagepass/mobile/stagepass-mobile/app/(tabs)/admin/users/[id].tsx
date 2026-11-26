@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 /**
  * Admin: Crew detail – view and update user/crew details.
  */
@@ -6,7 +7,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -76,7 +76,7 @@ export default function AdminCrewDetailScreen() {
       setSelectedRoleIds(u.roles?.map((r) => r.id) ?? []);
     } catch {
       setUser(null);
-      Alert.alert('Error', 'Could not load crew member.');
+      AppAlert.show('Error', 'Could not load crew member.');
       router.back();
     } finally {
       setLoading(false);
@@ -102,7 +102,7 @@ export default function AdminCrewDetailScreen() {
     if (!user || !Number.isFinite(userId)) return;
     const trimmedName = name.trim();
     if (!trimmedName) {
-      Alert.alert('Invalid', 'Name is required.');
+      AppAlert.show('Invalid', 'Name is required.');
       return;
     }
     setSaving(true);
@@ -117,9 +117,9 @@ export default function AdminCrewDetailScreen() {
       await api.users.update(userId, body as Partial<User>);
       setUser((prev) => (prev ? { ...prev, name: trimmedName, email: email.trim(), username: username.trim(), phone_number: phoneNumber.trim(), roles: rolesList.filter((r) => selectedRoleIds.includes(r.id)) } : null));
       setEditing(false);
-      Alert.alert('Saved', 'Crew details updated.');
+      AppAlert.show('Saved', 'Crew details updated.');
     } catch (e) {
-      Alert.alert(
+      AppAlert.show(
         'Update failed',
         e instanceof Error ? e.message : 'Could not update. Try again.'
       );
@@ -138,11 +138,11 @@ export default function AdminCrewDetailScreen() {
     const pin = newPin.replace(/\D/g, '').slice(0, PIN_LENGTH);
     const confirm = newPinConfirmation.replace(/\D/g, '').slice(0, PIN_LENGTH);
     if (pin.length < PIN_LENGTH) {
-      Alert.alert('Invalid', `PIN must be ${PIN_LENGTH} digits.`);
+      AppAlert.show('Invalid', `PIN must be ${PIN_LENGTH} digits.`);
       return;
     }
     if (pin !== confirm) {
-      Alert.alert('Invalid', 'PIN and confirmation do not match.');
+      AppAlert.show('Invalid', 'PIN and confirmation do not match.');
       return;
     }
     if (!Number.isFinite(userId)) return;
@@ -151,9 +151,9 @@ export default function AdminCrewDetailScreen() {
       await api.users.setPin(userId, pin, confirm);
       setNewPin('');
       setNewPinConfirmation('');
-      Alert.alert('PIN set', 'The user can sign in with this PIN.');
+      AppAlert.show('PIN set', 'The user can sign in with this PIN.');
     } catch (e) {
-      Alert.alert(
+      AppAlert.show(
         'Set PIN failed',
         e instanceof Error ? e.message : 'Could not set PIN. Try again.'
       );

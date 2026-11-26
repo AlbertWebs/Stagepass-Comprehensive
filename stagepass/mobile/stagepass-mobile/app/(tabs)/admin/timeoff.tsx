@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 /**
  * Time off: form to request time off (reason + dates, notes, attachments) and list my requests.
  */
@@ -7,7 +8,6 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -106,7 +106,7 @@ export default function AdminTimeOffScreen() {
       }));
       setSelectedFiles((prev) => [...prev, ...newFiles]);
     } catch {
-      Alert.alert('Error', 'Could not open document picker.');
+      AppAlert.show('Error', 'Could not open document picker.');
     }
   }, []);
 
@@ -118,7 +118,7 @@ export default function AdminTimeOffScreen() {
     const startStr = toYMD(startDate);
     const endStr = toYMD(endDate);
     if (endStr < startStr) {
-      Alert.alert('Invalid dates', 'End date must be on or after start date.');
+      AppAlert.show('Invalid dates', 'End date must be on or after start date.');
       return;
     }
     setError(null);
@@ -128,7 +128,7 @@ export default function AdminTimeOffScreen() {
       if (created?.id && selectedFiles.length > 0) {
         await api.timeOff.uploadAttachments(created.id, selectedFiles);
       }
-      Alert.alert('Submitted', 'Your time off request has been submitted.');
+      AppAlert.show('Submitted', 'Your time off request has been submitted.');
       setStartDate(new Date());
       setEndDate(new Date());
       setReason('vacation');
@@ -139,7 +139,7 @@ export default function AdminTimeOffScreen() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to submit request';
       setError(msg);
-      Alert.alert('Error', msg);
+      AppAlert.show('Error', msg);
     } finally {
       setSubmitting(false);
     }

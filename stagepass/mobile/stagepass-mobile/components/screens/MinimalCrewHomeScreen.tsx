@@ -1,15 +1,17 @@
+import { AppAlert } from '@/components/AppAlert';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Easing,
   PixelRatio,
+  PanResponder,
+  ScrollView,
   Platform,
   Pressable,
   StyleSheet,
@@ -22,12 +24,11 @@ import { StagepassText as Text } from '@/components/StagepassText';
 import Svg, { Circle, ClipPath, Defs, Image as SvgImage, Path } from 'react-native-svg';
 import { OfficeCheckInDistanceModal } from '@/components/OfficeCheckInDistanceModal';
 import { useDispatch, useSelector } from 'react-redux';
-import { HomeHeader } from '@/components/HomeHeader';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
-import { api, getApiBase, type User as ApiUser } from '~/services/api';
+import { api, getApiBase, type Event as ApiEvent, type User as ApiUser } from '~/services/api';
 import { setUser } from '~/store/authSlice';
 import { haversineDistanceMeters, isWithinGeofence } from '~/utils/geofence';
 import { buildVenueStaticMapPreviewUrls, mapPreviewImageSource } from '~/utils/staticMapPreview';
@@ -35,10 +36,12 @@ import {
   DEFAULT_OFFICE_CHECKIN_REQUIRED_DAYS,
   parseOfficeCheckinRequiredDays,
 } from '@/src/utils/officeCheckinRequiredDays';
-import { NAV_PRESSED_OPACITY } from '@/src/utils/navigationPress';
+import { NAV_PRESSED_OPACITY, useNavigationPress } from '@/src/utils/navigationPress';
 
 type Props = {
   onRefresh?: () => Promise<void>;
+  eventToday?: ApiEvent | null;
+  eventsTodayList?: ApiEvent[];
 };
 
 const MINIMAL_HOME_BG_IMAGE_URI = `${getApiBase()}/minimal-home-bg.png`;
@@ -75,7 +78,9 @@ function formatShortTime(value?: string | null): string | null {
   return formatted === '—' ? null : formatted;
 }
 
-export function MinimalCrewHomeScreen({ onRefresh }: Props) {
+export function MinimalCrewHomeScreen({ onRefresh, eventToday = null, eventsTodayList = [] }: Props) {
+  const router = useRouter();
+  const handleNav = useNavigationPress();
   const dispatch = useDispatch();
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
@@ -88,11 +93,40 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
   const [requiredCheckinDays, setRequiredCheckinDays] = useState<number[]>(DEFAULT_OFFICE_CHECKIN_REQUIRED_DAYS);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [mapSourceIndex, setMapSourceIndex] = useState(0);
+  const [isPanelExpanded, setIsPanelExpanded] = useState(false);
+  const todayProjects = useMemo(() => {
+    const projects = new Map<number, ApiEvent>();
+    eventsTodayList.forEach((event) => projects.set(event.id, event));
+    if (eventToday) projects.set(eventToday.id, eventToday);
+    return Array.from(projects.values());
+  }, [eventToday, eventsTodayList]);
   const [customBackgroundFailed, setCustomBackgroundFailed] = useState(false);
   const rippleA = useRef(new Animated.Value(0)).current;
   const rippleB = useRef(new Animated.Value(0)).current;
   /** Weekend map pin: gentle sway + wave pulse (beach motif). */
   const beachPhase = useRef(new Animated.Value(0)).current;
+  const panelDragY = useRef(new Animated.Value(0)).current;
+  const panelDragOffset = useRef(0);
+  const [projectsHeight, setProjectsHeight] = useState(0);
+  const revealHeight = Math.max(1, Math.min(projectsHeight, windowHeight * 0.25));
+  const settlePanel = useCallback((target: number) => {
+    setIsPanelExpanded(target < 0);
+    Animated.spring(panelDragY, {
+      toValue: target, useNativeDriver: false, damping: 26, stiffness: 210, overshootClamping: true,
+    }).start();
+  }, [panelDragY]);
+  const panelPanResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 5 && Math.abs(g.dy) > Math.abs(g.dx),
+    onPanResponderGrant: () => panelDragY.stopAnimation(value => { panelDragOffset.current = value; }),
+    onPanResponderMove: (_, g) => {
+      panelDragY.setValue(Math.max(-revealHeight, Math.min(150, panelDragOffset.current + g.dy)));
+    },
+    onPanResponderRelease: (_, g) => {
+      const projected = panelDragOffset.current + g.dy + g.vy * 80;
+      settlePanel(projected < -revealHeight / 2 ? -revealHeight : projected > 75 ? 150 : 0);
+    },
+    onPanResponderTerminate: () => settlePanel(0),
+  }), [panelDragY, revealHeight, settlePanel]);
 
   const officeCheckedInToday = user?.office_checked_in_today ?? false;
   const officeCheckedOutToday = user?.office_checked_out_today ?? false;
@@ -192,8 +226,8 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
   const buttonLabel = useMemo(() => {
     if (loading) return canCheckout ? 'Checking out...' : 'Checking in...';
     if (officeCheckedOutToday) return 'Done for today';
-    if (canCheckout) return 'Office checkout';
-    return 'Check in office';
+    if (canCheckout) return 'Check Out of Office';
+    return 'Check In at Office';
   }, [loading, canCheckout, officeCheckedOutToday]);
 
   const subLabel = useMemo(() => {
@@ -201,7 +235,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
     if (isOfficeCheckinOffDay) return 'You don’t need to check in today.';
     if (officeCheckedOutToday) return 'See you tomorrow';
     if (canCheckout) return 'Tap to end office shift';
-    return 'Tap to start shift';
+    return 'Check in when you are at the office location.';
   }, [officeCheckedOutToday, canCheckout, isOfficeCheckinOffDay, isWeekendOffDay]);
 
   const panelEyebrowText = useMemo(() => {
@@ -211,8 +245,10 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
 
   const panelTitleText = useMemo(() => {
     if (isOfficeCheckinOffDay) return 'No office check-in';
-    return 'Check-in status';
-  }, [isOfficeCheckinOffDay]);
+    if (officeCheckedOutToday) return 'Shift complete';
+    if (canCheckout) return 'You’re on your shift';
+    return 'Ready to start your shift?';
+  }, [isOfficeCheckinOffDay, officeCheckedOutToday, canCheckout]);
 
   const offDayFooterCaption = useMemo(() => {
     if (isWeekendOffDay) return 'Check-in is paused Sat–Sun.';
@@ -340,7 +376,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
     const dow = new Date().getDay();
     if (!requiredCheckinDays.includes(dow)) {
       const weekend = dow === 0 || dow === 6;
-      Alert.alert(
+      AppAlert.show(
         weekend ? 'Weekend' : 'No office check-in',
         weekend
           ? 'We’re off for the weekend — office check-in isn’t available.'
@@ -357,12 +393,12 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
         setUserLocation(location);
       }
       if (!location) {
-        Alert.alert('Location required', 'Enable location to continue.');
+        AppAlert.show('Location required', 'Enable location to continue.');
         return;
       }
       const resolvedOfficeConfig = officeConfig ?? (await loadConfig());
       if (!resolvedOfficeConfig) {
-        Alert.alert('Office not configured', 'Ask admin to set office location in settings.');
+        AppAlert.show('Office not configured', 'Ask admin to set office location in settings.');
         return;
       }
       const within = isWithinGeofence(
@@ -380,7 +416,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
       await refreshUser();
       triggerSuccessHaptic();
     } catch (e: unknown) {
-      Alert.alert('Check-in failed', e instanceof Error ? e.message : 'Try again.');
+      AppAlert.show('Check-in failed', e instanceof Error ? e.message : 'Try again.');
     } finally {
       setLoading(false);
     }
@@ -397,7 +433,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
 
   const handleOfficeCheckOut = useCallback(async () => {
     if (loading || !canCheckout) return;
-    Alert.alert('Confirm checkout', 'Are you sure you want to check out now?', [
+    AppAlert.show('Confirm checkout', 'Are you sure you want to check out now?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Check out',
@@ -408,7 +444,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
             await refreshUser();
             triggerSuccessHaptic();
           } catch (e: unknown) {
-            Alert.alert('Checkout failed', e instanceof Error ? e.message : 'Try again.');
+            AppAlert.show('Checkout failed', e instanceof Error ? e.message : 'Try again.');
           } finally {
             setLoading(false);
           }
@@ -423,9 +459,8 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
     else handleOfficeCheckIn();
   }, [mainCtaDisabled, canCheckout, handleOfficeCheckOut, handleOfficeCheckIn]);
 
-  const overlayBottomPad = Math.max(insets.bottom, Spacing.sm) + Spacing.lg;
   /** Clear transparent header + title row so the welcome pill sits on the map below it. */
-  const welcomePillTopPad = Math.max(insets.top, Spacing.sm) + 52;
+  const welcomePillTopPad = Math.max(insets.top, Spacing.sm) + 12;
 
   const checkInTimeLabel = formatShortTime(user?.office_checkin_time);
   const checkOutTimeLabel = formatShortTime(user?.office_checkout_time);
@@ -653,21 +688,11 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                 ]}
               >
                 <View style={styles.welcomeRow}>
-                  <View style={[styles.welcomeAccent, { backgroundColor: themeYellow }]} accessibilityElementsHidden />
                   <View style={styles.welcomeColumn}>
-                    <View style={styles.welcomeEyebrowRow}>
-                      <Ionicons name="sparkles" size={13} color={themeYellow} style={styles.welcomeEyebrowIcon} />
-                      <Text
-                        style={[styles.welcomeEyebrow, { color: welcomeMutedOnMap }]}
-                        maxFontSizeMultiplier={1.35}
-                      >
-                        Welcome back
-                      </Text>
-                    </View>
                     <Text style={[styles.welcomeGreetingLine, { color: welcomePrimaryOnMap }]} maxFontSizeMultiplier={1.35}>
                       <Text style={styles.welcomeGreetingPhrase}>{timeGreeting}</Text>
                       {welcomeFirstName ? (
-                        <Text style={[styles.welcomeGreetingSep, { color: welcomeMutedOnMap }]}> · </Text>
+                        <Text style={[styles.welcomeGreetingSep, { color: welcomeMutedOnMap }]}>, </Text>
                       ) : null}
                       {welcomeFirstName ? (
                         <Text style={[styles.welcomeName, { color: nameAccentColor }]}>{welcomeFirstName}</Text>
@@ -684,8 +709,9 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
             </Reanimated.View>
           </View>
           <View style={styles.overlaySpacer} pointerEvents="none" />
-          <View style={[styles.overlayBottom, { paddingBottom: overlayBottomPad }]}>
+          <View style={styles.overlayBottom}>
             <Reanimated.View entering={FadeInUp.duration(460).delay(72)} style={styles.panelOuter}>
+            <Animated.View style={{ transform: [{ translateY: panelDragY.interpolate({ inputRange: [0, 150], outputRange: [0, 150], extrapolate: 'clamp' }) }] }}>
             <View
               style={[
                 styles.panel,
@@ -695,13 +721,14 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
               ]}
             >
           <View
-            style={[
-              styles.panelHandle,
-              { backgroundColor: isDark ? 'rgba(148, 163, 184, 0.38)' : 'rgba(100, 116, 139, 0.28)' },
-            ]}
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-          />
+            style={styles.panelHandleTouchArea}
+            {...panelPanResponder.panHandlers}
+            accessibilityRole="button"
+            accessibilityLabel="Drag office shift panel up or down"
+            accessibilityHint="Swipe up to show today’s projects or down to collapse"
+          >
+            <View style={[styles.panelHandle, { backgroundColor: isDark ? 'rgba(148, 163, 184, 0.52)' : 'rgba(100, 116, 139, 0.42)' }]} />
+          </View>
           <View style={styles.panelTopRow}>
             <View>
               <ThemedText style={[styles.panelEyebrow, { color: colors.textSecondary }]}>
@@ -762,13 +789,9 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                   Checked in
                 </ThemedText>
               ) : (
-                <View
-                  accessibilityRole="image"
-                  accessibilityLabel="Pending"
-                  style={styles.stateChipIconWrap}
-                >
-                  <Ionicons name="hourglass-outline" size={15} color={themeYellow} />
-                </View>
+                <ThemedText style={[styles.stateChipText, { color: themeYellow }]} maxFontSizeMultiplier={1.2}>
+                  Not Checked In
+                </ThemedText>
               )}
             </View>
           </View>
@@ -779,6 +802,21 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
           >
             {subLabel}
           </ThemedText>
+
+          {!isOfficeCheckinOffDay ? (
+            <View style={[styles.officeLocationCard, { backgroundColor: isDark ? 'rgba(255,255,255,0.055)' : '#F1F3F7' }]}>
+              <View style={styles.officeBuildingIcon}>
+                <Ionicons name="business" size={24} color={themeYellow} />
+              </View>
+              <View style={styles.officeLocationText}>
+                <ThemedText style={[styles.officeLocationTitle, { color: colors.text }]}>StagePass Office</ThemedText>
+                <ThemedText style={[styles.officeLocationAddress, { color: colors.textSecondary }]}>Northern Bypass Rd, Ridgeways, Nairobi</ThemedText>
+              </View>
+              <View style={styles.officePinBadge}>
+                <Ionicons name="location" size={18} color={themeYellow} />
+              </View>
+            </View>
+          ) : null}
 
           {geoHint ? (
             <View style={styles.geoHintRow} accessibilityLiveRegion="polite">
@@ -844,9 +882,7 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                         ? isDark
                           ? themeBlue + '14'
                           : themeBlue + '10'
-                        : isDark
-                          ? themeYellow + '16'
-                          : themeYellow + '22',
+                        : themeYellow,
                     borderColor: officeCheckedOutToday
                       ? isDark
                         ? '#475569'
@@ -888,14 +924,16 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
                           ? '#e2e8f0'
                           : officeCheckedOutToday
                             ? colors.textSecondary
-                            : colors.text,
+                            : canCheckout
+                              ? colors.text
+                              : '#10182F',
                     },
                   ]}
                 >
                   {buttonLabel}
                 </ThemedText>
                 {!mainCtaDisabled ? (
-                  <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                    <Ionicons name="arrow-forward" size={16} color={canCheckout ? themeBlue : '#10182F'} />
                 ) : null}
               </Pressable>
             </>
@@ -915,14 +953,46 @@ export function MinimalCrewHomeScreen({ onRefresh }: Props) {
               </ThemedText>
             </View>
           ) : null}
+
+          <Animated.View style={{ overflow: 'hidden', height: panelDragY.interpolate({
+            inputRange: [-revealHeight, 0], outputRange: [revealHeight, 0], extrapolate: 'clamp',
+          }) }} accessibilityElementsHidden={!isPanelExpanded} importantForAccessibility={isPanelExpanded ? 'auto' : 'no-hide-descendants'}>
+            <ScrollView onContentSizeChange={(_, height) => setProjectsHeight(height)} contentContainerStyle={styles.todayProjectsSection}>
+              <ThemedText style={[styles.todayProjectsHeading, { color: colors.textSecondary }]}>TODAY’S PROJECTS</ThemedText>
+              {todayProjects.length > 0 ? todayProjects.map((event) => (
+                <Pressable
+                  key={event.id}
+                  onPress={() => handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(event.id) } }))}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${event.name}`}
+                  style={({ pressed }) => [styles.todayProjectCard, { backgroundColor: isDark ? 'rgba(255,255,255,0.055)' : '#F1F3F7', opacity: pressed ? NAV_PRESSED_OPACITY : 1 }]}
+                >
+                  <View style={[styles.projectIconBadge, { backgroundColor: themeYellow + '22' }]}>
+                    <Ionicons name="briefcase-outline" size={18} color={themeYellow} />
+                  </View>
+                  <View style={styles.todayProjectText}>
+                    <ThemedText style={[styles.todayProjectName, { color: colors.text }]} numberOfLines={1}>{event.name}</ThemedText>
+                    <ThemedText style={[styles.todayProjectMeta, { color: colors.textSecondary }]} numberOfLines={1}>
+                      {[formatShortTime(event.start_time), formatShortTime(event.expected_end_time)].filter(Boolean).join(' – ') || 'Today'}
+                      {event.location_name ? ` · ${event.location_name}` : ''}
+                    </ThemedText>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                </Pressable>
+              )) : (
+                <View style={[styles.noProjectsCard, { backgroundColor: isDark ? 'rgba(255,255,255,0.055)' : '#F1F3F7' }]}>
+                  <Ionicons name="calendar-outline" size={19} color={colors.textSecondary} />
+                  <ThemedText style={[styles.noProjectsText, { color: colors.textSecondary }]}>You have not been assigned projects today</ThemedText>
+                </View>
+              )}
+            </ScrollView>
+          </Animated.View>
             </View>
+            </Animated.View>
             </Reanimated.View>
           </View>
         </View>
 
-        <View style={styles.headerOverlay} pointerEvents="box-none">
-          <HomeHeader title="Home" notificationCount={0} transparentOverlay />
-        </View>
       </View>
       <OfficeCheckInDistanceModal
         visible={showOfficeDistanceModal}
@@ -952,13 +1022,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: Spacing.lg,
   },
-  headerOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 2,
-  },
   overlayStack: {
     ...StyleSheet.absoluteFill,
     width: '100%',
@@ -986,20 +1049,20 @@ const styles = StyleSheet.create({
   welcomeScrim: {
     borderRadius: 14,
     borderWidth: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     overflow: 'hidden',
   },
   welcomeRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    gap: 12,
+    gap: 10,
     width: '100%',
   },
   welcomeAccent: {
     width: 3,
     borderRadius: 2,
-    minHeight: 48,
+    minHeight: 42,
     alignSelf: 'stretch',
   },
   welcomeColumn: {
@@ -1007,7 +1070,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     minWidth: 0,
     justifyContent: 'center',
-    gap: 4,
+    gap: 1,
   },
   welcomeEyebrowRow: {
     flexDirection: 'row',
@@ -1026,33 +1089,34 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   welcomeGreetingLine: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '600',
     letterSpacing: -0.35,
-    lineHeight: 24,
+    lineHeight: 21,
     backgroundColor: 'transparent',
   },
   welcomeGreetingPhrase: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '600',
-    lineHeight: 24,
+    lineHeight: 21,
   },
   welcomeGreetingSep: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '500',
-    lineHeight: 24,
+    lineHeight: 21,
   },
   welcomeName: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
     letterSpacing: -0.25,
-    lineHeight: 24,
+    lineHeight: 21,
   },
   welcomeDate: {
     fontSize: 12,
     fontWeight: '600',
     letterSpacing: 0.2,
-    marginTop: 2,
+    lineHeight: 16,
+    marginTop: 0,
     backgroundColor: 'transparent',
   },
   overlaySpacer: {
@@ -1060,9 +1124,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   overlayBottom: {
-    paddingHorizontal: Spacing.lg,
-    marginTop: Spacing.xs,
-    gap: Spacing.sm,
+    position: 'absolute',
+    left: 0, right: 0, bottom: 0,
+    paddingHorizontal: 0,
+    paddingBottom: 0,
   },
   mapImage: {
     ...StyleSheet.absoluteFill,
@@ -1173,21 +1238,31 @@ const styles = StyleSheet.create({
   },
   panelOuter: {
     width: '100%',
-    marginTop: 26,
+    marginTop: 0,
   },
-  panelHandle: {
+  panelHandleTouchArea: {
     alignSelf: 'center',
-    width: 32,
-    height: 2,
-    borderRadius: 2,
+    width: 96,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -5,
     marginBottom: Spacing.xs,
   },
+  panelHandle: {
+    width: 42,
+    height: 5,
+    borderRadius: 4,
+  },
   panel: {
-    borderRadius: 14,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
     borderWidth: 1,
-    padding: Spacing.sm,
-    paddingTop: Spacing.sm + 2,
-    gap: Spacing.xs + 2,
+    padding: Spacing.md,
+    paddingTop: Spacing.sm,
+    gap: Spacing.sm,
   },
   panelOffDay: {
     gap: Spacing.xs + 2,
@@ -1208,8 +1283,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   panelTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 21,
+    fontWeight: '800',
     letterSpacing: -0.2,
   },
   stateChip: {
@@ -1231,8 +1306,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.25,
   },
   panelSub: {
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 14,
+    lineHeight: 20,
     marginTop: 0,
   },
   offDayFoot: {
@@ -1252,21 +1327,108 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   primaryActionCard: {
-    marginTop: 0,
-    borderRadius: 10,
+    marginTop: 2,
+    borderRadius: 16,
     borderWidth: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    minHeight: 40,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     overflow: 'hidden',
   },
   primaryActionText: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  officeLocationCard: {
+    minHeight: 68,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 15,
+  },
+  officeBuildingIcon: {
+    width: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  officeLocationText: {
+    flex: 1,
+    gap: 2,
+  },
+  officeLocationTitle: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '800',
+  },
+  officeLocationAddress: {
     fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: -0.15,
+    lineHeight: 17,
+  },
+  officePinBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(250, 204, 21, 0.13)',
+  },
+  todayProjectsSection: {
+    gap: 8,
+    marginTop: 2,
+  },
+  todayProjectsHeading: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.05,
+  },
+  todayProjectCard: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    borderRadius: 14,
+  },
+  projectIconBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  todayProjectText: {
+    flex: 1,
+    gap: 2,
+  },
+  todayProjectName: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  todayProjectMeta: {
+    fontSize: 11,
+  },
+  noProjectsCard: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+  },
+  noProjectsText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
   },
   statusRow: {
     flexDirection: 'row',

@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 import type { User } from '~/services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
@@ -8,7 +9,6 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -247,15 +247,15 @@ export default function ProfileScreen() {
     const trimmedName = name.trim();
     const trimmedEmail = email.trim();
     if (!trimmedName) {
-      Alert.alert('Invalid', 'Name is required.');
+      AppAlert.show('Invalid', 'Name is required.');
       return;
     }
     if (password !== passwordConfirmation) {
-      Alert.alert('Invalid', 'Passwords do not match.');
+      AppAlert.show('Invalid', 'Passwords do not match.');
       return;
     }
     if (password && password.length < 8) {
-      Alert.alert('Invalid', 'Password must be at least 8 characters.');
+      AppAlert.show('Invalid', 'Password must be at least 8 characters.');
       return;
     }
     setSaving(true);
@@ -306,15 +306,15 @@ export default function ProfileScreen() {
       if (intendedEmergency !== savedEmergency) missingPersistence.push('emergency contact');
 
       if (missingPersistence.length > 0) {
-        Alert.alert(
+        AppAlert.show(
           'Not fully saved',
           `Server did not persist: ${missingPersistence.join(', ')}. Check backend profile fields on /api/me.`
         );
       } else {
-        Alert.alert('Saved', 'Your profile has been updated.');
+        AppAlert.show('Saved', 'Your profile has been updated.');
       }
     } catch (e) {
-      Alert.alert(
+      AppAlert.show(
         'Update failed',
         e instanceof Error ? e.message : 'Could not update profile. Try again.'
       );
@@ -329,15 +329,15 @@ export default function ProfileScreen() {
     const np = newPin.trim();
     const npConfirm = newPinConfirmation.trim();
     if (!cur) {
-      Alert.alert('Invalid', 'Enter your current PIN.');
+      AppAlert.show('Invalid', 'Enter your current PIN.');
       return;
     }
     if (!np || np.length < 4) {
-      Alert.alert('Invalid', 'New PIN must be at least 4 characters.');
+      AppAlert.show('Invalid', 'New PIN must be at least 4 characters.');
       return;
     }
     if (np !== npConfirm) {
-      Alert.alert('Invalid', 'New PIN and confirmation do not match.');
+      AppAlert.show('Invalid', 'New PIN and confirmation do not match.');
       return;
     }
     setChangingPin(true);
@@ -350,9 +350,9 @@ export default function ProfileScreen() {
       setCurrentPin('');
       setNewPin('');
       setNewPinConfirmation('');
-      Alert.alert('PIN updated', 'Use your new PIN to sign in next time.');
+      AppAlert.show('PIN updated', 'Use your new PIN to sign in next time.');
     } catch (e) {
-      Alert.alert(
+      AppAlert.show(
         'PIN change failed',
         e instanceof Error ? e.message : 'Check your current PIN and try again.'
       );
@@ -370,9 +370,9 @@ export default function ProfileScreen() {
       const fixedAvatar = resolveUserAvatarUrl(updatedUser.avatar_url);
       dispatch(setUser({ ...user, ...updatedUser, ...(fixedAvatar ? { avatar_url: fixedAvatar } : {}) }));
       if (fixedAvatar) setPassportPhotoUri(null);
-      Alert.alert('Saved', 'Your profile photo has been updated.');
+      AppAlert.show('Saved', 'Your profile photo has been updated.');
     } catch (e) {
-      Alert.alert(
+      AppAlert.show(
         'Upload failed',
         e instanceof Error ? e.message : 'Could not upload photo. Your backend may need a POST /api/me/photo endpoint.'
       );
@@ -384,7 +384,7 @@ export default function ProfileScreen() {
   const handleTakePhoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Allow camera access to take a profile photo.');
+      AppAlert.show('Permission needed', 'Allow camera access to take a profile photo.');
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -399,7 +399,7 @@ export default function ProfileScreen() {
   const handleChooseFromLibrary = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Allow access to your photos to choose an image.');
+      AppAlert.show('Permission needed', 'Allow access to your photos to choose an image.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -414,7 +414,7 @@ export default function ProfileScreen() {
 
   const showPhotoPicker = () => {
     if (uploadingPhoto) return;
-    Alert.alert('Profile photo', 'Take a new photo or choose one from your device.', [
+    AppAlert.show('Profile photo', 'Take a new photo or choose one from your device.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Take photo', onPress: handleTakePhoto },
       { text: 'Choose from library', onPress: handleChooseFromLibrary },
@@ -423,7 +423,7 @@ export default function ProfileScreen() {
 
   const toggleBiometricLogin = useCallback(async () => {
     if (biometricOn) {
-      Alert.alert('Turn off biometric login?', 'You will sign in with username and PIN only.', [
+      AppAlert.show('Turn off biometric login?', 'You will sign in with username and PIN only.', [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Turn off',
@@ -439,14 +439,14 @@ export default function ProfileScreen() {
     try {
       const token = await loadStoredToken();
       if (!token) {
-        Alert.alert('Session unavailable', 'Sign out and sign in again, then enable biometric login.');
+        AppAlert.show('Session unavailable', 'Sign out and sign in again, then enable biometric login.');
         return;
       }
       await saveBiometricCredential(token);
       setBiometricOn(true);
-      Alert.alert('Enabled', `${biometricLabel} sign-in is enabled on this device.`);
+      AppAlert.show('Enabled', `${biometricLabel} sign-in is enabled on this device.`);
     } catch (e) {
-      Alert.alert('Could not enable', e instanceof Error ? e.message : 'Try again.');
+      AppAlert.show('Could not enable', e instanceof Error ? e.message : 'Try again.');
     }
   }, [biometricOn, biometricLabel]);
 

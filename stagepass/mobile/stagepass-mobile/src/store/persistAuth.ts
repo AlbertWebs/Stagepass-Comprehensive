@@ -3,6 +3,11 @@ import * as SecureStore from 'expo-secure-store';
 import { invalidateBiometricSessionToken } from './biometricLogin';
 import { setAuthToken } from '../services/api';
 
+export function isRejectedSession(error: unknown): boolean {
+  const status = (error as { status?: number } | null)?.status;
+  return status === 401 || status === 403;
+}
+
 const TOKEN_KEY = 'stagepass_token';
 const LOCKOUT_UNTIL_KEY = 'stagepass_login_lockout_until';
 const LAST_USERNAME_KEY = 'stagepass_last_username';
@@ -45,8 +50,13 @@ export async function hydrateAuth(
     const { api } = await import('../services/api');
     const user = await api.auth.me();
     setCredentials({ user, token });
-  } catch {
-    await clearSessionAfterAuthFailure();
+  } catch (error) {
+    if (isRejectedSession(error)) {
+      await clearSessionAfterAuthFailure();
+    } else {
+      // A transient network failure must not erase the saved biometric session.
+      setAuthToken(null);
+    }
   }
 }
 

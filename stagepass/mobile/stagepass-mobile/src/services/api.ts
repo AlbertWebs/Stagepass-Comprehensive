@@ -11,6 +11,7 @@
  */
 
 import Constants from 'expo-constants';
+import { File as ExpoFile } from 'expo-file-system';
 import { Platform } from 'react-native';
 
 export const HOMEPAGE_SECTION_KEYS = [
@@ -226,7 +227,7 @@ async function request<T>(
     Accept: 'application/json',
     ...(init.headers as Record<string, string>),
   };
-  if (authToken) {
+  if (authToken && !(headers as Record<string, string>)['Authorization']) {
     (headers as Record<string, string>)['Authorization'] = `Bearer ${authToken}`;
   }
   const h = headers as Record<string, string>;
@@ -243,9 +244,7 @@ async function request<T>(
   }
   const urlStr = url.toString();
   const method = (init.method ?? 'GET').toUpperCase();
-  const bearerForCache =
-    authToken ??
-    (() => {
+  const bearerForCache = (() => {
       const raw = h['Authorization']?.replace(/^Bearer\s+/i, '').trim();
       return raw || null;
     })();
@@ -294,8 +293,10 @@ async function request<T>(
         }
         const err = new Error(data.message ?? data.error ?? `HTTP ${res.status}`) as Error & {
           responseBody?: Record<string, unknown>;
+          status?: number;
         };
         err.responseBody = data as Record<string, unknown>;
+        err.status = res.status;
         throw err;
       }
         if (cacheableGet) {
@@ -332,6 +333,37 @@ async function request<T>(
     return p;
   }
   return run();
+}
+
+/**
+ * Append a local file in the representation supported by Expo SDK 58's fetch.
+ * The old React Native `{ uri, name, type }` FormData part is rejected by Expo's
+ * fetch adapter with "Unsupported FormDataPart implementation". ExpoFile exposes
+ * bytes(), which the adapter serializes as a real multipart file part.
+ */
+async function appendMultipartFile(
+  formData: FormData,
+  fieldName: string,
+  uri: string,
+  fileName: string,
+  fallbackMimeType: string
+): Promise<void> {
+  if (Platform.OS === 'web') {
+    const response = await fetch(uri);
+    if (!response.ok) throw new Error('Could not read the selected file. Please choose it again.');
+    const blob = await response.blob();
+    formData.append(fieldName, blob, fileName);
+    return;
+  }
+
+  const file = new ExpoFile(uri);
+  if (!file.exists) throw new Error('Could not read the selected file. Please choose it again.');
+
+  formData.append(fieldName, {
+    name: fileName || file.name,
+    type: file.type || fallbackMimeType,
+    bytes: () => file.bytes(),
+  } as unknown as Blob);
 }
 
 /** Multipart upload (e.g. profile photo). Do not set Content-Type so fetch sets boundary. */
@@ -421,6 +453,10 @@ export const api = {
     me: () => request<User>('/me'),
     /** Like me(), but does not trigger global logout on 401 (caller handles). */
     meLocal401: () => request<User>('/me', { headers: { 'X-Suppress-Unauthorized': '1' } }),
+    validateBiometricSession: (token: string) => request<User>('/me', {
+      headers: { Authorization: `Bearer ${token}`, 'X-Suppress-Unauthorized': '1' },
+      params: { refresh: '1' },
+    }),
     /** Update current user profile (name, email, phone, address, optional password, optional PIN) */
     updateProfile: (body: {
       name?: string;
@@ -461,13 +497,9 @@ export const api = {
         headers: { 'X-Suppress-Unauthorized': '1' },
       }),
     /** Upload passport/profile photo. Backend: POST /me/photo with multipart file "photo". Returns updated user. */
-    uploadProfilePhoto: (imageUri: string) => {
+    uploadProfilePhoto: async (imageUri: string) => {
       const formData = new FormData();
-      formData.append('photo', {
-        uri: imageUri,
-        name: 'photo.jpg',
-        type: 'image/jpeg',
-      } as unknown as Blob);
+      await appendMultipartFile(formData, 'photo', imageUri, 'photo.jpg', 'image/jpeg');
       return requestMultipart<{ user: User } | User>('/me/photo', formData);
     },
   },
@@ -655,13 +687,15 @@ export const api = {
     /** Upload files for a time off request (pending only). files: { uri, name?, mimeType? } from document picker. */
     uploadAttachments: async (requestId: number, files: { uri: string; name?: string; mimeType?: string }[]) => {
       const formData = new FormData();
-      files.forEach((f, i) => {
-        formData.append('attachments[]', {
-          uri: f.uri,
-          name: f.name ?? `file_${i}`,
-          type: f.mimeType ?? 'application/octet-stream',
-        } as unknown as Blob);
-      });
+      for (const [i, file] of files.entries()) {
+        await appendMultipartFile(
+          formData,
+          'attachments[]',
+          file.uri,
+          file.name ?? `file_${i}`,
+          file.mimeType ?? 'application/octet-stream'
+        );
+      }
       return requestMultipart<TimeOffRequest>(`/timeoff/request/${requestId}/attachments`, formData);
     },
   },
@@ -715,7 +749,7 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(body),
       }),
-    submitAllowanceRequest: (body: {
+    submitAllowanceRequest: async (body: {
       event_id: number;
       allowance_type_id: number;
       amount: number;
@@ -727,11 +761,13 @@ export const api = {
       formData.append('allowance_type_id', String(body.allowance_type_id));
       formData.append('amount', String(body.amount));
       formData.append('reason', body.reason);
-      formData.append('attachment', {
-        uri: body.attachment.uri,
-        name: body.attachment.name ?? 'receipt.jpg',
-        type: body.attachment.mimeType ?? 'image/jpeg',
-      } as unknown as Blob);
+      await appendMultipartFile(
+        formData,
+        'attachment',
+        body.attachment.uri,
+        body.attachment.name ?? 'receipt.jpg',
+        body.attachment.mimeType ?? 'image/jpeg'
+      );
       return requestMultipart<{ message: string; data: EarnedAllowanceDetail }>('/payments/allowance-requests', formData);
     },
     updateAllowanceStatus: (id: number, status: 'pending' | 'approved' | 'rejected' | 'paid', comment?: string) =>

@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 /**
  * Admin/team leader: create a task for an event and assign to crew.
  */
@@ -7,7 +8,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -67,7 +67,7 @@ export default function CreateTaskScreen() {
       const e = await api.events.get(eventId);
       setEvent(e);
     } catch {
-      Alert.alert('Error', 'Failed to load event.');
+      AppAlert.show('Error', 'Failed to load event.');
     } finally {
       setLoading(false);
     }
@@ -89,11 +89,11 @@ export default function CreateTaskScreen() {
   const handleCreate = async () => {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
-      Alert.alert('Required', 'Please enter a task title.');
+      AppAlert.show('Required', 'Please enter a task title.');
       return;
     }
     if (selectedIds.size === 0) {
-      Alert.alert('Assign crew', 'Please select at least one crew member to assign this task to.');
+      AppAlert.show('Assign crew', 'Please select at least one crew member to assign this task to.');
       return;
     }
     setSubmitting(true);
@@ -106,11 +106,11 @@ export default function CreateTaskScreen() {
         due_date: dueDate ? toYMD(dueDate) : undefined,
         assignee_ids: Array.from(selectedIds),
       });
-      Alert.alert('Task created', 'The task has been created and assigned to the selected crew.', [
+      AppAlert.show('Task created', 'The task has been created and assigned to the selected crew.', [
         { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not create task.');
+      AppAlert.show('Error', e instanceof Error ? e.message : 'Could not create task.');
     } finally {
       setSubmitting(false);
     }

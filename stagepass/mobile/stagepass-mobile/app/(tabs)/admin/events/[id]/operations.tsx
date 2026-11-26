@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 /**
  * Admin: event operations — edit, crew, check-in, messaging, tasks, report, end event.
  * Pending allowance approvals live on `pending-allowances`, not here.
@@ -121,7 +122,7 @@ export default function AdminEventOperationsScreen() {
       const e = await api.events.get(eventId);
       setEvent(e);
     } catch {
-      Alert.alert('Error', 'Failed to load event.');
+      AppAlert.show('Error', 'Failed to load event.');
     } finally {
       setLoading(false);
     }
@@ -133,7 +134,7 @@ export default function AdminEventOperationsScreen() {
 
   const handleEndEvent = async () => {
     if (!reportReady || !reportConfirmedBy || !reportSignature) {
-      Alert.alert(
+      AppAlert.show(
         'Generate event report first',
         'Before ending this event, preview and sign the event report from Operations.',
         [
@@ -154,7 +155,7 @@ export default function AdminEventOperationsScreen() {
     }
     const comment = endComment.trim();
     if (!comment) {
-      Alert.alert('Required', "Leave a comment about today's work.");
+      AppAlert.show('Required', "Leave a comment about today's work.");
       return;
     }
     setEnding(true);
@@ -165,7 +166,7 @@ export default function AdminEventOperationsScreen() {
       setEndModalVisible(false);
       setEndComment('');
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not end event.');
+      AppAlert.show('Error', e instanceof Error ? e.message : 'Could not end event.');
     } finally {
       setEnding(false);
     }
@@ -385,7 +386,7 @@ export default function AdminEventOperationsScreen() {
                   variant="outline"
                   onPress={() => {
                     if (!reportReady) {
-                      Alert.alert('Report required', 'Preview and sign the event report before ending this event.');
+                      AppAlert.show('Report required', 'Preview and sign the event report before ending this event.');
                       return;
                     }
                     setEndModalVisible(true);

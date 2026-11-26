@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 /**
  * Request manual allowance (Taxi / Transport / Emergency / Other) with receipt.
  */
@@ -6,7 +7,6 @@ import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -115,7 +115,7 @@ export default function RequestAllowanceScreen() {
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission', 'Photo library access is needed to attach a receipt.');
+      AppAlert.show('Permission', 'Photo library access is needed to attach a receipt.');
       return;
     }
     const res = await ImagePicker.launchImageLibraryAsync({
@@ -132,20 +132,20 @@ export default function RequestAllowanceScreen() {
 
   const submit = async () => {
     if (!eventId || selectedTypeId == null) {
-      Alert.alert('Missing', 'Select an allowance type.');
+      AppAlert.show('Missing', 'Select an allowance type.');
       return;
     }
     const n = Number(amount.replace(/,/g, ''));
     if (!Number.isFinite(n) || n <= 0) {
-      Alert.alert('Amount', 'Enter an amount greater than zero.');
+      AppAlert.show('Amount', 'Enter an amount greater than zero.');
       return;
     }
     if (!reason.trim()) {
-      Alert.alert('Reason', 'Please describe why you need this allowance.');
+      AppAlert.show('Reason', 'Please describe why you need this allowance.');
       return;
     }
     if (!imageUri) {
-      Alert.alert('Receipt', 'Attach a photo of your receipt (JPG or PNG).');
+      AppAlert.show('Receipt', 'Attach a photo of your receipt (JPG or PNG).');
       return;
     }
     setSubmitting(true);
@@ -157,13 +157,13 @@ export default function RequestAllowanceScreen() {
         reason: reason.trim(),
         attachment: { uri: imageUri, mimeType: mime, name: 'receipt.jpg' },
       });
-      Alert.alert(
+      AppAlert.show(
         'Submitted',
         'Allowance request submitted successfully. Waiting for team leader approval.',
         [{ text: 'OK', onPress: () => handleNav(() => router.back()) }]
       );
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not submit request.');
+      AppAlert.show('Error', e instanceof Error ? e.message : 'Could not submit request.');
     } finally {
       setSubmitting(false);
     }

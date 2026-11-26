@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 /**
  * Enterprise home dashboard: minimal header, welcome card, quick actions grid,
  * today's events, role-based visibility. Proportional spacing, soft shadows, clear hierarchy.
@@ -9,7 +10,6 @@ import * as Location from 'expo-location';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   Platform,
   Pressable,
   RefreshControl,
@@ -512,7 +512,7 @@ export function HomeDashboardScreen({
     const dow = new Date().getDay();
     if (!officeCheckinRequiredDays.includes(dow)) {
       const weekend = dow === 0 || dow === 6;
-      Alert.alert(
+      AppAlert.show(
         weekend ? 'Weekend' : 'No office check-in',
         weekend
           ? 'We’re off for the weekend — office check-in isn’t available.'
@@ -522,7 +522,7 @@ export function HomeDashboardScreen({
     }
     const nowHour = new Date().getHours();
     if (nowHour < OFFICE_CHECKIN_EARLIEST_HOUR) {
-      Alert.alert('Too early', 'Office check-in starts at 6:00 AM.');
+      AppAlert.show('Too early', 'Office check-in starts at 6:00 AM.');
       return;
     }
     let location = userLocation;
@@ -534,7 +534,7 @@ export function HomeDashboardScreen({
         location = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
         setUserLocation(location);
       } catch {
-        Alert.alert('Location needed', 'Enable location access to check in at the office.');
+        AppAlert.show('Location needed', 'Enable location access to check in at the office.');
         setCheckInLoading(false);
         setOfficeCheckinStep('idle');
         return;
@@ -547,7 +547,7 @@ export function HomeDashboardScreen({
     }
 
     if (!officeConfig) {
-      Alert.alert(
+      AppAlert.show(
         'Office not configured',
         'Your admin has not set the office check-in location yet. Ask them to set it in Settings.'
       );
@@ -586,12 +586,12 @@ export function HomeDashboardScreen({
         setOfficeCheckinStep('you_made_it');
         await new Promise((r) => setTimeout(r, 800));
       } else if (String(msg).includes('404') || String(msg).includes('Not Found')) {
-        Alert.alert(
+        AppAlert.show(
           'Office check-in',
           'Server does not support office check-in yet. You are within the office radius.'
         );
       } else {
-        Alert.alert('Check-in failed', msg);
+        AppAlert.show('Check-in failed', msg);
       }
     } finally {
       setCheckInLoading(false);
@@ -601,7 +601,7 @@ export function HomeDashboardScreen({
 
   const handleOfficeCheckOut = useCallback(async () => {
     if (checkInLoading) return;
-    Alert.alert(
+    AppAlert.show(
       'Confirm checkout',
       'Are you sure you want to check out now?',
       [
@@ -635,7 +635,7 @@ export function HomeDashboardScreen({
               setOptimisticOfficeCheckedIn(false);
               setOptimisticOfficeCheckinTime(null);
               await onRefresh?.();
-              Alert.alert(
+              AppAlert.show(
                 notCheckedIn ? 'Check in first' : 'Checkout failed',
                 notCheckedIn ? 'You haven\'t checked in at the office today. Tap "Check in office" when you\'re at the office to start your shift, then you can checkout.' : message
               );
@@ -651,7 +651,7 @@ export function HomeDashboardScreen({
 
   const handleCheckOut = useCallback(() => {
     if (!eventToday || hasEventCheckedOut || checkInLoading) return;
-    Alert.alert(
+    AppAlert.show(
       'Check out',
       'Are you sure you want to check out from this event?',
       [
@@ -664,7 +664,7 @@ export function HomeDashboardScreen({
               await api.attendance.checkout(eventToday.id);
               await onRefresh?.();
             } catch (e: unknown) {
-              Alert.alert('Check-out failed', e instanceof Error ? e.message : 'Try again.');
+              AppAlert.show('Check-out failed', e instanceof Error ? e.message : 'Try again.');
             } finally {
               setCheckInLoading(false);
             }
@@ -684,7 +684,7 @@ export function HomeDashboardScreen({
         location = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
         setUserLocation(location);
       } catch {
-        Alert.alert('Location needed', 'Enable location access to check in.');
+        AppAlert.show('Location needed', 'Enable location access to check in.');
         setCheckInLoading(false);
         return;
       }
@@ -694,7 +694,7 @@ export function HomeDashboardScreen({
 
     if (eventToday && !hasEventCheckedIn) {
       if (currentUserId != null && !canCheckInEligibility(eventToday, currentUserId, new Date())) {
-        Alert.alert(
+        AppAlert.show(
           'Cannot check in',
           getEventCheckInBlockedMessage(eventToday, currentUserId) ??
             'You cannot check in to this event.'
@@ -706,7 +706,7 @@ export function HomeDashboardScreen({
       const radius = eventToday.geofence_radius ?? 100;
       const { allowed, message } = checkCanCheckIn(location, eventLat, eventLon, radius);
       if (!allowed) {
-        Alert.alert('Check-in not allowed', message);
+        AppAlert.show('Check-in not allowed', message);
         return;
       }
       setCheckInLoading(true);
@@ -714,7 +714,7 @@ export function HomeDashboardScreen({
         await api.attendance.checkin(eventToday.id, location.latitude, location.longitude);
         await onRefresh?.();
       } catch (e: unknown) {
-        Alert.alert('Check-in failed', e instanceof Error ? e.message : 'Try again.');
+        AppAlert.show('Check-in failed', e instanceof Error ? e.message : 'Try again.');
       } finally {
         setCheckInLoading(false);
         return;
@@ -740,12 +740,12 @@ export function HomeDashboardScreen({
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : 'Try again.';
         if (String(msg).includes('404') || String(msg).includes('Not Found')) {
-          Alert.alert(
+          AppAlert.show(
             'Office check-in',
             'Server does not support office check-in yet. You are within the configured office radius.'
           );
         } else {
-          Alert.alert('Check-in failed', msg);
+          AppAlert.show('Check-in failed', msg);
         }
       } finally {
         setCheckInLoading(false);
@@ -779,7 +779,7 @@ export function HomeDashboardScreen({
     const extra = officeShiftLive?.extraHours ?? 0;
     if (!officeExtraAlertShownRef.current && extra > 1 / 60) {
       officeExtraAlertShownRef.current = true;
-      Alert.alert(
+      AppAlert.show(
         'Extra hours',
         'Extra hours are starting now. Your standard 8 working hours have been completed.'
       );

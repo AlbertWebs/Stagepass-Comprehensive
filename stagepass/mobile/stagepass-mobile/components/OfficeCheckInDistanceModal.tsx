@@ -10,14 +10,22 @@ type Props = {
   visible: boolean;
   radiusMeters: number;
   onDismiss: () => void;
+  eventName?: string;
+  distanceMeters?: number | null;
+  message?: string;
 };
 
-export function OfficeCheckInDistanceModal({ visible, radiusMeters, onDismiss }: Props) {
+export function OfficeCheckInDistanceModal({ visible, radiusMeters, onDismiss, eventName, distanceMeters, message }: Props) {
   const { colors, isDark } = useStagePassTheme();
   const surface = isDark ? '#171D2B' : '#FFFFFF';
   const text = isDark ? '#F8FAFC' : '#111827';
   const muted = isDark ? '#AAB5CA' : '#64748B';
   const border = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(15,23,42,0.09)';
+  const distanceLabel = distanceMeters == null
+    ? 'Location unavailable'
+    : distanceMeters >= 1000
+      ? `${(distanceMeters / 1000).toFixed(2)} km away`
+      : `${Math.round(distanceMeters)} m away`;
 
   return (
     <Modal
@@ -65,11 +73,22 @@ export function OfficeCheckInDistanceModal({ visible, radiusMeters, onDismiss }:
             <StagepassText style={styles.eyebrowText}>LOCATION CHECK</StagepassText>
           </View>
 
-          <StagepassText style={[styles.title, { color: text }]}>You’re outside the office</StagepassText>
+          <StagepassText style={[styles.title, { color: text }]}>{eventName ? 'Cannot check in yet' : 'You’re outside the office'}</StagepassText>
           <StagepassText style={[styles.description, { color: muted }]}>
-            Head to the office check-in area to record your attendance.
+            {eventName ? message ?? `Move closer to ${eventName} to check in.` : 'Head to the office check-in area to record your attendance.'}
           </StagepassText>
 
+          {eventName ? (
+            <View style={[styles.radiusCard, styles.distanceCard, { backgroundColor: isDark ? 'rgba(255,255,255,0.055)' : '#F8FAFC', borderColor: border }]}>
+              <View style={[styles.radiusIcon, { backgroundColor: isDark ? 'rgba(250,190,20,0.14)' : 'rgba(245,158,11,0.14)' }]}>
+                <Ionicons name="navigate-outline" size={18} color={isDark ? themeYellow : '#C47A00'} />
+              </View>
+              <View style={styles.radiusCopy}>
+                <StagepassText style={[styles.radiusLabel, { color: muted }]}>YOUR DISTANCE</StagepassText>
+                <StagepassText style={[styles.radiusValue, { color: text }]}>{distanceLabel}</StagepassText>
+              </View>
+            </View>
+          ) : null}
           <View style={[styles.radiusCard, { backgroundColor: isDark ? 'rgba(255,255,255,0.055)' : '#F8FAFC', borderColor: border }]}>
             <View style={[styles.radiusIcon, { backgroundColor: isDark ? 'rgba(250,190,20,0.14)' : 'rgba(245,158,11,0.14)' }]}>
               <Ionicons name="navigate-outline" size={18} color={isDark ? themeYellow : '#C47A00'} />
@@ -91,9 +110,7 @@ export function OfficeCheckInDistanceModal({ visible, radiusMeters, onDismiss }:
               <Ionicons name="arrow-forward" size={19} color={themeBlue} />
             </LinearGradient>
           </Pressable>
-          <StagepassText style={[styles.footer, { color: colors.textSecondary }]}>
-            Your location helps verify on-site attendance.
-          </StagepassText>
+          <StagepassText style={[styles.footer, { color: colors.textSecondary }]}>Your location helps verify on-site attendance.</StagepassText>
         </Animated.View>
       </View>
     </Modal>
@@ -119,6 +136,7 @@ const styles = StyleSheet.create({
   title: { textAlign: 'center', fontSize: 22, lineHeight: 28, fontWeight: '800', letterSpacing: -0.45 },
   description: { textAlign: 'center', fontSize: 14, lineHeight: 21, marginTop: 8, maxWidth: 300 },
   radiusCard: { width: '100%', flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 16, padding: 13, marginTop: 21, marginBottom: 18 },
+  distanceCard: { marginBottom: -11 },
   radiusIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   radiusCopy: { flex: 1 },
   radiusLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 1.05 },

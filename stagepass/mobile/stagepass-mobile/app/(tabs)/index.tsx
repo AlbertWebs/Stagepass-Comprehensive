@@ -210,7 +210,7 @@ export default function HomeScreen() {
   return (
     <Animated.View key={animateKey} entering={SlideInRight.duration(320)} style={{ flex: 1 }}>
       {role === 'crew' && crewHomeStyle !== 'classic' ? (
-        <MinimalCrewHomeScreen onRefresh={onRefresh} />
+        <MinimalCrewHomeScreen onRefresh={onRefresh} eventToday={eventToday ?? null} eventsTodayList={eventsTodayList} />
       ) : (
         <HomeDashboardScreen
           eventToday={eventToday ?? null}

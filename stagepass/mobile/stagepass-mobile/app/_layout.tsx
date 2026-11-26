@@ -13,6 +13,7 @@ import { Provider, useDispatch, useSelector } from 'react-redux';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
+import { AppAlertHost } from '@/components/AppAlert';
 
 import { ThemePreferenceProvider } from '@/context/ThemePreferenceContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -167,6 +168,7 @@ function RootLayoutNav() {
             <Stack.Screen name="events/request-allowance" options={{ headerShown: false }} />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack>
+          <AppAlertHost />
           {shouldRedirectToOnboarding && <Redirect href="/onboarding" />}
           {shouldRedirectToLogin && <Redirect href="/login" />}
         </>

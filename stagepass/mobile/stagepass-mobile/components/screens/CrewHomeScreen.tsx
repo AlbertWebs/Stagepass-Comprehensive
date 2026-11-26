@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
@@ -66,14 +67,14 @@ export function CrewHomeScreen({ event, onRefresh }: Props) {
   const handleCheckIn = async () => {
     if (!event?.id || actionLoading) return;
     if (!canCheckInBySchedule) {
-      Alert.alert(
+      AppAlert.show(
         'Cannot check in',
         getEventCheckInBlockedMessage(event, userId) ?? 'You cannot check in to this event.'
       );
       return;
     }
     if (!canCheckIn) {
-      Alert.alert('Cannot check in', locationMessage);
+      AppAlert.show('Cannot check in', locationMessage);
       return;
     }
     setActionLoading(true);
@@ -85,7 +86,7 @@ export function CrewHomeScreen({ event, onRefresh }: Props) {
       );
       await onRefresh();
     } catch (e: unknown) {
-      Alert.alert('Check-in failed', e instanceof Error ? e.message : 'Try again.');
+      AppAlert.show('Check-in failed', e instanceof Error ? e.message : 'Try again.');
     } finally {
       setActionLoading(false);
     }
@@ -93,7 +94,7 @@ export function CrewHomeScreen({ event, onRefresh }: Props) {
 
   const handleCheckOut = () => {
     if (!event?.id || actionLoading) return;
-    Alert.alert('Check out', 'Are you sure you want to check out from this event?', [
+    AppAlert.show('Check out', 'Are you sure you want to check out from this event?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Check out',
@@ -103,7 +104,7 @@ export function CrewHomeScreen({ event, onRefresh }: Props) {
             await api.attendance.checkout(event.id);
             await onRefresh();
           } catch (e: unknown) {
-            Alert.alert('Check-out failed', e instanceof Error ? e.message : 'Try again.');
+            AppAlert.show('Check-out failed', e instanceof Error ? e.message : 'Try again.');
           } finally {
             setActionLoading(false);
           }
@@ -174,7 +175,7 @@ export function CrewHomeScreen({ event, onRefresh }: Props) {
       <View style={styles.cards}>
         <Pressable
           style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={() => router.push(`/(tabs)/events/${event.id}`)}
+          onPress={() => router.push(`/events/${event.id}`)}
         >
           <ThemedText style={[styles.cardTitle, { color: colors.text }]}>Event Info</ThemedText>
           <ThemedText style={[styles.cardSub, { color: colors.textSecondary }]}>

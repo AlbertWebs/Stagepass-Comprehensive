@@ -1,12 +1,15 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated as RNAnimated,
+  PanResponder,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import Animated, { SlideInRight } from 'react-native-reanimated';
@@ -202,7 +205,7 @@ export default function EventsTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
-  const [calendarView, setCalendarView] = useState<'week' | 'month'>('week');
+  const [calendarView, setCalendarView] = useState<'week' | 'month'>('month');
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const d = new Date();
     d.setDate(1);
@@ -211,6 +214,24 @@ export default function EventsTab() {
   });
   const [eventFilter, setEventFilter] = useState<'all' | 'upcoming' | 'completed'>('upcoming');
   const [animateKey, setAnimateKey] = useState(0);
+  const { height: windowHeight } = useWindowDimensions();
+  const collapsedSheetHeight = 170;
+  const expandedSheetHeight = Math.max(340, Math.min(windowHeight * 0.66, 560));
+  const sheetHeight = useRef(new RNAnimated.Value(collapsedSheetHeight)).current;
+  const sheetDragStart = useRef(collapsedSheetHeight);
+  const sheetExpandedHeightRef = useRef(expandedSheetHeight);
+  sheetExpandedHeightRef.current = expandedSheetHeight;
+  const sheetPanResponder = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_event, gesture) => Math.abs(gesture.dy) > 5,
+    onPanResponderGrant: () => sheetHeight.stopAnimation((value: number) => { sheetDragStart.current = value; }),
+    onPanResponderMove: (_event, gesture) => sheetHeight.setValue(Math.max(collapsedSheetHeight, Math.min(sheetExpandedHeightRef.current, sheetDragStart.current - gesture.dy))),
+    onPanResponderRelease: (_event, gesture) => {
+      const current = sheetDragStart.current - gesture.dy;
+      const target = gesture.vy < -0.4 || (gesture.vy <= 0.4 && current > (collapsedSheetHeight + sheetExpandedHeightRef.current) / 2)
+        ? sheetExpandedHeightRef.current : collapsedSheetHeight;
+      RNAnimated.spring(sheetHeight, { toValue: target, useNativeDriver: false, damping: 24, stiffness: 180 }).start();
+    },
+  })).current;
   const scrollBottomPadding = TAB_BAR_HEIGHT;
 
   const loadEvents = useCallback(async () => {
@@ -417,7 +438,8 @@ export default function EventsTab() {
                 ))}
               </View>
               <View style={styles.monthGrid}>
-                {monthCells.map((d) => {
+                {Array.from({ length: 6 }, (_, row) => <View key={row} style={styles.monthRow}>
+                {monthCells.slice(row * 7, row * 7 + 7).map((d) => {
                   const key = dateKey(d);
                   const isSelected = key === selectedDateKey;
                   const inCurrentMonth = d.getMonth() === visibleMonth.getMonth();
@@ -440,12 +462,17 @@ export default function EventsTab() {
                     </Pressable>
                   );
                 })}
+                </View>)}
               </View>
             </View>
           )}
         </View>
 
-        <View style={styles.filterRow}>
+        <RNAnimated.View style={[styles.eventsSheet, { height: sheetHeight, backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={styles.sheetHandleTouchArea} {...sheetPanResponder.panHandlers} accessibilityRole="adjustable" accessibilityLabel="Event details panel">
+          <View style={[styles.sheetHandle, { backgroundColor: colors.textSecondary }]} />
+        </View>
+        <View style={[styles.filterRow, { borderColor: colors.border }]}>
           {(['upcoming', 'all', 'completed'] as const).map((filter) => {
             const isActive = eventFilter === filter;
             return (
@@ -454,7 +481,8 @@ export default function EventsTab() {
                 onPress={() => setEventFilter(filter)}
                 style={[
                   styles.filterTab,
-                  { borderColor: isActive ? themeYellow : colors.border },
+                  { borderColor: isActive ? themeYellow : 'transparent' },
+                  filter !== 'completed' && !isActive && { borderRightColor: colors.border, borderRightWidth: 1 },
                   isActive && { backgroundColor: themeYellow + '1c', borderWidth: 1.5 },
                 ]}
               >
@@ -540,6 +568,7 @@ export default function EventsTab() {
           </View>
         ) : (
           <ScrollView
+            style={styles.eventsListScroll}
             contentContainerStyle={[styles.list, { paddingBottom: scrollBottomPadding }]}
             showsVerticalScrollIndicator={false}
             refreshControl={
@@ -564,7 +593,7 @@ export default function EventsTab() {
                 }}
                 displayStatus={getEventDisplayStatus(item, userId)}
                 borderOnly={isTodaySelected}
-                onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(item.id) } }))}
+                onPress={() => handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(item.id) } }))}
                 extraActions={
                   canManageEventCrew(currentUser, item)
                     ? [
@@ -597,6 +626,7 @@ export default function EventsTab() {
             ))}
           </ScrollView>
         )}
+        </RNAnimated.View>
       </View>
       </Animated.View>
     </ThemedView>
@@ -609,6 +639,32 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: Spacing.lg,
   },
+  eventsSheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 2,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    paddingHorizontal: Spacing.lg,
+    overflow: 'hidden',
+  },
+  sheetHandleTouchArea: {
+    height: 34,
+    width: 100,
+    alignSelf: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sheetHandle: {
+    width: 40,
+    height: 5,
+    borderRadius: 3,
+  },
+  eventsListScroll: { flex: 1 },
   dateStripWrap: {
     marginHorizontal: -Spacing.lg,
     paddingBottom: Spacing.sm,
@@ -696,12 +752,15 @@ const styles = StyleSheet.create({
     fontWeight: Typography.labelWeight,
   },
   monthGrid: {
+    gap: 6,
+  },
+  monthRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 6,
   },
   monthCell: {
-    width: '13.3%',
+    flex: 1,
+    minWidth: 0,
     aspectRatio: 1,
     borderRadius: 10,
     borderWidth: 1,
@@ -714,16 +773,19 @@ const styles = StyleSheet.create({
   },
   filterRow: {
     flexDirection: 'row',
-    gap: Spacing.sm,
+    gap: 0,
     marginTop: Spacing.md,
     marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderRadius: Cards.borderRadius,
+    overflow: 'hidden',
   },
   filterTab: {
     flex: 1,
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.xs,
     borderRadius: Cards.borderRadius,
-    borderWidth: 1,
+    borderWidth: 0,
     alignItems: 'center',
   },
   filterTabText: {

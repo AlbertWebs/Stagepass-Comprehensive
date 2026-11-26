@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
@@ -97,11 +98,11 @@ export default function EventReportPreviewScreen() {
             .sort((a, b) => b.amount - a.amount)
         );
         if (eventRes.status === 'rejected' && reportRes.status === 'rejected') {
-          Alert.alert('Error', 'Failed to load event report.');
+          AppAlert.show('Error', 'Failed to load event report.');
         }
       } catch (e) {
         if (!alive) return;
-        Alert.alert('Error', e instanceof Error ? e.message : 'Failed to load event report.');
+        AppAlert.show('Error', e instanceof Error ? e.message : 'Failed to load event report.');
       } finally {
         if (alive) setLoading(false);
       }
@@ -127,7 +128,7 @@ export default function EventReportPreviewScreen() {
       const dataUri = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
       await Linking.openURL(dataUri);
     } catch {
-      Alert.alert('Preview unavailable', 'Could not open printable preview on this device.');
+      AppAlert.show('Preview unavailable', 'Could not open printable preview on this device.');
     } finally {
       setExporting(false);
     }
@@ -135,11 +136,11 @@ export default function EventReportPreviewScreen() {
 
   const useForEndEvent = () => {
     if (!acknowledged) {
-      Alert.alert('Confirm details', 'Please confirm that you reviewed event details and allowances.');
+      AppAlert.show('Confirm details', 'Please confirm that you reviewed event details and allowances.');
       return;
     }
     if (!confirmedBy.trim() || !signature.trim()) {
-      Alert.alert('Signature required', 'Enter confirmed by and signature before continuing.');
+      AppAlert.show('Signature required', 'Enter confirmed by and signature before continuing.');
       return;
     }
     router.replace({

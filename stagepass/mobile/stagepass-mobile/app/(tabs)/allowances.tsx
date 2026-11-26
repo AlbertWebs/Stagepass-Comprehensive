@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 /**
  * Allowances – approved payments and today’s daily allowance for crew/team leaders.
  */
@@ -142,12 +143,12 @@ export default function AllowancesScreen() {
 
   const submitAllocation = async () => {
     if (!selectedEventId || !selectedCrewId || !selectedTypeId) {
-      Alert.alert('Missing details', 'Select event, crew member, and allowance type.');
+      AppAlert.show('Missing details', 'Select event, crew member, and allowance type.');
       return;
     }
     const amountNumber = Number(amount);
     if (!Number.isFinite(amountNumber) || amountNumber < 0) {
-      Alert.alert('Invalid amount', 'Enter a valid allowance amount.');
+      AppAlert.show('Invalid amount', 'Enter a valid allowance amount.');
       return;
     }
     setAllocating(true);
@@ -162,9 +163,9 @@ export default function AllowancesScreen() {
       setAllocationModalVisible(false);
       resetAllocationForm();
       await load();
-      Alert.alert('Saved', 'Allowance allocated successfully.');
+      AppAlert.show('Saved', 'Allowance allocated successfully.');
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to allocate allowance.');
+      AppAlert.show('Error', e instanceof Error ? e.message : 'Failed to allocate allowance.');
     } finally {
       setAllocating(false);
     }

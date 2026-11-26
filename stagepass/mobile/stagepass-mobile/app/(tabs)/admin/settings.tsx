@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 /**
  * Admin/Director: System settings – inspiring layout with all fields.
  * Includes app name, contact (email, phone, WhatsApp), events, notifications, and features.
@@ -6,7 +7,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   RefreshControl,
   ScrollView,
   Share,
@@ -169,10 +169,10 @@ export default function AdminSettingsScreen() {
       });
       await api.settings.update(payload);
       await load();
-      Alert.alert('Saved', 'Settings updated successfully.');
+      AppAlert.show('Saved', 'Settings updated successfully.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save');
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to save settings');
+      AppAlert.show('Error', e instanceof Error ? e.message : 'Failed to save settings');
     } finally {
       setSaving(false);
     }
@@ -191,7 +191,7 @@ export default function AdminSettingsScreen() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Backup failed. Admin/Director only.';
       setBackupError(msg);
-      Alert.alert('Backup failed', msg);
+      AppAlert.show('Backup failed', msg);
     } finally {
       setBackupLoading(false);
     }

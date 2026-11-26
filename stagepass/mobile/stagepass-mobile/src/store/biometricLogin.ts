@@ -36,6 +36,25 @@ export async function hasBiometricStoredToken(): Promise<boolean> {
   }
 }
 
+/** Check server acceptance without signing in or changing the active API session. */
+export async function hasValidBiometricSession(): Promise<boolean> {
+  let token: string | null = null;
+  try {
+    token = (await SecureStore.getItemAsync(TOKEN_KEY))?.trim() ?? null;
+    if (!token || !(await getBiometricLoginEnabled())) return false;
+    const policy = await api.settings.getPublicAppConfig();
+    if (!policy.allow_biometric_mobile_login) return false;
+    await api.auth.validateBiometricSession(token);
+    return true;
+  } catch (error) {
+    const status = (error as { status?: number })?.status;
+    if ((status === 401 || status === 403) && token === await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null)) {
+      await invalidateBiometricSessionToken();
+    }
+    return false;
+  }
+}
+
 /**
  * Read-only: server policy for biometric (admin System Settings). Does not clear local data —
  * clearing here on login mount was wiping tokens and breaking Face ID / fingerprint.

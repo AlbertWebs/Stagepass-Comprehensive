@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 /**
  * Task detail: view task, update status (crew), add comments.
  */
@@ -6,7 +7,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -102,7 +102,7 @@ export default function TaskDetailScreen() {
         const updated = await api.tasks.updateStatus(taskId, status);
         setTask(updated);
       } catch (e) {
-        Alert.alert('Error', e instanceof Error ? e.message : 'Could not update status.');
+        AppAlert.show('Error', e instanceof Error ? e.message : 'Could not update status.');
       } finally {
         setUpdatingStatus(false);
       }
@@ -119,7 +119,7 @@ export default function TaskDetailScreen() {
       setCommentText('');
       await load();
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not add comment.');
+      AppAlert.show('Error', e instanceof Error ? e.message : 'Could not add comment.');
     } finally {
       setSubmittingComment(false);
     }

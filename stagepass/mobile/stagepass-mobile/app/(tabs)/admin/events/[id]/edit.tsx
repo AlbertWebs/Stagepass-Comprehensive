@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 /**
  * Admin: edit event form.
  */
@@ -58,7 +59,7 @@ export default function AdminEditEventScreen() {
         setLocation(e.location_name ?? '');
         setDescription(e.description ?? '');
       })
-      .catch(() => Alert.alert('Error', 'Failed to load event'))
+      .catch(() => AppAlert.show('Error', 'Failed to load event'))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -66,7 +67,7 @@ export default function AdminEditEventScreen() {
     if (!id) return;
     const trimmedName = name.trim();
     if (!trimmedName) {
-      Alert.alert('Required', 'Event name is required.');
+      AppAlert.show('Required', 'Event name is required.');
       return;
     }
     setSubmitting(true);
@@ -74,12 +75,12 @@ export default function AdminEditEventScreen() {
       const normalizedStartTime = normalizeTimeToHM(startTime);
       const normalizedEndTime = normalizeTimeToHM(endTime);
       if (!/^\d{2}:\d{2}$/.test(normalizedStartTime)) {
-        Alert.alert('Invalid start time', 'Use 24-hour format HH:mm, for example 09:00 or 17:30.');
+        AppAlert.show('Invalid start time', 'Use 24-hour format HH:mm, for example 09:00 or 17:30.');
         setSubmitting(false);
         return;
       }
       if (normalizedEndTime && !/^\d{2}:\d{2}$/.test(normalizedEndTime)) {
-        Alert.alert('Invalid end time', 'Use 24-hour format HH:mm, for example 17:00.');
+        AppAlert.show('Invalid end time', 'Use 24-hour format HH:mm, for example 17:00.');
         setSubmitting(false);
         return;
       }
@@ -92,9 +93,9 @@ export default function AdminEditEventScreen() {
         location_name: location.trim() || undefined,
         description: description.trim() || undefined,
       });
-      Alert.alert('Saved', 'Event updated.', [{ text: 'OK', onPress: () => router.back() }]);
+      AppAlert.show('Saved', 'Event updated.', [{ text: 'OK', onPress: () => router.back() }]);
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not update event.');
+      AppAlert.show('Error', e instanceof Error ? e.message : 'Could not update event.');
     } finally {
       setSubmitting(false);
     }

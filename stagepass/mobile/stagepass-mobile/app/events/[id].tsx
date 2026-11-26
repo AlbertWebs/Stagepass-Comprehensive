@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { useFocusEffect } from 'expo-router';
@@ -6,7 +7,6 @@ import { HomeHeader } from '@/components/HomeHeader';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Linking,
   PixelRatio,
   Pressable,
@@ -37,6 +37,8 @@ import { buildVenueStaticMapPreviewUrls, mapPreviewImageSource } from '~/utils/s
 import { useGeofence } from '~/hooks/useGeofence';
 import { useNavigationPress } from '@/src/utils/navigationPress';
 import { StagepassLoader } from '@/components/StagepassLoader';
+import { OfficeCheckInDistanceModal } from '@/components/OfficeCheckInDistanceModal';
+import { EventCheckOutModal } from '@/components/EventCheckOutModal';
 import { haversineDistanceMeters } from '~/utils/geofence';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -125,6 +127,9 @@ export default function EventDetailScreen() {
   const [eventAllowances, setEventAllowances] = useState<EarnedAllowanceDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [checkInNotice, setCheckInNotice] = useState<string | null>(null);
+  const [checkOutDialog, setCheckOutDialog] = useState<'confirm' | 'notice' | null>(null);
+  const [checkOutNotice, setCheckOutNotice] = useState<string | null>(null);
   const [clockTick, setClockTick] = useState(0);
   const [extraNotified, setExtraNotified] = useState(false);
   const [leaderCheckInUserId, setLeaderCheckInUserId] = useState<number | null>(null);
@@ -167,7 +172,7 @@ export default function EventDetailScreen() {
           })
         );
       })
-      .catch(() => Alert.alert('Error', 'Failed to load event'))
+      .catch(() => AppAlert.show('Error', 'Failed to load event'))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -268,7 +273,7 @@ export default function EventDetailScreen() {
     if (sessionStats.withinScheduledShift) return;
     if (sessionStats.extraHours > 0) {
       setExtraNotified(true);
-      Alert.alert(
+      AppAlert.show(
         'Extra hours',
         'Extra hours are starting now. Your standard 8 working hours have been completed.'
       );
@@ -306,7 +311,7 @@ export default function EventDetailScreen() {
   const handleLeaderCheckInMember = async (userId: number) => {
     if (!event?.id) return;
     if (!canLeaderManualCheckIn(event, eligibilityNowDetail)) {
-      Alert.alert(
+      AppAlert.show(
         'Cannot check in',
         getLeaderManualCheckInBlockedMessage(event, eligibilityNowDetail) ??
           'This event is no longer open for check-in.'
@@ -327,7 +332,7 @@ export default function EventDetailScreen() {
       const updated = await api.events.get(event.id);
       setEvent(updated);
     } catch (e: unknown) {
-      Alert.alert('Check-in failed', e instanceof Error ? e.message : 'Could not check in crew member.');
+      AppAlert.show('Check-in failed', e instanceof Error ? e.message : 'Could not check in crew member.');
     } finally {
       setLeaderCheckInUserId(null);
     }
@@ -336,11 +341,7 @@ export default function EventDetailScreen() {
   const handleCheckIn = async () => {
     if (!event?.id || actionLoading) return;
     if (currentUserId != null && !canCheckInEligibility(event, currentUserId, new Date())) {
-      Alert.alert(
-        'Cannot check in',
-        getEventCheckInBlockedMessage(event, currentUserId) ??
-          'You are not eligible to check in for this event.'
-      );
+      setCheckInNotice(getEventCheckInBlockedMessage(event, currentUserId) ?? 'You are not eligible to check in for this event.');
       return;
     }
     const eventLat = event.latitude ?? null;
@@ -348,7 +349,7 @@ export default function EventDetailScreen() {
     const radius = event.geofence_radius ?? 100;
     const { allowed, message } = checkCanCheckIn(userLocation, eventLat, eventLon, radius);
     if (!allowed) {
-      Alert.alert('Cannot check in', message);
+      setCheckInNotice(message);
       return;
     }
     setActionLoading(true);
@@ -361,7 +362,7 @@ export default function EventDetailScreen() {
       const updated = await api.events.get(event.id);
       setEvent(updated);
     } catch (e: unknown) {
-      Alert.alert('Check-in failed', e instanceof Error ? e.message : 'Try again.');
+      setCheckInNotice(e instanceof Error ? e.message : 'Check-in failed. Try again.');
     } finally {
       setActionLoading(false);
     }
@@ -375,7 +376,7 @@ export default function EventDetailScreen() {
       const updated = await api.events.get(event.id);
       setEvent(updated);
       if ((role === 'team_leader' || role === 'admin') && canManageEventCrew) {
-        Alert.alert(
+        AppAlert.show(
           'Done for the Day?',
           'Are you done for the day?',
           [
@@ -383,7 +384,7 @@ export default function EventDetailScreen() {
             {
               text: 'Done for the Day',
               onPress: () =>
-                Alert.alert(
+                AppAlert.show(
                   'Important',
                   'If this event will continue tomorrow, do not confirm "Done for the Day". Use this only when the event should be closed for today.',
                   [
@@ -404,7 +405,8 @@ export default function EventDetailScreen() {
         );
       }
     } catch (e: unknown) {
-      Alert.alert('Check-out failed', e instanceof Error ? e.message : 'Try again.');
+      setCheckOutNotice(e instanceof Error ? e.message : 'Check-out failed. Try again.');
+      setCheckOutDialog('notice');
     } finally {
       setActionLoading(false);
     }
@@ -413,13 +415,12 @@ export default function EventDetailScreen() {
   const handleCheckOut = () => {
     if (!event?.id || actionLoading || checkoutTime) return;
     if (currentUserId != null && !canCheckOutEligibility(event, currentUserId, new Date())) {
-      Alert.alert('Cannot check out', 'This event is no longer open for check-out.');
+      setCheckOutNotice('This event is no longer open for check-out.');
+      setCheckOutDialog('notice');
       return;
     }
-    Alert.alert('Check out', 'Are you sure you want to check out from this event?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Check out', onPress: () => void performCheckOut() },
-    ]);
+    setCheckOutNotice(null);
+    setCheckOutDialog('confirm');
   };
 
   const rippleProgress = useSharedValue(0);
@@ -1241,6 +1242,24 @@ export default function EventDetailScreen() {
           ) : null}
         </Animated.View>
       </ScrollView>
+      <OfficeCheckInDistanceModal
+        visible={checkInNotice != null}
+        eventName={event.name}
+        message={checkInNotice ?? undefined}
+        distanceMeters={distanceFromEventMeters}
+        radiusMeters={event.geofence_radius ?? 100}
+        onDismiss={() => setCheckInNotice(null)}
+      />
+      <EventCheckOutModal
+        visible={checkOutDialog != null}
+        eventName={event.name}
+        message={checkOutDialog === 'notice' ? checkOutNotice : null}
+        onDismiss={() => setCheckOutDialog(null)}
+        onConfirm={() => {
+          setCheckOutDialog(null);
+          void performCheckOut();
+        }}
+      />
     </ThemedView>
   );
 }

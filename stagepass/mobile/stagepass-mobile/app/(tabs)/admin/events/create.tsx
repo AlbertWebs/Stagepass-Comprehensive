@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 /**
  * Admin: create a new event.
  * Elegant form with date/time pickers and Google Places location (same as web admin).
@@ -8,7 +9,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -93,7 +93,7 @@ export default function AdminCreateEventScreen() {
   const handleSubmit = async () => {
     const trimmedName = name.trim();
     if (!trimmedName) {
-      Alert.alert('Required', 'Event name is required.');
+      AppAlert.show('Required', 'Event name is required.');
       return;
     }
     setSubmitting(true);
@@ -109,7 +109,7 @@ export default function AdminCreateEventScreen() {
         longitude,
         description: description.trim() || undefined,
       });
-      Alert.alert('Created', 'Event has been created.', [
+      AppAlert.show('Created', 'Event has been created.', [
         {
           text: 'Manage',
           onPress: () =>
@@ -118,7 +118,7 @@ export default function AdminCreateEventScreen() {
         { text: 'Back to list', onPress: () => router.replace('/admin/events') },
       ]);
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not create event.');
+      AppAlert.show('Error', e instanceof Error ? e.message : 'Could not create event.');
     } finally {
       setSubmitting(false);
     }

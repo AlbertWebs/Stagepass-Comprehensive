@@ -256,19 +256,31 @@ export default function ActivityScreen() {
                 return (
                   <Pressable
                     key={ev.id}
-                    onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(ev.id) } }))}
+                    onPress={() => handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(ev.id) } }))}
                     style={({ pressed }) => [
                       styles.todayCard,
                       {
                         backgroundColor: colors.surface,
-                        borderColor: colors.border,
+                        borderColor: themeYellow + '66',
                         opacity: pressed ? NAV_PRESSED_OPACITY : 1,
                         marginBottom: Spacing.sm,
                       },
                     ]}
                   >
-                    <View style={[styles.todayAccent, { backgroundColor: themeBlue }]} />
                     <View style={styles.todayBody}>
+                      <View style={styles.todayTopRow}>
+                        <View style={[styles.todayIcon, { backgroundColor: themeYellow + '22' }]}>
+                          <Ionicons name="calendar" size={18} color={themeYellow} />
+                        </View>
+                        <ThemedText style={[styles.todayEyebrow, { color: themeYellow }]}>TODAY’S EVENT</ThemedText>
+                        {activityBadge ? (
+                          <View style={[styles.badge, { backgroundColor: activityBadge.key === 'checked_in' ? colors.success + '22' : themeYellow + '22' }]}>
+                            <ThemedText style={[styles.badgeText, { color: activityBadge.key === 'checked_in' ? colors.success : colors.text }]}>
+                              {activityBadge.label}
+                            </ThemedText>
+                          </View>
+                        ) : null}
+                      </View>
                       <ThemedText style={[styles.todayName, { color: colors.text }]} numberOfLines={2}>
                         {ev.name}
                       </ThemedText>
@@ -293,48 +305,10 @@ export default function ActivityScreen() {
                         </View>
                       )}
                       <View style={styles.todayFooter}>
-                        {activityBadge ? (
-                          <View
-                            style={[
-                              styles.badge,
-                              {
-                                backgroundColor:
-                                  activityBadge.key === 'event_passed' || activityBadge.key === 'closed' || activityBadge.key === 'completed'
-                                    ? colors.textSecondary + '22'
-                                    : activityBadge.key === 'checked_in'
-                                      ? colors.success + '22'
-                                      : themeYellow + '22',
-                              },
-                            ]}
-                          >
-                            {activityBadge.key === 'checked_in' ? (
-                              <Ionicons name="checkmark-circle" size={Icons.xs} color={colors.success} />
-                            ) : null}
-                            <ThemedText
-                              style={[
-                                styles.badgeText,
-                                {
-                                  color:
-                                    activityBadge.key === 'event_passed' || activityBadge.key === 'closed' || activityBadge.key === 'completed'
-                                      ? colors.textSecondary
-                                      : activityBadge.key === 'checked_in'
-                                        ? colors.success
-                                        : colors.brandText,
-                                },
-                              ]}
-                            >
-                              {activityBadge.label}
-                            </ThemedText>
-                          </View>
-                        ) : null}
-                        {showTapCheckIn ? (
-                          <View style={[styles.badge, { backgroundColor: themeYellow + '22' }]}>
-                            <ThemedText style={[styles.badgeText, { color: colors.brandText }]}>Tap to check in</ThemedText>
-                          </View>
-                        ) : null}
-                        <ThemedText style={[styles.todayCta, { color: colors.brandText }]}>
-                          View details →
+                        <ThemedText style={[styles.todayCta, { color: colors.text }]}>
+                          {showTapCheckIn ? 'Open event to check in' : 'View event details'}
                         </ThemedText>
+                        <View style={styles.todayArrow}><Ionicons name="arrow-forward" size={18} color={themeBlue} /></View>
                       </View>
                     </View>
                   </Pressable>
@@ -368,7 +342,7 @@ export default function ActivityScreen() {
                 onPress={() =>
                   todayEvents[0] &&
                   handleNav(() =>
-                    router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(todayEvents[0].id) } })
+                    router.push({ pathname: '/events/[id]', params: { id: String(todayEvents[0].id) } })
                   )
                 }
                 style={({ pressed }) => [
@@ -405,7 +379,7 @@ export default function ActivityScreen() {
                   event={item}
                   viewerUserId={viewerId}
                   eligibilityNow={eligibilityNow}
-                  onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/events/[id]', params: { id: String(item.id) } }))}
+                  onPress={() => handleNav(() => router.push({ pathname: '/events/[id]', params: { id: String(item.id) } }))}
                 />
               ))}
               {lastPage > 1 ? (
@@ -555,29 +529,33 @@ const styles = StyleSheet.create({
   },
   statusDot: { width: 5, height: 5, borderRadius: 3 },
   todayCard: {
-    flexDirection: 'row',
-    borderRadius: Cards.borderRadius,
+    borderRadius: 20,
     borderWidth: 1,
     overflow: 'hidden',
-    minHeight: 80,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    minHeight: 164,
+    shadowColor: themeYellow,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  todayAccent: { width: 4 },
-  todayBody: { flex: 1, padding: Spacing.lg, paddingLeft: Spacing.md },
-  todayName: { fontSize: 16, fontWeight: '700', marginBottom: Spacing.xs },
-  todayMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md, marginBottom: Spacing.sm },
-  todayMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  todayMetaText: { fontSize: 12 },
+  todayBody: { padding: Spacing.lg, gap: Spacing.sm },
+  todayTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  todayIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  todayEyebrow: { flex: 1, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  todayName: { fontSize: 19, lineHeight: 25, fontWeight: '800' },
+  todayMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
+  todayMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  todayMetaText: { fontSize: 13 },
   todayFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    flexWrap: 'wrap',
     gap: Spacing.sm,
+    marginTop: Spacing.xs,
+    paddingTop: Spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(148,163,184,0.25)',
   },
   badge: {
     flexDirection: 'row',
@@ -588,7 +566,8 @@ const styles = StyleSheet.create({
     borderRadius: 9999,
   },
   badgeText: { fontSize: Typography.titleSection, fontWeight: Typography.labelWeight },
-  todayCta: { fontSize: Typography.bodySmall, fontWeight: '600' },
+  todayCta: { flex: 1, fontSize: Typography.bodySmall, fontWeight: '700' },
+  todayArrow: { width: 32, height: 32, borderRadius: 16, backgroundColor: themeYellow, alignItems: 'center', justifyContent: 'center' },
   quickRow: { flexDirection: 'row', gap: Spacing.md },
   quickCard: {
     flex: 1,

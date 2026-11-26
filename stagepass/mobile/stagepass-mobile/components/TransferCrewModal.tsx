@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { api, type Event as EventType } from '~/services/api';
@@ -75,7 +76,7 @@ export function TransferCrewModal({ visible, onClose, sourceEventId, crew, membe
     if (!sourceEventId || !effectiveMember) return;
     const targetEventId = selectedTargetEventId ? Number(selectedTargetEventId) : 0;
     if (!targetEventId) {
-      Alert.alert('Select event', 'Choose a destination event for this crew member.');
+      AppAlert.show('Select event', 'Choose a destination event for this crew member.');
       return;
     }
     setTransferring(true);
@@ -83,9 +84,9 @@ export function TransferCrewModal({ visible, onClose, sourceEventId, crew, membe
       await api.events.transferUser(sourceEventId, effectiveMember.id, targetEventId);
       await onTransferred();
       onClose();
-      Alert.alert('Transferred', `${effectiveMember.name} has been transferred.`);
+      AppAlert.show('Transferred', `${effectiveMember.name} has been transferred.`);
     } catch (e) {
-      Alert.alert('Transfer failed', e instanceof Error ? e.message : 'Could not transfer crew member.');
+      AppAlert.show('Transfer failed', e instanceof Error ? e.message : 'Could not transfer crew member.');
     } finally {
       setTransferring(false);
     }

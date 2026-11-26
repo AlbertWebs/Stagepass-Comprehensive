@@ -6,7 +6,6 @@ import {
   type Client,
   type EarnedAllowanceDetail,
   type Event,
-  type EquipmentItem,
   type PaymentItem,
   type ReportFilters,
   type ReportFullEventResponse,
@@ -118,6 +117,7 @@ export default function EventDetail() {
   const [payPerDiem, setPayPerDiem] = useState('');
   const [payAllowances, setPayAllowances] = useState('');
   const [paymentSaving, setPaymentSaving] = useState(false);
+  const [teamLeaderSuccess, setTeamLeaderSuccess] = useState<string | null>(null);
   const [earnedAllowances, setEarnedAllowances] = useState<EarnedAllowanceDetail[]>([]);
   const [crewRegister, setCrewRegister] = useState<NonNullable<ReportFullEventResponse['events'][number]['crew_register']>>([]);
   const [allEvents, setAllEvents] = useState<Event[]>([]);
@@ -131,9 +131,6 @@ export default function EventDetail() {
   const [endEventOpen, setEndEventOpen] = useState(false);
   const [endComment, setEndComment] = useState('');
   const [endSaving, setEndSaving] = useState(false);
-  const [equipmentList, setEquipmentList] = useState<EquipmentItem[]>([]);
-  const [selectedEquipmentId, setSelectedEquipmentId] = useState('');
-  const [attachingEquipment, setAttachingEquipment] = useState(false);
   const [exportingReport, setExportingReport] = useState<ReportType | 'csv' | null>(null);
 
   const fetchEvent = useCallback(() => {
@@ -159,9 +156,6 @@ export default function EventDetail() {
     api.users.list({}).then((r) => setUsers(r.data ?? [])).catch(() => setUsers([]));
   }, []);
 
-  useEffect(() => {
-    api.equipment.list({}).then((r) => setEquipmentList(r.data ?? [])).catch(() => setEquipmentList([]));
-  }, []);
   useEffect(() => {
     api.clients.list({ per_page: 500 }).then((r) => setClients(r.data ?? [])).catch(() => setClients([]));
   }, []);
@@ -324,9 +318,17 @@ export default function EventDetail() {
     const value = userId === '' ? null : Number(userId);
     setTeamLeaderSaving(true);
     setError(null);
+    setTeamLeaderSuccess(null);
     try {
-      await api.events.update(event.id, { team_leader_id: value } as Partial<Event>);
-      fetchEvent();
+      const updatedEvent = await api.events.update(event.id, { team_leader_id: value });
+      setEvent((current) => current ? { ...current, ...updatedEvent } : updatedEvent);
+      if (value === null) {
+        setTeamLeaderSuccess('Team leader assignment removed.');
+      } else {
+        const leaderName = updatedEvent.team_leader?.name ?? users.find((user) => user.id === value)?.name;
+        setTeamLeaderSuccess(leaderName ? `${leaderName} is now the team leader.` : 'Team leader assigned successfully.');
+      }
+      window.setTimeout(() => setTeamLeaderSuccess(null), 6000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update team leader');
     } finally {
@@ -374,22 +376,6 @@ export default function EventDetail() {
       setError(err instanceof Error ? err.message : 'Failed to mark as arrived');
     } finally {
       setMarkingArrivalId(null);
-    }
-  };
-
-  const handleAttachEquipment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!event || !selectedEquipmentId) return;
-    setAttachingEquipment(true);
-    setError(null);
-    try {
-      await api.events.attachEquipment(event.id, Number(selectedEquipmentId));
-      setSelectedEquipmentId('');
-      fetchEvent();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add equipment');
-    } finally {
-      setAttachingEquipment(false);
     }
   };
 
@@ -682,6 +668,15 @@ export default function EventDetail() {
                   {teamLeaderSaving && (
                     <span className="ml-2 text-xs text-slate-500">Saving…</span>
                   )}
+                  {teamLeaderSuccess && (
+                    <div role="status" className="mt-3 flex max-w-md items-center gap-3 rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50 via-white to-amber-50 px-4 py-3 shadow-sm">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-lg font-bold text-white shadow-sm" aria-hidden="true">✓</span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-emerald-950">Assignment saved</span>
+                        <span className="block text-xs text-slate-600">{teamLeaderSuccess} An app notification is being sent.</span>
+                      </span>
+                    </div>
+                  )}
                 </dd>
               </div>
               <div>
@@ -821,72 +816,6 @@ export default function EventDetail() {
           </div>
         </SectionCard>
 
-        <SectionCard sectionLabel="Event equipment">
-          <div className="flex flex-col">
-            <div
-              className="flex flex-shrink-0 items-center justify-between border-b px-6 py-3.5"
-              style={{ borderColor: '#b3c1e1', background: 'linear-gradient(180deg, #eef1f9 0%, #ffffff 100%)' }}
-            >
-              <span className="text-sm font-semibold" style={{ color: '#1e2d5c' }}>
-                {(event.event_equipment?.length ?? 0)} item{(event.event_equipment?.length ?? 0) === 1 ? '' : 's'} assigned
-              </span>
-              <form onSubmit={handleAttachEquipment} className="flex flex-wrap items-center gap-2">
-                <select
-                  value={selectedEquipmentId}
-                  onChange={(e) => setSelectedEquipmentId(e.target.value)}
-                  className="form-select text-sm"
-                  aria-label="Select equipment"
-                >
-                  <option value="">Add equipment…</option>
-                  {equipmentList
-                    .filter((eq) => !(event.event_equipment ?? []).some((ae) => ae.equipment_id === eq.id))
-                    .map((eq) => (
-                      <option key={eq.id} value={eq.id}>
-                        {eq.name} {eq.serial_number ? `(${eq.serial_number})` : ''}
-                      </option>
-                    ))}
-                </select>
-                <button
-                  type="submit"
-                  disabled={attachingEquipment || !selectedEquipmentId}
-                  className="btn-brand text-sm disabled:opacity-50"
-                >
-                  {attachingEquipment ? 'Adding…' : 'Add'}
-                </button>
-              </form>
-            </div>
-            <div className="overflow-x-auto">
-              {(event.event_equipment?.length ?? 0) > 0 ? (
-                <table className="w-full table-header-brand">
-                  <thead>
-                    <tr>
-                      <th>Equipment</th>
-                      <th>Serial</th>
-                      <th>Condition</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(event.event_equipment ?? []).map((ae) => (
-                      <tr key={ae.id} className="border-b border-slate-100">
-                        <td className="px-6 py-4 font-medium text-slate-900">{ae.equipment?.name ?? `#${ae.equipment_id}`}</td>
-                        <td className="px-6 py-4 text-slate-600">{ae.equipment?.serial_number ?? '–'}</td>
-                        <td className="px-6 py-4">
-                          <span className="rounded px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-700">
-                            {ae.equipment?.condition ?? '–'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="px-6 py-10 text-center">
-                  <p className="text-sm text-slate-500">No equipment assigned yet. Add items above.</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </SectionCard>
       </div>
 
       <SectionCard sectionLabel="Reports">

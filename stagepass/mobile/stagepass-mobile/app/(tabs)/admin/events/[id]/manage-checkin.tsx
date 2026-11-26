@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 /**
  * Admin/team leader: manage check-in – view crew status and check in members on their behalf.
  */
@@ -7,7 +8,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -73,7 +73,7 @@ export default function ManageCheckInScreen() {
         setCrewStatus(built);
       }
     } catch {
-      Alert.alert('Error', 'Failed to load crew status.');
+      AppAlert.show('Error', 'Failed to load crew status.');
     } finally {
       setLoading(false);
     }
@@ -86,7 +86,7 @@ export default function ManageCheckInScreen() {
   const handleCheckInOnBehalf = async (userId: number) => {
     if (!eventId || !event) return;
     if (!canLeaderManualCheckIn(event)) {
-      Alert.alert(
+      AppAlert.show(
         'Cannot check in',
         getLeaderManualCheckInBlockedMessage(event) ?? 'This event is no longer open for check-in.'
       );
@@ -105,7 +105,7 @@ export default function ManageCheckInScreen() {
       await api.attendance.checkinOnBehalf(eventId, userId, lat, lon);
       await loadData();
     } catch (e) {
-      Alert.alert('Check-in failed', e instanceof Error ? e.message : 'Could not check in crew member.');
+      AppAlert.show('Check-in failed', e instanceof Error ? e.message : 'Could not check in crew member.');
     } finally {
       setCheckingInId(null);
     }
@@ -117,14 +117,14 @@ export default function ManageCheckInScreen() {
     try {
       if (member.is_paused) {
         await api.events.resumeCrew(eventId, member.user_id);
-        Alert.alert('Success', 'Crew resumed successfully');
+        AppAlert.show('Success', 'Crew resumed successfully');
       } else {
         await api.events.pauseCrew(eventId, member.user_id);
-        Alert.alert('Success', 'Crew paused successfully');
+        AppAlert.show('Success', 'Crew paused successfully');
       }
       await loadData();
     } catch (e) {
-      Alert.alert('Action failed', e instanceof Error ? e.message : 'Could not update crew status.');
+      AppAlert.show('Action failed', e instanceof Error ? e.message : 'Could not update crew status.');
     } finally {
       setSavingStatusId(null);
     }
@@ -134,7 +134,7 @@ export default function ManageCheckInScreen() {
     if (!eventId) return;
     let amount: number | null = null;
     if (type === 'cab') {
-      Alert.prompt(
+      AppAlert.prompt(
         'Cab amount',
         'Enter transport amount (KSh)',
         [
@@ -144,16 +144,16 @@ export default function ManageCheckInScreen() {
             onPress: async (value) => {
               const parsed = Number(value ?? '');
               if (!Number.isFinite(parsed) || parsed < 0) {
-                Alert.alert('Invalid amount', 'Please enter a valid amount.');
+                AppAlert.show('Invalid amount', 'Please enter a valid amount.');
                 return;
               }
               setSavingStatusId(member.user_id);
               try {
                 await api.events.recordCrewTransport(eventId, member.user_id, { transport_type: 'cab', transport_amount: parsed });
-                Alert.alert('Success', 'Transport recorded successfully');
+                AppAlert.show('Success', 'Transport recorded successfully');
                 await loadData();
               } catch (e) {
-                Alert.alert('Transport failed', e instanceof Error ? e.message : 'Could not record transport.');
+                AppAlert.show('Transport failed', e instanceof Error ? e.message : 'Could not record transport.');
               } finally {
                 setSavingStatusId(null);
               }
@@ -167,10 +167,10 @@ export default function ManageCheckInScreen() {
     setSavingStatusId(member.user_id);
     try {
       await api.events.recordCrewTransport(eventId, member.user_id, { transport_type: type, transport_amount: amount });
-      Alert.alert('Success', 'Transport recorded successfully');
+      AppAlert.show('Success', 'Transport recorded successfully');
       await loadData();
     } catch (e) {
-      Alert.alert('Transport failed', e instanceof Error ? e.message : 'Could not record transport.');
+      AppAlert.show('Transport failed', e instanceof Error ? e.message : 'Could not record transport.');
     } finally {
       setSavingStatusId(null);
     }

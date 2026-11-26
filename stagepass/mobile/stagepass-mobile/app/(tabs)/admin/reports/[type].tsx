@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 /**
  * Report builder: filters + Generate Report + result view + Export (printable HTML).
  */
@@ -7,7 +8,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Linking,
   Platform,
   Pressable,
@@ -148,7 +148,7 @@ export default function AdminReportBuilderScreen() {
           setResult(await api.reports.events(filters));
       }
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to generate report.');
+      AppAlert.show('Error', e instanceof Error ? e.message : 'Failed to generate report.');
     } finally {
       setLoading(false);
     }
@@ -162,14 +162,14 @@ export default function AdminReportBuilderScreen() {
       try {
         await Linking.openURL(dataUri);
       } catch {
-        Alert.alert(
+        AppAlert.show(
           'Export report',
           'For PDF export, use the Web Admin Dashboard → Reports with the same date range and filters. The report summary is shown above.',
           [{ text: 'OK' }]
         );
       }
     } catch (e) {
-      Alert.alert(
+      AppAlert.show(
         'Export report',
         'For PDF export, use the Web Admin Dashboard → Reports. The report summary is shown above.',
         [{ text: 'OK' }]

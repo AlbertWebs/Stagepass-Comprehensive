@@ -377,7 +377,14 @@ class EventController extends Controller
                 if ($previous !== $next) {
                     $assignee = User::query()->find($newTeamLeaderId);
                     if ($assignee) {
-                        $assignee->notify(new TeamLeaderAssignedNotification($event));
+                        $eventForNotification = $event->fresh();
+                        dispatch(function () use ($assignee, $eventForNotification): void {
+                            try {
+                                $assignee->notify(new TeamLeaderAssignedNotification($eventForNotification));
+                            } catch (\Throwable $exception) {
+                                report($exception);
+                            }
+                        })->afterResponse();
                     }
                 }
             }

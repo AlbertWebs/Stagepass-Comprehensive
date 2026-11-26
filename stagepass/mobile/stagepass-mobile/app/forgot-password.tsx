@@ -1,10 +1,10 @@
+import { AppAlert } from '@/components/AppAlert';
 /** Forgot PIN recovery screen, styled to match the login screen. */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -68,7 +68,7 @@ export default function ForgotPasswordScreen() {
   const handleSubmit = async () => {
     const trimmed = email.trim();
     if (!trimmed) {
-      Alert.alert('Email required', 'Please enter your email address.');
+      AppAlert.show('Email required', 'Please enter your email address.');
       return;
     }
     setLoading(true);
@@ -77,7 +77,7 @@ export default function ForgotPasswordScreen() {
       await api.auth.forgotPassword(trimmed);
       setSent(true);
     } catch (error: unknown) {
-      Alert.alert(
+      AppAlert.show(
         'Request failed',
         error instanceof Error ? error.message : 'Could not send reset link. Try again.'
       );

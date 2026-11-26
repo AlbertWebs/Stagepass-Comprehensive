@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 /**
  * Login screen – modern UX: in-button loading, smooth transition to home.
  * Logo, Welcome Back, username + 4-digit PIN, Sign In button (Loading… + spinner when submitting).
@@ -8,7 +9,7 @@ import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
+  AppState,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -35,6 +36,7 @@ import {
   getBiometricLabel,
   getBiometricLoginEnabled,
   hasBiometricStoredToken,
+  hasValidBiometricSession,
   isBiometricHardwareAvailable,
   refreshBiometricCredentialIfEnabled,
   saveBiometricCredential,
@@ -43,6 +45,8 @@ import {
 import {
   clearLoginLockout,
   clearSessionAfterAuthFailure,
+  clearStoredToken,
+  isRejectedSession,
   getLastUsername,
   getLoginLockoutUntil,
   saveToken,
@@ -79,7 +83,7 @@ export default function LoginScreen() {
   const [biometricIconName, setBiometricIconName] = useState<
     'scan-outline' | 'finger-print-outline' | 'eye-outline'
   >('finger-print-outline');
-  const [serverAllowsBiometric, setServerAllowsBiometric] = useState(true);
+  const [serverAllowsBiometric, setServerAllowsBiometric] = useState(false);
   const [biometricLoading, setBiometricLoading] = useState(false);
   const [biometricPromptVisible, setBiometricPromptVisible] = useState(false);
   const [biometricPromptToken, setBiometricPromptToken] = useState<string | null>(null);
@@ -119,17 +123,31 @@ export default function LoginScreen() {
       if (!mounted) return;
       setBiometricAvailable(hw);
       setBiometricOptIn(optIn);
-      setHasBiometricToken(hasToken);
       setBiometricLabel(label);
       setBiometricIconName(iconName);
       const allowed = await fetchServerAllowsBiometricLogin();
       if (!mounted) return;
       setServerAllowsBiometric(allowed);
+      const valid = hw && optIn && hasToken && allowed && await hasValidBiometricSession();
+      if (mounted) setHasBiometricToken(valid);
     })();
     return () => {
       mounted = false;
     };
   }, [setPreference]);
+
+  useEffect(() => {
+    let active = true;
+    const subscription = AppState.addEventListener('change', state => {
+      setHasBiometricToken(false);
+      if (state === 'active') {
+        void hasValidBiometricSession().then(valid => {
+          if (active && AppState.currentState === 'active') setHasBiometricToken(valid);
+        });
+      }
+    });
+    return () => { active = false; subscription.remove(); };
+  }, []);
 
   // Welcome title personalization (avoid showing template placeholders like {{First Name}}).
   useEffect(() => {
@@ -214,30 +232,19 @@ export default function LoginScreen() {
 
   const handleBiometricLogin = async () => {
     if (isLocked || biometricLoading) return;
-    const hasStored = await hasBiometricStoredToken();
-    if (!hasStored) {
-      // Face unlock token hasn't been saved yet (or was cleared). If the user already entered
-      // username + PIN, treat this biometric button as a fallback and complete sign-in.
-      const trimmedUser = username.trim();
-      const pinOk = !!pin && pin.length >= PIN_LENGTH;
-      if (trimmedUser && pinOk) {
-        await handleLogin();
-        return;
-      }
+    setBiometricLoading(true);
+    const sessionValid = await hasValidBiometricSession();
+    if (!sessionValid) {
       setHasBiometricToken(false);
-      Alert.alert(
-        'Biometric sign-in',
-        'There is no saved session for biometric unlock. Sign in with your username and PIN once, then you can use biometrics again.'
-      );
+      setBiometricLoading(false);
       return;
     }
-    setBiometricLoading(true);
     try {
       const { token: raw, userCancelled } = await unlockWithBiometric();
       const token = raw?.trim();
       if (!token) {
         if (!userCancelled) {
-          Alert.alert(
+          AppAlert.show(
             'Biometric sign-in',
             'Biometric unlock did not complete. Sign in with your username and PIN.'
           );
@@ -250,20 +257,26 @@ export default function LoginScreen() {
       let user: Awaited<ReturnType<typeof api.auth.me>> | null = null;
       try {
         user = await api.auth.meLocal401();
-      } catch {
-        await clearSessionAfterAuthFailure();
+      } catch (error) {
+        const rejected = isRejectedSession(error);
+        if (rejected) {
+          await clearSessionAfterAuthFailure();
+          setHasBiometricToken(false);
+        } else {
+          await clearStoredToken();
+          AppAlert.show('Connection problem', 'Could not verify your session. Please try fingerprint sign-in again when connected.');
+          return;
+        }
         setBiometricLoading(false);
         // Token was rejected by the server (common after logout).
         // If the user already entered username + PIN, fall back automatically.
         const trimmedUser = username.trim();
         const pinOk = !!pin && pin.length >= PIN_LENGTH;
         if (trimmedUser && pinOk) {
-          setHasBiometricToken(false);
           await handleLogin();
           return;
         }
-        setHasBiometricToken(false);
-        Alert.alert(
+        AppAlert.show(
           'Session expired',
           'Please sign in with your username and PIN once to refresh biometric login.'
         );
@@ -272,26 +285,27 @@ export default function LoginScreen() {
       dispatch(setCredentials({ user, token }));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       suppressUnauthorizedForMs(60000);
-      const fcmToken = await getDevicePushTokenAsync();
-      if (fcmToken) api.auth.updateProfileLocal401({ fcm_token: fcmToken }).catch(() => {});
+      getDevicePushTokenAsync().then((fcmToken) => {
+        if (fcmToken) api.auth.updateProfileLocal401({ fcm_token: fcmToken }).catch(() => {});
+      }).catch(() => {});
       setFailedAttempts(0);
       setIsExiting(true);
     } catch (e) {
-      Alert.alert('Biometric sign-in', e instanceof Error ? e.message : 'Could not sign in.');
+      AppAlert.show('Biometric sign-in', e instanceof Error ? e.message : 'Could not sign in.');
     } finally {
       setBiometricLoading(false);
     }
   };
 
   async function handleLogin() {
-    if (isLocked) return;
+    if (loading || isLocked) return;
     const trimmedUser = username.trim();
     if (!trimmedUser) {
-      Alert.alert('Error', 'Please enter your username or Staff ID.');
+      AppAlert.show('Error', 'Please enter your username or Staff ID.');
       return;
     }
     if (!pin || pin.length < PIN_LENGTH) {
-      Alert.alert('Error', `Please enter your ${PIN_LENGTH}-digit PIN.`);
+      AppAlert.show('Error', `Please enter your ${PIN_LENGTH}-digit PIN.`);
       return;
     }
     setLoading(true);
@@ -299,8 +313,9 @@ export default function LoginScreen() {
       console.warn('[Login] Sending request to', getApiBase(), '...');
     }
     try {
-      const fcmToken = await getDevicePushTokenAsync();
-      const res = await api.auth.login(trimmedUser, pin, fcmToken ?? undefined);
+      // Authenticate first. Push-token registration can trigger the OS notification
+      // permission prompt on a fresh install; it must never hold up the first sign-in.
+      const res = await api.auth.login(trimmedUser, pin);
       if (__DEV__) console.warn('[Login] Success, token received');
       setAuthToken(res.token);
       await saveToken(res.token);
@@ -343,7 +358,7 @@ export default function LoginScreen() {
         const deviceHint = isLocalhost
           ? "On a phone or tablet, localhost doesn't work. In the app's .env set EXPO_PUBLIC_API_URL=http://YOUR_PC_IP:8000, then restart Expo (npx expo start -c).\n\n"
           : '';
-        Alert.alert(
+        AppAlert.show(
           'Connection failed',
           `Cannot reach: ${base}\n\n` +
             deviceHint +
@@ -359,9 +374,9 @@ export default function LoginScreen() {
           const until = Date.now() + LOCKOUT_MINUTES * 60 * 1000;
           await setLoginLockoutUntil(until);
           setLockoutUntil(until);
-          Alert.alert('Account locked', `Too many failed attempts. Try again in ${LOCKOUT_MINUTES} minutes.`);
+          AppAlert.show('Account locked', `Too many failed attempts. Try again in ${LOCKOUT_MINUTES} minutes.`);
         } else {
-          Alert.alert('Login failed', message);
+          AppAlert.show('Login failed', message);
         }
       }
     }

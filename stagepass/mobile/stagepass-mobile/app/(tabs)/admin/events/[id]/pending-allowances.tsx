@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 /**
  * Approve or reject pending earned-allowance requests for this event.
  * Intentionally separate from Event operations (crew, check-in, report, end event).
@@ -75,7 +76,7 @@ export default function EventPendingAllowancesScreen() {
       const e = await api.events.get(eventId);
       setEvent(e);
     } catch {
-      Alert.alert('Error', 'Failed to load event.');
+      AppAlert.show('Error', 'Failed to load event.');
     } finally {
       setLoading(false);
     }
@@ -117,9 +118,9 @@ export default function EventPendingAllowancesScreen() {
     try {
       await api.payments.updateAllowanceStatus(row.id, 'approved');
       await loadPendingAllowances();
-      Alert.alert('Approved', 'The crew member has been notified.');
+      AppAlert.show('Approved', 'The crew member has been notified.');
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not approve.');
+      AppAlert.show('Error', e instanceof Error ? e.message : 'Could not approve.');
     } finally {
       setAllowanceActionLoading(false);
     }
@@ -135,7 +136,7 @@ export default function EventPendingAllowancesScreen() {
     if (rejectAllowanceId == null) return;
     const c = rejectComment.trim();
     if (!c) {
-      Alert.alert('Required', 'Add a comment explaining the rejection.');
+      AppAlert.show('Required', 'Add a comment explaining the rejection.');
       return;
     }
     setAllowanceActionLoading(true);
@@ -145,9 +146,9 @@ export default function EventPendingAllowancesScreen() {
       setRejectAllowanceId(null);
       setRejectComment('');
       await loadPendingAllowances();
-      Alert.alert('Rejected', 'The crew member has been notified.');
+      AppAlert.show('Rejected', 'The crew member has been notified.');
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not reject.');
+      AppAlert.show('Error', e instanceof Error ? e.message : 'Could not reject.');
     } finally {
       setAllowanceActionLoading(false);
     }

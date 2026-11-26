@@ -1,3 +1,4 @@
+import { AppAlert } from '@/components/AppAlert';
 /**
  * Admin/team leader: send a message to all crew or selected crew members.
  */
@@ -6,7 +7,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -44,7 +44,7 @@ export default function EventMessageScreen() {
       const e = await api.events.get(eventId);
       setEvent(e);
     } catch {
-      Alert.alert('Error', 'Failed to load event.');
+      AppAlert.show('Error', 'Failed to load event.');
     } finally {
       setLoading(false);
     }
@@ -66,27 +66,27 @@ export default function EventMessageScreen() {
   const handleSend = async () => {
     const text = message.trim();
     if (!text) {
-      Alert.alert('Required', 'Please enter a message.');
+      AppAlert.show('Required', 'Please enter a message.');
       return;
     }
     if (!sendToAll && selectedIds.size === 0) {
-      Alert.alert('Select recipients', 'Choose "All crew" or select at least one crew member.');
+      AppAlert.show('Select recipients', 'Choose "All crew" or select at least one crew member.');
       return;
     }
     setSending(true);
     try {
       if (sendToAll) {
         await api.events.eventMessage(eventId, { target: 'all', message: text });
-        Alert.alert('Sent', 'Message sent to all crew.', [{ text: 'OK', onPress: () => router.back() }]);
+        AppAlert.show('Sent', 'Message sent to all crew.', [{ text: 'OK', onPress: () => router.back() }]);
       } else {
         for (const userId of selectedIds) {
           await api.events.eventMessage(eventId, { target: 'user', user_id: userId, message: text });
         }
-        Alert.alert('Sent', `Message sent to ${selectedIds.size} crew member(s).`, [{ text: 'OK', onPress: () => router.back() }]);
+        AppAlert.show('Sent', `Message sent to ${selectedIds.size} crew member(s).`, [{ text: 'OK', onPress: () => router.back() }]);
       }
       setMessage('');
     } catch (e) {
-      Alert.alert('Failed', e instanceof Error ? e.message : 'Could not send message.');
+      AppAlert.show('Failed', e instanceof Error ? e.message : 'Could not send message.');
     } finally {
       setSending(false);
     }

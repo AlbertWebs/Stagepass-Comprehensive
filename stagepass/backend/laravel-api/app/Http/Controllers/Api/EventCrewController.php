@@ -99,10 +99,29 @@ class EventCrewController extends Controller
 
         $user = $assignment->user;
         if ($user) {
-            $user->notify(new CrewAddedToEventReminder($event->fresh(), $request->role_in_event));
             ReminderLog::logSent($event->id, $user->id, ReminderLog::TYPE_ADDED, ReminderLog::CHANNEL_EMAIL);
             ReminderLog::logSent($event->id, $user->id, ReminderLog::TYPE_ADDED, ReminderLog::CHANNEL_SMS);
-            ReminderLog::logSent($event->id, $user->id, ReminderLog::TYPE_EVENT_ASSIGNED, ReminderLog::CHANNEL_PUSH);
+
+            $eventForNotification = $event->fresh();
+            $roleInEvent = $request->role_in_event;
+            dispatch(function () use ($user, $eventForNotification, $roleInEvent): void {
+                try {
+                    $user->notify(new CrewAddedToEventReminder($eventForNotification, $roleInEvent));
+
+                    // Do not suppress the login-time fallback when this user has not registered
+                    // a device capable of receiving push notifications yet.
+                    if (! empty($user->fcm_token)) {
+                        ReminderLog::logSent(
+                            $eventForNotification->id,
+                            $user->id,
+                            ReminderLog::TYPE_EVENT_ASSIGNED,
+                            ReminderLog::CHANNEL_PUSH
+                        );
+                    }
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+            })->afterResponse();
         }
         if ($event->teamLeader && (int) $event->teamLeader->id !== (int) $request->user()->id
             && (int) $event->teamLeader->id !== (int) $request->user_id) {
@@ -198,10 +217,26 @@ class EventCrewController extends Controller
 
         $transferredUser = User::find($transferredUserId);
         if ($transferredUser) {
-            $transferredUser->notify(new CrewAddedToEventReminder($targetEvent->fresh(), $roleInEvent));
             ReminderLog::logSent($targetEvent->id, $transferredUser->id, ReminderLog::TYPE_ADDED, ReminderLog::CHANNEL_EMAIL);
             ReminderLog::logSent($targetEvent->id, $transferredUser->id, ReminderLog::TYPE_ADDED, ReminderLog::CHANNEL_SMS);
-            ReminderLog::logSent($targetEvent->id, $transferredUser->id, ReminderLog::TYPE_EVENT_ASSIGNED, ReminderLog::CHANNEL_PUSH);
+
+            $eventForNotification = $targetEvent->fresh();
+            dispatch(function () use ($transferredUser, $eventForNotification, $roleInEvent): void {
+                try {
+                    $transferredUser->notify(new CrewAddedToEventReminder($eventForNotification, $roleInEvent));
+
+                    if (! empty($transferredUser->fcm_token)) {
+                        ReminderLog::logSent(
+                            $eventForNotification->id,
+                            $transferredUser->id,
+                            ReminderLog::TYPE_EVENT_ASSIGNED,
+                            ReminderLog::CHANNEL_PUSH
+                        );
+                    }
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+            })->afterResponse();
         }
         foreach (collect([$event->teamLeader, $targetEvent->teamLeader])->filter()->unique('id') as $leader) {
             if ((int) $leader->id === (int) $request->user()->id || (int) $leader->id === $transferredUserId) continue;
