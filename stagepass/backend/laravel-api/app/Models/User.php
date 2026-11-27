@@ -115,6 +115,7 @@ class User extends Authenticatable
             'is_permanent_employee' => 'boolean',
             'is_active' => 'boolean',
             'homepage_preferences' => 'array',
+            'last_login_at' => 'datetime',
         ];
     }
 }

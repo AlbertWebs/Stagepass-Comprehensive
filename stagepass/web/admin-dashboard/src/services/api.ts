@@ -196,6 +196,8 @@ export interface User {
   roles?: Role[];
   permissions?: string[];
   is_active?: boolean;
+  last_login_at?: string | null;
+  last_login_ip?: string | null;
 }
 
 export interface EventEquipmentAssignment {
@@ -352,6 +354,7 @@ export interface EarnedAllowanceDetail {
   attachment_url?: string | null;
   rejection_comment?: string | null;
   approval_comment?: string | null;
+  approved_by?: string | null;
   approved_at?: string | null;
   hr_verified?: boolean;
   hr_verified_by?: string | null;

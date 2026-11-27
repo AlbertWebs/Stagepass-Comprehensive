@@ -94,6 +94,11 @@ class AuthController extends Controller
             return response()->json(['message' => 'This account is inactive. Contact your administrator.'], 403);
         }
 
+        $user->forceFill([
+            'last_login_at' => now(),
+            'last_login_ip' => $request->ip(),
+        ])->save();
+
         $this->sendAssignedEventPushOnLogin($request, $user);
 
         $isWebLogin = ! ($username !== null && $pin !== null);

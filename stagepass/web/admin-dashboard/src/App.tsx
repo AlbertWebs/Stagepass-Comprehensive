@@ -119,7 +119,7 @@ export default function App() {
         <Route path="checkins" element={<RoleRoute requirePermission="attendance.view"><Checkins /></RoleRoute>} />
         <Route path="communication" element={<RoleRoute requirePermission="communications.manage"><Communication /></RoleRoute>} />
         <Route path="approvals" element={<RoleRoute requirePermission="approvals.manage"><Approvals /></RoleRoute>} />
-        <Route path="users" element={<RoleRoute requireSuperAdministrator><Users title="Users & Permissions" subtitle="Manage users and assign roles." sectionLabel="Users" createButtonLabel="Create user" /></RoleRoute>} />
+        <Route path="users" element={<RoleRoute requireSuperAdministrator><Users title="Users & Permissions" subtitle="Manage users and assign roles." sectionLabel="Users" createButtonLabel="Create user" showSignInDetails /></RoleRoute>} />
         <Route path="roles" element={<RoleRoute requireSuperAdministrator><RolesPermissions /></RoleRoute>} />
         <Route path="settings" element={<RoleRoute requirePermission="settings.manage"><Settings /></RoleRoute>} />
         <Route path="audit-logs" element={<RoleRoute requirePermission="audit.view"><AuditLogs /></RoleRoute>} />

@@ -167,7 +167,7 @@ export default function Holidays() {
           <label className="space-y-1">
             <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Holiday name</span>
             <input
-              className="input w-full"
+              className="form-input w-full"
               placeholder="e.g. Labour Day"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -177,7 +177,7 @@ export default function Holidays() {
           <label className="space-y-1">
             <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Date</span>
             <input
-              className="input w-full"
+              className="form-input w-full"
               type="date"
               value={form.date}
               onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
@@ -187,21 +187,23 @@ export default function Holidays() {
           <label className="space-y-1 md:col-span-2">
             <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Description (optional)</span>
             <input
-              className="input w-full"
+              className="form-input w-full"
               placeholder="Add extra details for planners and payroll checks"
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
             />
           </label>
-          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))} />
-            Active
-          </label>
-          <div className="flex gap-2">
-            <button className="btn-primary" disabled={saving} type="submit">{saving ? 'Saving…' : isEditing ? 'Update holiday' : 'Add holiday'}</button>
-            {isEditing ? (
-              <button type="button" className="btn-secondary" onClick={() => setForm(emptyForm)}>Cancel</button>
-            ) : null}
+          <div className="md:col-span-2 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
+            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))} className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
+              Active
+            </label>
+            <div className="flex gap-2">
+              <button className="btn-brand disabled:cursor-not-allowed disabled:opacity-50" disabled={saving} type="submit">{saving ? 'Saving…' : isEditing ? 'Update holiday' : 'Add holiday'}</button>
+              {isEditing ? (
+                <button type="button" className="btn-secondary" onClick={() => setForm(emptyForm)}>Cancel</button>
+              ) : null}
+            </div>
           </div>
         </form>
         {notice ? <p className="mt-3 text-sm text-emerald-700">{notice}</p> : null}
@@ -217,7 +219,8 @@ export default function Holidays() {
                 key={f}
                 type="button"
                 onClick={() => setStatusFilter(f)}
-                className={statusFilter === f ? 'btn-primary' : 'btn-secondary'}
+                className={statusFilter === f ? 'btn-brand' : 'btn-secondary'}
+                aria-pressed={statusFilter === f}
               >
                 {f[0].toUpperCase() + f.slice(1)}
               </button>
@@ -225,15 +228,26 @@ export default function Holidays() {
           </div>
         </div>
         <input
-          className="input mt-3 w-full md:max-w-sm"
+          className="form-input mt-3 w-full md:max-w-sm"
           placeholder="Search by name, date, or description"
+          aria-label="Search holidays"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
         {loading ? (
           <p className="mt-4 text-sm text-slate-600">Loading holidays…</p>
         ) : filtered.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-600">No holidays configured yet.</p>
+          <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center">
+            <p className="font-medium text-slate-800">{items.length === 0 ? 'No holidays configured yet' : 'No holidays match these filters'}</p>
+            <p className="mt-1 text-sm text-slate-600">
+              {items.length === 0 ? 'Add a holiday above to build your holiday calendar.' : 'Try a different search or status filter.'}
+            </p>
+            {items.length > 0 && (query || statusFilter !== 'all') ? (
+              <button type="button" className="link-brand mt-3" onClick={() => { setQuery(''); setStatusFilter('all'); }}>
+                Clear search and filters
+              </button>
+            ) : null}
+          </div>
         ) : (
           <div className="mt-4 overflow-x-auto">
             <table className="min-w-full text-sm">

@@ -44,6 +44,10 @@ class UserController extends Controller
 
         $users = $query->orderBy('name')->paginate(min(max((int) $request->input('per_page', 20), 1), 100));
 
+        if (! $actor->hasSuperAdminAccess()) {
+            $users->getCollection()->each(fn (User $user) => $user->makeHidden(['last_login_at', 'last_login_ip']));
+        }
+
         return response()->json($users);
     }
 

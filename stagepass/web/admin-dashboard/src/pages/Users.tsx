@@ -52,6 +52,19 @@ function userToForm(u: User): UserFormState {
   };
 }
 
+function formatLastSignIn(value?: string | null): string {
+  if (!value) return 'Never';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('en-KE', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 type UsersPageProps = {
   title?: string;
   subtitle?: string;
@@ -63,6 +76,8 @@ type UsersPageProps = {
   showExcelImport?: boolean;
   /** Crew page: dangerous action to delete all crew-role users. */
   showDeleteAllCrew?: boolean;
+  /** Super admin users page: show latest login metadata. */
+  showSignInDetails?: boolean;
 };
 
 export default function Users({
@@ -73,6 +88,7 @@ export default function Users({
   showPushTestActions = false,
   showExcelImport = false,
   showDeleteAllCrew = false,
+  showSignInDetails = false,
 }: UsersPageProps = {}) {
   const { user: authUser } = useAuth();
   const canCreateUsers = hasPermission(authUser, 'employees.create');
@@ -591,6 +607,8 @@ export default function Users({
                 <th>Email</th>
                 <th>Username</th>
                 <th>Roles</th>
+                {showSignInDetails ? <th>Last sign-in</th> : null}
+                {showSignInDetails ? <th>Last IP</th> : null}
                 <th>Status</th>
                 <th className="text-right whitespace-nowrap">Actions</th>
               </tr>
@@ -611,7 +629,6 @@ export default function Users({
                       )}
                     </span>
                   </td>
-                  <td className="px-6 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${u.is_active === false ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-700'}`}>{u.is_active === false ? 'Inactive' : 'Active'}</span></td>
                   <td className="px-6 py-4 font-medium text-slate-900">{u.name}</td>
                   <td className="px-6 py-4 text-slate-600">{u.email}</td>
                   <td className="px-6 py-4 text-slate-600">{u.username ?? '–'}</td>
@@ -624,6 +641,9 @@ export default function Users({
                         ))
                       : '–'}
                   </td>
+                  {showSignInDetails ? <td className="whitespace-nowrap px-6 py-4 text-slate-600">{formatLastSignIn(u.last_login_at)}</td> : null}
+                  {showSignInDetails ? <td className="whitespace-nowrap px-6 py-4 font-mono text-xs text-slate-600">{u.last_login_ip ?? '–'}</td> : null}
+                  <td className="px-6 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${u.is_active === false ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-700'}`}>{u.is_active === false ? 'Inactive' : 'Active'}</span></td>
                   <td className="px-6 py-4 text-right whitespace-nowrap">
                     <span className="inline-flex items-center justify-end gap-3">
                       {canSendTestPush ? (
