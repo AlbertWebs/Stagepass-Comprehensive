@@ -9,6 +9,9 @@ use App\Models\User;
 use App\Support\EventAttendanceEligibility;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Notification;
+use App\Notifications\WorkflowPushNotification;
 use Tests\TestCase;
 
 class TeamLeadOperationalControlsTest extends TestCase
@@ -24,6 +27,76 @@ class TeamLeadOperationalControlsTest extends TestCase
     {
         $role = Role::firstOrCreate(['name' => $name], ['label' => $label]);
         $user->roles()->syncWithoutDetaching([$role->id]);
+    }
+
+    public function test_event_leader_can_search_unassigned_crew_without_employee_directory_permission(): void
+    {
+        $leader = User::factory()->create();
+        $candidate = User::factory()->create(['name' => 'Candidate Person']);
+        $assigned = User::factory()->create(['name' => 'Assigned Person']);
+        $outsider = User::factory()->create();
+        $event = Event::create([
+            'name' => 'Crew Search Event',
+            'date' => now()->toDateString(),
+            'start_time' => '09:00',
+            'team_leader_id' => $leader->id,
+            'created_by_id' => $leader->id,
+            'status' => Event::STATUS_ACTIVE,
+        ]);
+        EventUser::create(['event_id' => $event->id, 'user_id' => $assigned->id]);
+
+        $this->withHeaders($this->auth($leader))
+            ->getJson("/api/events/{$event->id}/crew-candidates?search=Candidate")
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $candidate->id);
+
+        $this->withHeaders($this->auth($leader))
+            ->getJson("/api/events/{$event->id}/crew-candidates?search=Assigned")
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        Auth::forgetGuards();
+        $this->withHeaders($this->auth($outsider))
+            ->getJson("/api/events/{$event->id}/crew-candidates")
+            ->assertForbidden();
+    }
+
+    public function test_event_leader_can_edit_event_and_message_only_assigned_crew(): void
+    {
+        Notification::fake();
+        $leader = User::factory()->create();
+        $crew = User::factory()->create();
+        $other = User::factory()->create();
+        $event = Event::create([
+            'name' => 'Original Event',
+            'date' => now()->toDateString(),
+            'start_time' => '09:00',
+            'team_leader_id' => $leader->id,
+            'created_by_id' => $leader->id,
+            'status' => Event::STATUS_ACTIVE,
+        ]);
+        EventUser::create(['event_id' => $event->id, 'user_id' => $crew->id]);
+
+        $this->withHeaders($this->auth($leader))
+            ->putJson("/api/events/{$event->id}", ['name' => 'Updated Event'])
+            ->assertOk()
+            ->assertJsonPath('name', 'Updated Event');
+
+        $this->withHeaders($this->auth($leader))
+            ->postJson("/api/events/{$event->id}/message", [
+                'target' => 'user', 'user_id' => $crew->id, 'message' => 'Please report to stage.',
+            ])
+            ->assertOk()
+            ->assertJsonPath('recipients', 1);
+        Notification::assertSentTo($crew, WorkflowPushNotification::class);
+        Notification::assertNotSentTo($other, WorkflowPushNotification::class);
+
+        $this->withHeaders($this->auth($leader))
+            ->postJson("/api/events/{$event->id}/message", [
+                'target' => 'user', 'user_id' => $other->id, 'message' => 'Not assigned.',
+            ])
+            ->assertStatus(422);
     }
 
     public function test_team_lead_can_pause_resume_and_record_transport(): void

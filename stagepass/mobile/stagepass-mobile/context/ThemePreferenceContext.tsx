@@ -5,7 +5,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useColorScheme as useRNColorScheme, useWindowDimensions, View } from 'react-native';
-import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, runOnJS, useAnimatedProps, useSharedValue, withTiming } from 'react-native-reanimated';
+import Svg, { Defs, Image as SvgImage, Mask, Rect } from 'react-native-svg';
+import { captureRef } from 'react-native-view-shot';
 
 const STORAGE_KEY = '@stagepass/theme-preference';
 
@@ -23,12 +25,12 @@ type ThemePreferenceContextValue = {
 };
 
 type Transition = {
+  snapshot: string;
   preference: ThemePreference;
-  origin: { x: number; y: number };
-  color: string;
-  diameter: number;
   id: number;
 };
+
+const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
 const ThemePreferenceContext = createContext<ThemePreferenceContextValue | null>(null);
 
@@ -37,11 +39,14 @@ export function ThemePreferenceProvider({ children }: { children: React.ReactNod
   const [isLoading, setIsLoading] = useState(true);
   const [transition, setTransition] = useState<Transition | null>(null);
   const system = useRNColorScheme();
-  const { width, height } = useWindowDimensions();
+  const windowSize = useWindowDimensions();
+  const [screenSize, setScreenSize] = useState({ width: windowSize.width, height: windowSize.height });
+  const { width, height } = screenSize;
   const activeTransition = useRef(false);
   const transitionId = useRef(0);
-  const revealScale = useSharedValue(0);
-  const revealOpacity = useSharedValue(0);
+  const screenRef = useRef<React.ElementRef<typeof View>>(null);
+  const revealY = useSharedValue(0);
+  const revealFromBottom = useSharedValue(0);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)
@@ -54,6 +59,7 @@ export function ThemePreferenceProvider({ children }: { children: React.ReactNod
   }, []);
 
   const persistPreference = useCallback((p: ThemePreference) => {
+    if (p !== 'light' && p !== 'dark' && p !== 'system') return;
     setPreferenceState(p);
     void AsyncStorage.setItem(STORAGE_KEY, p);
   }, []);
@@ -64,17 +70,13 @@ export function ThemePreferenceProvider({ children }: { children: React.ReactNod
     activeTransition.current = false;
   }, []);
 
-  const completeTransition = useCallback((p: ThemePreference, id: number) => {
+  const completeTransition = useCallback((id: number) => {
     if (transitionId.current !== id) return;
-    persistPreference(p);
-    revealOpacity.value = withTiming(0, { duration: 130 }, (finished) => {
-      if (!finished) return;
-      revealScale.value = 0;
-      runOnJS(clearTransition)(id);
-    });
-  }, [clearTransition, persistPreference, revealOpacity, revealScale]);
+    clearTransition(id);
+  }, [clearTransition]);
 
   const setPreference = useCallback((p: ThemePreference, options: ThemeChangeOptions = {}) => {
+    if (p !== 'light' && p !== 'dark' && p !== 'system') return;
     if (activeTransition.current) return;
 
     const currentScheme = preference === 'system' ? (system === 'dark' ? 'dark' : 'light') : preference;
@@ -86,32 +88,42 @@ export function ThemePreferenceProvider({ children }: { children: React.ReactNod
 
     activeTransition.current = true;
     const id = ++transitionId.current;
-    const diameter = Math.sqrt(width * width + height * height) * 2;
-    setTransition({
-      preference: p,
-      origin: options.origin ?? { x: width / 2, y: height / 2 },
-      color: options.color ?? (nextScheme === 'dark' ? '#0F0F0F' : '#FAFAFA'),
-      diameter,
-      id,
-    });
-  }, [height, persistPreference, preference, system, width]);
+    void (async () => {
+      try {
+        const snapshot = await captureRef(screenRef, { format: 'png', result: 'tmpfile' });
+        if (transitionId.current !== id) return;
+    revealY.value = 0;
+        setTransition({ snapshot, preference: p, id });
+      } catch {
+        // Keep the theme switch reliable if native screen capture is unavailable.
+        persistPreference(p);
+        activeTransition.current = false;
+      }
+    })();
+  }, [persistPreference, preference, revealY, system]);
 
-  useEffect(() => {
-    if (!transition) return;
-    revealScale.value = 0;
-    revealOpacity.value = 0.94;
-    revealScale.value = withTiming(
-      1,
-      { duration: 390, easing: Easing.out(Easing.cubic) },
+  const startReveal = useCallback((id: number, nextPreference: ThemePreference) => {
+    if (transitionId.current !== id) return;
+    if (nextPreference !== 'light' && nextPreference !== 'dark' && nextPreference !== 'system') {
+      clearTransition(id);
+      return;
+    }
+
+    // Wait until the captured old screen is actually drawable before changing the live screen.
+    persistPreference(nextPreference);
+    revealFromBottom.value = nextPreference === 'light' ? 1 : 0;
+    revealY.value = withTiming(
+      height,
+      { duration: 900, easing: Easing.inOut(Easing.quad) },
       (finished) => {
-        if (finished) runOnJS(completeTransition)(transition.preference, transition.id);
+        if (finished) runOnJS(completeTransition)(id);
       }
     );
-  }, [completeTransition, revealOpacity, revealScale, transition]);
+  }, [clearTransition, completeTransition, height, persistPreference, revealFromBottom, revealY]);
 
-  const revealStyle = useAnimatedStyle(() => ({
-    opacity: revealOpacity.value,
-    transform: [{ scale: revealScale.value }],
+  const maskRectProps = useAnimatedProps(() => ({
+    height: revealY.value,
+    y: revealFromBottom.value ? height - revealY.value : 0,
   }));
 
   const value: ThemePreferenceContextValue = {
@@ -122,26 +134,41 @@ export function ThemePreferenceProvider({ children }: { children: React.ReactNod
 
   return (
     <ThemePreferenceContext.Provider value={value}>
-      <View style={{ flex: 1 }}>
+      <View
+        ref={screenRef}
+        collapsable={false}
+        onLayout={({ nativeEvent }) => {
+          const { width: measuredWidth, height: measuredHeight } = nativeEvent.layout;
+          if (measuredWidth > 0 && measuredHeight > 0) {
+            setScreenSize((current) =>
+              current.width === measuredWidth && current.height === measuredHeight
+                ? current
+                : { width: measuredWidth, height: measuredHeight }
+            );
+          }
+        }}
+        style={{ flex: 1 }}
+      >
         {children}
         {transition ? (
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              {
-                position: 'absolute',
-                zIndex: 9999,
-                elevation: 9999,
-                width: transition.diameter,
-                height: transition.diameter,
-                borderRadius: transition.diameter / 2,
-                left: transition.origin.x - transition.diameter / 2,
-                top: transition.origin.y - transition.diameter / 2,
-                backgroundColor: transition.color,
-              },
-              revealStyle,
-            ]}
-          />
+          <Svg pointerEvents="none" width={width} height={height} style={{ position: 'absolute', top: 0, left: 0, zIndex: 9999, elevation: 9999 }}>
+            <Defs>
+              <Mask id="theme-reveal-mask" x="0" y="0" width={width} height={height}>
+                <Rect width={width} height={height} fill="white" />
+                <AnimatedRect x={0} y={0} width={width} fill="black" animatedProps={maskRectProps} />
+              </Mask>
+            </Defs>
+            <SvgImage
+              href={{ uri: transition.snapshot }}
+              x={0}
+              y={0}
+              width={width}
+              height={height}
+              preserveAspectRatio="none"
+              mask="url(#theme-reveal-mask)"
+              onLoad={() => startReveal(transition.id, transition.preference)}
+            />
+          </Svg>
         ) : null}
       </View>
     </ThemePreferenceContext.Provider>

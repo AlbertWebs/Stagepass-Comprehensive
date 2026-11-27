@@ -1253,11 +1253,12 @@ tr{page-break-inside:avoid;break-inside:avoid;}
                 };
 
                 if ($workDate) {
-                    $session = $sessionsByUserDate->get($userId.'|'.$workDate)?->first();
-                    if ($session instanceof EventAttendanceSession) {
+                    $sessions = $sessionsByUserDate->get($userId.'|'.$workDate);
+                    if ($sessions && $sessions->isNotEmpty()) {
+                        $sessions = $sessions->sortBy('checkin_time')->values();
                         return [
-                            'time_in' => $fmt($session->checkin_time),
-                            'time_out' => $fmt($session->checkout_time),
+                            'time_in' => $fmt($sessions->first()->checkin_time),
+                            'time_out' => $fmt($sessions->last()->checkout_time),
                         ];
                     }
 

@@ -4,7 +4,7 @@ import { AppAlert } from '@/components/AppAlert';
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -36,6 +36,7 @@ type CrewMember = {
   name: string;
   pivot?: { checkin_time?: string; checkout_time?: string; role_in_event?: string | null };
 };
+type CrewCandidate = { id: number; name: string; email?: string | null };
 
 export default function AdminEventCrewScreen() {
   const { id, openAdd } = useLocalSearchParams<{ id: string; openAdd?: string }>();
@@ -43,9 +44,10 @@ export default function AdminEventCrewScreen() {
   const { colors, isDark } = useStagePassTheme();
   const insets = useSafeAreaInsets();
   const [event, setEvent] = useState<EventType | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<CrewCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [usersLoading, setUsersLoading] = useState(false);
+  const peopleLoadAlertShown = useRef(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [transferModalVisible, setTransferModalVisible] = useState(false);
   const [transferMember, setTransferMember] = useState<CrewMember | null>(null);
@@ -74,24 +76,26 @@ export default function AdminEventCrewScreen() {
   const loadUsers = useCallback(async (search?: string) => {
     setUsersLoading(true);
     try {
-      const res = await api.users.list({
-        per_page: 200,
-        search: search?.trim() || undefined,
-      });
+      const res = await api.events.crewCandidates(eventId, search);
       setUsers(Array.isArray(res?.data) ? res.data : []);
-    } catch {
+      peopleLoadAlertShown.current = false;
+    } catch (error) {
       setUsers([]);
-      AppAlert.show('Could not load people', 'Check your connection and try again.');
+      console.error('[Onboard crew] Failed to load crew candidates', error);
+      if (!peopleLoadAlertShown.current) {
+        peopleLoadAlertShown.current = true;
+        AppAlert.show('Could not load people', 'The people list is unavailable right now. Please try again shortly.');
+      }
     } finally {
       setUsersLoading(false);
     }
-  }, []);
+  }, [eventId]);
 
   useEffect(() => {
     if (!eventId) return;
     setLoading(true);
-    Promise.all([loadEvent(), loadUsers()]).finally(() => setLoading(false));
-  }, [eventId, loadEvent, loadUsers]);
+    loadEvent().finally(() => setLoading(false));
+  }, [eventId, loadEvent]);
 
   useEffect(() => {
     if (openAdd === '1' && !loading && event && canManage) {
@@ -121,6 +125,7 @@ export default function AdminEventCrewScreen() {
 
   const closeAddModal = () => {
     setAddModalVisible(false);
+    peopleLoadAlertShown.current = false;
     setSelectedUserIds([]);
     setRoleInEvent('');
     setPersonSearch('');

@@ -31,6 +31,66 @@ class EventCrewController extends Controller
         return EventTeamLeaderGate::userCanManageEvent($event, $request->user());
     }
 
+    public function crewCandidates(Request $request, Event $event): JsonResponse
+    {
+        if (! $this->canManageCrew($request, $event)) {
+            return response()->json(['message' => 'You cannot manage crew for this event.'], 403);
+        }
+
+        $search = trim((string) $request->query('search', ''));
+        $query = User::query()->select(['id', 'name', 'email'])
+            ->whereNotIn('id', $event->crew()->pluck('users.id'));
+
+        if (! $request->user()->hasSuperAdminAccess() && ! $request->user()->hasRole('admin')) {
+            $query->whereDoesntHave('roles', fn ($roles) => $roles->whereIn('name', ['super_admin', 'admin', 'director', 'hr', 'accounts']));
+        }
+
+        if ($search !== '') {
+            $query->where(function ($users) use ($search) {
+                $users->where('name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('username', 'like', "%{$search}%");
+            });
+        }
+
+        return response()->json([
+            'data' => $query->orderBy('name')->limit(100)->get(),
+        ]);
+    }
+
+    public function messageCrew(Request $request, Event $event): JsonResponse
+    {
+        if (! $this->canManageCrew($request, $event)) {
+            return response()->json(['message' => 'You cannot message crew for this event.'], 403);
+        }
+
+        $validated = $request->validate([
+            'target' => 'required|in:all,user',
+            'user_id' => 'required_if:target,user|nullable|integer|exists:users,id',
+            'message' => 'required|string|max:10000',
+        ]);
+
+        $recipients = $event->crew();
+        if ($validated['target'] === 'user') {
+            $recipients->where('users.id', $validated['user_id']);
+        }
+        $members = $recipients->get();
+        if ($members->isEmpty()) {
+            return response()->json(['message' => 'No matching crew members were found for this event.'], 422);
+        }
+
+        foreach ($members as $member) {
+            $member->notify(new WorkflowPushNotification(
+                'Message from '.$request->user()->name,
+                $validated['message'],
+                'event_crew_message',
+                ['event_id' => (string) $event->id, 'event_name' => $event->name]
+            ));
+        }
+
+        return response()->json(['message' => 'Message sent to crew.', 'recipients' => $members->count()]);
+    }
+
     public function assignUser(Request $request, Event $event): JsonResponse
     {
         if (! $this->canManageCrew($request, $event)) {

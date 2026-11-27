@@ -394,7 +394,7 @@ export default function EventDetailScreen() {
                       style: 'destructive',
                       onPress: () =>
                         router.push({
-                          pathname: '/(tabs)/admin/events/[id]/operations',
+                          pathname: '/events/[id]/operations',
                           params: { id: String(event.id) },
                         }),
                     },
@@ -1088,7 +1088,7 @@ export default function EventDetailScreen() {
                   onPress={() =>
                     handleNav(() =>
                       router.push({
-                        pathname: '/(tabs)/admin/events/[id]/crew',
+                        pathname: '/events/[id]/crew',
                         params: { id: String(event.id), openAdd: '1' },
                       })
                     )
@@ -1115,7 +1115,7 @@ export default function EventDetailScreen() {
                 onPress={() =>
                   handleNav(() =>
                     router.push({
-                      pathname: '/(tabs)/admin/events/[id]/operations',
+                      pathname: '/events/[id]/operations',
                       params: { id: String(event.id) },
                     })
                   )
@@ -1144,7 +1144,7 @@ export default function EventDetailScreen() {
                   onPress={() =>
                     handleNav(() =>
                       router.push({
-                        pathname: '/(tabs)/admin/events/[id]/pending-allowances',
+                        pathname: '/events/[id]/pending-allowances',
                         params: { id: String(event.id) },
                       })
                     )
@@ -1199,7 +1199,8 @@ export default function EventDetailScreen() {
                         <ThemedText style={[styles.leaderCrewMeta, { color: colors.textSecondary }]}>{row.roleInEvent}</ThemedText>
                       ) : null}
                     </View>
-                    {row.status === 'pending' ? (
+                    {row.status === 'pending' ||
+                    row.status === 'checked_out' ? (
                       <Pressable
                         onPress={() => handleLeaderCheckInMember(row.id)}
                         disabled={
@@ -1223,7 +1224,9 @@ export default function EventDetailScreen() {
                         ) : (
                           <>
                             <Ionicons name="location" size={18} color={accentBrand} />
-                            <ThemedText style={[styles.leaderCheckInBtnText, { color: accentBrand }]}>Check in</ThemedText>
+                            <ThemedText style={[styles.leaderCheckInBtnText, { color: accentBrand }]}>
+                              {row.status === 'checked_out' ? 'Check in again' : 'Check in'}
+                            </ThemedText>
                           </>
                         )}
                       </Pressable>

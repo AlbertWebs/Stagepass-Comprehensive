@@ -86,7 +86,11 @@ export default function EventMessageScreen() {
       }
       setMessage('');
     } catch (e) {
-      AppAlert.show('Failed', e instanceof Error ? e.message : 'Could not send message.');
+      console.error('[Message crew] Send failed', e);
+      const denied = e instanceof Error && /permission|forbidden|cannot message|403/i.test(e.message);
+      AppAlert.show(denied ? 'Permission needed' : 'Could not send message', denied
+        ? 'Contact admin to message this event crew.'
+        : 'Please try again shortly.');
     } finally {
       setSending(false);
     }

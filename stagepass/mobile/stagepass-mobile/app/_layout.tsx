@@ -98,7 +98,7 @@ function RootLayoutNav() {
       } else if (type.startsWith('time_off_')) {
         router.push('/(tabs)/profile');
       } else if (type.startsWith('allowance_') && eventId) {
-        router.push({ pathname: '/(tabs)/admin/events/[id]/pending-allowances', params: { id: eventId } } as never);
+        router.push({ pathname: '/events/[id]/pending-allowances', params: { id: eventId } } as never);
       } else if (type.startsWith('office_')) {
         router.push({ pathname: '/(tabs)/admin/reports/[type]', params: { type: 'crew-attendance' } } as never);
       } else if (eventId) {
@@ -165,6 +165,14 @@ function RootLayoutNav() {
             <Stack.Screen name="login" options={{ headerShown: false }} />
             <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
             <Stack.Screen name="events/[id]" options={{ headerShown: false }} />
+            <Stack.Screen name="events/[id]/operations" options={{ headerShown: false }} />
+            <Stack.Screen name="events/[id]/crew" options={{ headerShown: false }} />
+            <Stack.Screen name="events/[id]/edit" options={{ headerShown: false }} />
+            <Stack.Screen name="events/[id]/message" options={{ headerShown: false }} />
+            <Stack.Screen name="events/[id]/create-task" options={{ headerShown: false }} />
+            <Stack.Screen name="events/[id]/manage-checkin" options={{ headerShown: false }} />
+            <Stack.Screen name="events/[id]/report" options={{ headerShown: false }} />
+            <Stack.Screen name="events/[id]/pending-allowances" options={{ headerShown: false }} />
             <Stack.Screen name="events/request-allowance" options={{ headerShown: false }} />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack>

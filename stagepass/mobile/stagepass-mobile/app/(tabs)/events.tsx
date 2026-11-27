@@ -603,7 +603,7 @@ export default function EventsTab() {
                           onPress: () =>
                             handleNav(() =>
                               router.push({
-                                pathname: '/(tabs)/admin/events/[id]/crew',
+                                pathname: '/events/[id]/crew',
                                 params: { id: String(item.id), openAdd: '1' },
                               })
                             ),
@@ -614,7 +614,7 @@ export default function EventsTab() {
                           onPress: () =>
                             handleNav(() =>
                               router.push({
-                                pathname: '/(tabs)/admin/events/[id]/operations',
+                                pathname: '/events/[id]/operations',
                                 params: { id: String(item.id) },
                               })
                             ),

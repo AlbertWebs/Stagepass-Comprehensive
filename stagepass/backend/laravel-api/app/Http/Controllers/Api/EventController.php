@@ -295,7 +295,8 @@ class EventController extends Controller
         if (in_array('admin-panel', $abilities, true) && ! $this->hasPanelPermission($request, 'events.edit')) {
             return response()->json(['message' => 'You do not have permission to edit events.'], 403);
         }
-        if (! $user->hasSuperAdminAccess() && ! in_array('admin-panel', $abilities, true)) {
+        $isEventAdmin = $user->hasRole('super_admin') || $user->hasRole('director') || $user->hasRole('admin');
+        if (! $isEventAdmin && ! in_array('admin-panel', $abilities, true)) {
             $assignedToEvent = (int) $event->team_leader_id === (int) $user->id
                 || (int) $event->created_by_id === (int) $user->id;
             if (! $assignedToEvent) {

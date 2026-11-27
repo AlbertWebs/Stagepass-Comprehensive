@@ -144,7 +144,7 @@ export default function EventReportPreviewScreen() {
       return;
     }
     router.replace({
-      pathname: '/(tabs)/admin/events/[id]/operations',
+      pathname: '/events/[id]/operations',
       params: {
         id: String(eventId),
         report_ready: '1',

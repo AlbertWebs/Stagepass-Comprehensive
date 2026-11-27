@@ -49,7 +49,7 @@ final class EventTeamLeaderGate
         if (filled($event->team_leader_id) && (int) $event->team_leader_id === (int) $user->id) {
             return true;
         }
-        if ($user->hasRole('team_leader') && blank($event->team_leader_id)) {
+        if (($user->hasRole('team_leader') || $user->hasRole('teamleader') || $user->hasRole('Team Leader')) && blank($event->team_leader_id)) {
             if ((int) $event->created_by_id === (int) $user->id) {
                 return true;
             }

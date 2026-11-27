@@ -562,6 +562,11 @@ export const api = {
     /** Admin/team leader: crew status for event */
     eventCrewStatus: (eventId: number) =>
       request<{ data: CrewStatusItem[] }>(`/events/${eventId}/crew-status`),
+    crewCandidates: (eventId: number, search?: string) =>
+      request<{ data: { id: number; name: string; email?: string | null }[] }>(
+        `/events/${eventId}/crew-candidates`,
+        search?.trim() ? { params: { search: search.trim() } } : undefined
+      ),
     pauseCrew: (eventId: number, userId: number, reason?: string) =>
       request<{ message: string }>(`/events/${eventId}/crew/${userId}/pause`, {
         method: 'POST',
@@ -577,52 +582,14 @@ export const api = {
     /** Admin/team leader: report issue */
     eventReportIssue: (eventId: number, body: { title: string; description?: string; severity?: string; photo_url?: string }) =>
       request<unknown>(`/events/${eventId}/report-issue`, { method: 'POST', body: JSON.stringify(body) }),
-    /**
-     * Admin/team leader: send message to crew.
-     * Preferred endpoint: /events/{id}/message (if backend supports it).
-     * Fallback: /communications (currently available in backend routes).
-     */
-    eventMessage: async (
+    /** Event-scoped message to all or one assigned crew member. */
+    eventMessage: (
       eventId: number,
-      body: { target: 'all' | 'department' | 'user'; department?: string; user_id?: number; message: string }
-    ) => {
-      try {
-        return await request<unknown>(`/events/${eventId}/message`, {
-          method: 'POST',
-          body: JSON.stringify(body),
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : '';
-        const notFound = /not found|could not be found|404/i.test(msg);
-        if (!notFound) throw err;
-
-        // Fallback to communications API so mobile flow still works.
-        const recipientScope =
-          body.target === 'all' || body.target === 'user'
-            ? 'event_crew'
-            : body.target === 'department'
-              ? 'crew'
-              : 'all_staff';
-        const subjectSuffix =
-          body.target === 'all'
-            ? 'All crew'
-            : body.target === 'department'
-              ? `Department: ${body.department ?? 'Crew'}`
-              : `User #${body.user_id ?? 'Crew'}`;
-
-        return request<unknown>('/communications', {
-          method: 'POST',
-          body: JSON.stringify({
-            subject: `Event #${eventId}: ${subjectSuffix}`,
-            body: body.message,
-            recipient_scope: recipientScope,
-            event_id: recipientScope === 'event_crew' ? eventId : undefined,
-            send_as_message: true,
-            send_as_email: false,
-          }),
-        });
-      }
-    },
+      body: { target: 'all' | 'user'; user_id?: number; message: string }
+    ) => request<{ message: string; recipients: number }>(`/events/${eventId}/message`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   },
   /** Optional: two-step auth verify PIN (if backend supports POST /verify-pin) */
   authVerifyPin: (pin: string) =>

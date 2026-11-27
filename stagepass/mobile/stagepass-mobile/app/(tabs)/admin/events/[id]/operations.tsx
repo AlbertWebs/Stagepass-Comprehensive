@@ -85,6 +85,11 @@ export default function AdminEventOperationsScreen() {
   const isEnded = event ? isPermanentlyEndedEventStatus(event.status) : true;
   const crewCount = event?.crew?.length ?? 0;
   const canManageCrew = canManageEventCrew(currentUser, event);
+  const canEditEvent = Boolean(currentUser && event && (
+    (currentUser.roles ?? []).some((r) => ['super_admin', 'director', 'admin'].includes(String(r.name).toLowerCase())) ||
+    Number(event.created_by_id) === Number(currentUser.id) ||
+    Number(event.team_leader_id) === Number(currentUser.id)
+  ));
   const canApproveAllowances = canApproveEarnedAllowancesForEvent(currentUser, event);
   const reportReady = report_ready === '1';
   const reportConfirmedBy = (report_confirmed_by ?? '').trim();
@@ -144,7 +149,7 @@ export default function AdminEventOperationsScreen() {
             onPress: () =>
               handleNav(() =>
                 router.push({
-                  pathname: '/(tabs)/admin/events/[id]/report',
+                  pathname: '/events/[id]/report',
                   params: { id: String(eventId) },
                 })
               ),
@@ -183,7 +188,8 @@ export default function AdminEventOperationsScreen() {
     );
   }
 
-  const navTo = (pathname: string) => () => handleNav(() => router.push({ pathname, params: { id: String(eventId) } }));
+  const navTo = (pathname: '/events/[id]/manage-checkin' | '/events/[id]/message' | '/events/[id]/create-task' | '/events/[id]/pending-allowances') =>
+    () => handleNav(() => router.push({ pathname, params: { id: String(eventId) } }));
 
   return (
     <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -216,7 +222,9 @@ export default function AdminEventOperationsScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.opsRow, { borderBottomColor: opsBorder }, pressed && styles.opsRowPressed]}
-            onPress={() => handleNav(() => router.push({ pathname: '/(tabs)/admin/events/[id]/edit', params: { id: String(eventId) } }))}
+            onPress={() => canEditEvent
+              ? handleNav(() => router.push({ pathname: '/events/[id]/edit', params: { id: String(eventId) } }))
+              : AppAlert.show('Permission needed', 'Contact admin to edit this event.')}
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
               <Ionicons name="pencil" size={20} color={themeBlue} />
@@ -230,7 +238,7 @@ export default function AdminEventOperationsScreen() {
             onPress={() =>
               handleNav(() =>
                 router.push({
-                  pathname: '/(tabs)/admin/events/[id]/crew',
+                  pathname: '/events/[id]/crew',
                   params: {
                     id: String(eventId),
                     ...(canManageCrew && !isEnded ? { openAdd: '1' } : {}),
@@ -271,7 +279,9 @@ export default function AdminEventOperationsScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.opsRow, { borderBottomColor: opsBorder }, pressed && styles.opsRowPressed]}
-            onPress={navTo('/(tabs)/admin/events/[id]/manage-checkin')}
+            onPress={() => canManageCrew
+              ? navTo('/events/[id]/manage-checkin')()
+              : AppAlert.show('Permission needed', 'Contact admin to manage check-in for this event.')}
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
               <Ionicons name="location" size={20} color={themeBlue} />
@@ -285,7 +295,9 @@ export default function AdminEventOperationsScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.opsRow, { borderBottomColor: opsBorder }, pressed && styles.opsRowPressed]}
-            onPress={navTo('/(tabs)/admin/events/[id]/message')}
+            onPress={() => canManageCrew
+              ? navTo('/events/[id]/message')()
+              : AppAlert.show('Permission needed', 'Contact admin to message this event crew.')}
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
               <Ionicons name="chatbubble-ellipses" size={20} color={themeBlue} />
@@ -299,7 +311,9 @@ export default function AdminEventOperationsScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.opsRow, { borderBottomColor: opsBorder }, pressed && styles.opsRowPressed]}
-            onPress={navTo('/(tabs)/admin/events/[id]/create-task')}
+            onPress={() => canManageCrew
+              ? navTo('/events/[id]/create-task')()
+              : AppAlert.show('Permission needed', 'Contact admin to create a task for this event.')}
           >
             <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
               <Ionicons name="list" size={20} color={themeBlue} />
@@ -314,7 +328,7 @@ export default function AdminEventOperationsScreen() {
           {canApproveAllowances && !isEnded ? (
             <Pressable
               style={({ pressed }) => [styles.opsRow, { borderBottomColor: opsBorder }, pressed && styles.opsRowPressed]}
-              onPress={navTo('/(tabs)/admin/events/[id]/pending-allowances')}
+              onPress={navTo('/events/[id]/pending-allowances')}
             >
               <View style={[styles.opsIconWrap, { backgroundColor: themeYellow }]}>
                 <Ionicons name="cash-outline" size={20} color={themeBlue} />
@@ -353,7 +367,7 @@ export default function AdminEventOperationsScreen() {
                 onPress={() =>
                   handleNav(() =>
                     router.push({
-                      pathname: '/(tabs)/admin/events/[id]/report',
+                      pathname: '/events/[id]/report',
                       params: { id: String(eventId) },
                     })
                   )

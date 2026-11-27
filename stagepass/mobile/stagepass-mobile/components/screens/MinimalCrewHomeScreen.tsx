@@ -28,6 +28,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing, themeBlue, themeYellow } from '@/constants/theme';
 import { useStagePassTheme } from '@/hooks/use-stagepass-theme';
+import { useThemePreference } from '@/context/ThemePreferenceContext';
 import { api, getApiBase, type Event as ApiEvent, type User as ApiUser } from '~/services/api';
 import { setUser } from '~/store/authSlice';
 import { haversineDistanceMeters, isWithinGeofence } from '~/utils/geofence';
@@ -85,6 +86,7 @@ export function MinimalCrewHomeScreen({ onRefresh, eventToday = null, eventsToda
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const { colors, isDark } = useStagePassTheme();
+  const { setPreference } = useThemePreference();
   const user = useSelector((s: { auth: { user: ApiUser | null } }) => s.auth.user);
   const authToken = useSelector((s: { auth: { token: string | null } }) => s.auth.token);
   const [loading, setLoading] = useState(false);
@@ -482,6 +484,9 @@ export function MinimalCrewHomeScreen({ onRefresh, eventToday = null, eventsToda
   const welcomePrimaryOnMap = isDark ? '#FAFAFA' : colors.text;
 
   const nameAccentColor = isDark ? themeYellow : themeBlue;
+  const toggleTheme = useCallback(() => {
+    setPreference(isDark ? 'light' : 'dark');
+  }, [isDark, setPreference]);
 
   return (
     <ThemedView style={[styles.container, { backgroundColor: mapCardBg }]}>
@@ -671,7 +676,7 @@ export function MinimalCrewHomeScreen({ onRefresh, eventToday = null, eventsToda
         </View>
 
         <View style={styles.overlayStack} pointerEvents="box-none">
-          <View style={[styles.overlayTop, { paddingTop: welcomePillTopPad }]} pointerEvents="none">
+          <View style={[styles.overlayTop, { paddingTop: welcomePillTopPad }]} pointerEvents="box-none">
             <Reanimated.View
               entering={FadeInDown.duration(420).delay(40)}
               style={styles.welcomeTextBlock}
@@ -704,6 +709,21 @@ export function MinimalCrewHomeScreen({ onRefresh, eventToday = null, eventsToda
                       </Text>
                     </Reanimated.View>
                   </View>
+                  <Pressable
+                    onPress={toggleTheme}
+                    accessibilityRole="button"
+                    accessibilityLabel={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+                    style={({ pressed }) => [
+                      styles.homeThemeToggle,
+                      {
+                        backgroundColor: isDark ? 'rgba(2, 8, 20, 0.72)' : 'rgba(248, 250, 252, 0.92)',
+                        borderColor: isDark ? 'rgba(148, 163, 184, 0.24)' : 'rgba(15, 23, 42, 0.12)',
+                      },
+                      pressed && { opacity: 0.72 },
+                    ]}
+                  >
+                    <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={21} color={colors.text} />
+                  </Pressable>
                 </View>
               </View>
             </Reanimated.View>
@@ -1036,6 +1056,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     backgroundColor: 'transparent',
   },
+  homeThemeToggle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   welcomeTextBlock: {
     width: '100%',
     maxWidth: '100%',
@@ -1050,7 +1078,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingHorizontal: 8,
     overflow: 'hidden',
   },
   welcomeRow: {

@@ -49,7 +49,7 @@ Route::middleware(['auth:sanctum', 'active.user'])->group(function () {
     Route::post('location-cache', [LocationCacheController::class, 'store']);
 
     Route::get('roles', [RoleController::class, 'index']);
-    Route::middleware('admin.permission:employees.view')->get('users', [UserController::class, 'index']);
+    Route::get('users', [UserController::class, 'index']);
     Route::post('users', [UserController::class, 'store'])->middleware('admin.permission:employees.create');
     Route::post('users/delete-all-crew', [UserController::class, 'destroyAllCrew'])->middleware('admin.permission:employees.delete');
     Route::post('users/{user}/welcome-email', [UserController::class, 'sendWelcomeEmail'])->middleware('admin.permission:users.edit');
@@ -65,10 +65,12 @@ Route::middleware(['auth:sanctum', 'active.user'])->group(function () {
     Route::get('events', [EventController::class, 'index'])->middleware('admin.permission:events.view');
     Route::post('events', [EventController::class, 'store'])->middleware('admin.permission:events.create');
     Route::get('events/{event}', [EventController::class, 'show'])->middleware('admin.permission:events.view');
-    Route::put('events/{event}', [EventController::class, 'update'])->middleware('admin.permission:events.edit');
-    Route::patch('events/{event}', [EventController::class, 'update'])->middleware('admin.permission:events.edit');
+    Route::put('events/{event}', [EventController::class, 'update']);
+    Route::patch('events/{event}', [EventController::class, 'update']);
     Route::delete('events/{event}', [EventController::class, 'destroy'])->middleware('admin.permission:events.delete');
     Route::post('events/{event}/assign-user', [EventCrewController::class, 'assignUser']);
+    Route::get('events/{event}/crew-candidates', [EventCrewController::class, 'crewCandidates']);
+    Route::post('events/{event}/message', [EventCrewController::class, 'messageCrew']);
     Route::get('events/{event}/crew-status', [EventCrewController::class, 'crewStatus']);
     Route::post('events/{event}/attendance/manual-checkin/{user}', [EventCrewController::class, 'manualCheckin']);
     Route::post('events/{event}/crew/{user}/pause', [EventCrewController::class, 'pauseCrew']);

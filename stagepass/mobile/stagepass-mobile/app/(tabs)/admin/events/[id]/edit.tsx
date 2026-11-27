@@ -95,7 +95,11 @@ export default function AdminEditEventScreen() {
       });
       AppAlert.show('Saved', 'Event updated.', [{ text: 'OK', onPress: () => router.back() }]);
     } catch (e) {
-      AppAlert.show('Error', e instanceof Error ? e.message : 'Could not update event.');
+      console.error('[Edit event] Update failed', e);
+      const denied = e instanceof Error && /permission|forbidden|not authorized|cannot update|only event administrators|403/i.test(e.message);
+      AppAlert.show(denied ? 'Permission needed' : 'Could not update event', denied
+        ? 'Contact admin to edit this event.'
+        : 'Please try again shortly.');
     } finally {
       setSubmitting(false);
     }
@@ -109,7 +113,7 @@ export default function AdminEditEventScreen() {
           showBack
           onBack={() => {
             if (router.canGoBack()) router.back();
-            else router.replace('/(tabs)/admin/events');
+            else router.replace({ pathname: '/events/[id]/operations', params: { id: String(id) } });
           }}
         />
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -126,7 +130,7 @@ export default function AdminEditEventScreen() {
         showBack
         onBack={() => {
           if (router.canGoBack()) router.back();
-          else router.replace('/(tabs)/admin/events');
+          else router.replace({ pathname: '/events/[id]/operations', params: { id: String(id) } });
         }}
       />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboard}>

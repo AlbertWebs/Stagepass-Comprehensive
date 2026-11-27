@@ -10,8 +10,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 
 /**
- * Per-day event attendance: multi-day events allow check-out and a new check-in the next day.
- * Completed shifts are stored in event_attendance_sessions; event_user row holds the active day only.
+ * Event attendance stores each completed shift in event_attendance_sessions; event_user holds the active shift.
  */
 class EventCrewAttendanceService
 {
@@ -66,20 +65,13 @@ class EventCrewAttendanceService
     }
 
     /**
-     * Before starting a new check-in: allow multi-day events to start a new day after a completed shift
-     * is archived from the pivot. Single-day: completed attendance cannot check in again.
+     * Archive a completed shift before starting another shift, including on the same event day.
      */
     public function prepareForCheckin(Event $event, EventUser $assignment): ?JsonResponse
     {
         if ($assignment->checkin_time && $assignment->checkout_time) {
-            if ($this->isMultiDayEvent($event)) {
-                $this->archiveFromPivotIfComplete($assignment);
-                $assignment->refresh();
-            } else {
-                return response()->json([
-                    'message' => 'You have already completed attendance for this event.',
-                ], 422);
-            }
+            $this->archiveFromPivotIfComplete($assignment);
+            $assignment->refresh();
         }
 
         if ($assignment->checkin_time && ! $assignment->checkout_time) {
@@ -93,8 +85,7 @@ class EventCrewAttendanceService
     }
 
     /**
-     * Copy a completed row on event_user to event_attendance_sessions and clear the pivot
-     * so a new day can get a new check-in.
+     * Copy a completed shift on event_user to event_attendance_sessions and clear the pivot.
      */
     public function archiveFromPivotIfComplete(EventUser $assignment): void
     {
@@ -228,13 +219,10 @@ class EventCrewAttendanceService
             ];
         }
 
-        return EventAttendanceSession::updateOrCreate(
-            [
+        return EventAttendanceSession::create([
                 'event_id' => $eventId,
                 'user_id' => $userId,
                 'work_date' => $workDate,
-            ],
-            [
                 'checkin_time' => $checkin,
                 'checkout_time' => $checkout,
                 'total_hours' => (float) $calc['total_hours'],
@@ -248,8 +236,7 @@ class EventCrewAttendanceService
                     : (int) ($assignment->pause_duration ?? 0),
                 'checkin_latitude' => $assignment->checkin_latitude,
                 'checkin_longitude' => $assignment->checkin_longitude,
-            ]
-        );
+            ]);
     }
 
     private function clearOpenAttendance(EventUser $assignment): void
