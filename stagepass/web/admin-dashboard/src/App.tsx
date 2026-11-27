@@ -11,7 +11,6 @@ const AuditLogs = lazy(() => import('@/pages/AuditLogs'));
 const Clients = lazy(() => import('@/pages/Clients'));
 const Communication = lazy(() => import('@/pages/Communication'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
-const Equipment = lazy(() => import('@/pages/Equipment'));
 const EventDetail = lazy(() => import('@/pages/EventDetail'));
 const EventOperations = lazy(() => import('@/pages/EventOperations'));
 const Events = lazy(() => import('@/pages/Events'));
@@ -23,7 +22,6 @@ const Help = lazy(() => import('@/pages/Help'));
 const Placeholder = lazy(() => import('@/pages/Placeholder'));
 const Checkins = lazy(() => import('@/pages/Checkins'));
 const Reports = lazy(() => import('@/pages/Reports'));
-const Transport = lazy(() => import('@/pages/Transport'));
 const Settings = lazy(() => import('@/pages/Settings'));
 const DangerZone = lazy(() => import('@/pages/DangerZone'));
 const Tasks = lazy(() => import('@/pages/Tasks'));
@@ -113,8 +111,6 @@ export default function App() {
         />
         <Route path="event-operations" element={<RoleRoute requirePermission="events.view"><EventOperations /></RoleRoute>} />
         <Route path="tasks" element={<RoleRoute requirePermission="tasks.view"><Tasks /></RoleRoute>} />
-        <Route path="equipment" element={<RoleRoute requirePermission="equipment.view"><Equipment /></RoleRoute>} />
-        <Route path="transport" element={<RoleRoute requirePermission="transport.view"><Transport /></RoleRoute>} />
         <Route path="payments" element={<RoleRoute requirePermission="payments.view"><Payments /></RoleRoute>} />
         <Route path="allowances" element={<RoleRoute requirePermission="allowances.view"><Allowances /></RoleRoute>} />
         <Route path="holidays" element={<RoleRoute requirePermission="holidays.view"><Holidays /></RoleRoute>} />

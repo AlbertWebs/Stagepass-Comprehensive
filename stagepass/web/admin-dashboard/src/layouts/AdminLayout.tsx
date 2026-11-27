@@ -15,9 +15,6 @@ const nav: Array<
   { type: 'link', to: '/event-operations', label: 'Event Operations', icon: EventOperationsIcon },
   { type: 'link', to: '/tasks', label: 'Task manager', icon: TasksIcon },
   { type: 'link', to: '/crew', label: 'Crew Management', icon: CrewIcon },
-  { type: 'section', label: 'Logistics' },
-  { type: 'link', to: '/equipment', label: 'Equipment', icon: EquipmentIcon },
-  { type: 'link', to: '/transport', label: 'Transport & Logistics', icon: TransportIcon },
   { type: 'link', to: '/payments', label: 'Payments', icon: PaymentsIcon },
   { type: 'link', to: '/allowances', label: 'Allowances', icon: AllowancesIcon },
   { type: 'link', to: '/holidays', label: 'Holidays', icon: TimeOffIcon },
@@ -43,8 +40,6 @@ const pathToTitle: Record<string, string> = {
   '/crew': 'Crew',
   '/event-operations': 'Event Operations',
   '/tasks': 'Task manager',
-  '/equipment': 'Equipment',
-  '/transport': 'Transport & Logistics',
   '/payments': 'Payments',
   '/allowances': 'Allowances',
   '/holidays': 'Holidays',
@@ -90,13 +85,6 @@ function EventsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-    </svg>
-  );
-}
-function EquipmentIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
     </svg>
   );
 }
@@ -147,13 +135,6 @@ function TasksIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-    </svg>
-  );
-}
-function TransportIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
     </svg>
   );
 }
@@ -264,7 +245,7 @@ export default function AdminLayout() {
   const requiredPermission: Record<string, string> = {
     '/dashboard': 'dashboard.view', '/events': 'events.view', '/event-operations': 'events.view',
     '/tasks': 'tasks.view', '/crew': 'employees.view', '/allowances': 'allowances.view',
-    '/equipment': 'equipment.view', '/transport': 'transport.view', '/holidays': 'holidays.view',
+    '/holidays': 'holidays.view',
     '/clients': 'clients.view',
     '/payments': 'payments.view', '/reports': 'reports.all.view', '/checkins': 'attendance.view',
     '/time-off': 'timeoff.view',
