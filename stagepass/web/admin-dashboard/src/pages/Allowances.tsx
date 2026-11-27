@@ -288,7 +288,7 @@ export default function Allowances() {
             </p>
           ) : null}
           <input
-            className="input mb-4 w-full max-w-md"
+            className="form-input mb-4 w-full max-w-md"
             placeholder="Search today’s events by name or status"
             value={eventQuery}
             onChange={(e) => setEventQuery(e.target.value)}
@@ -355,7 +355,7 @@ export default function Allowances() {
             . Use this list to verify per diem and allowance amounts paid to crew.
           </p>
           <input
-            className="input mb-4 w-full max-w-md"
+            className="form-input mb-4 w-full max-w-md"
             placeholder="Search by crew, event, or purpose"
             value={paymentQuery}
             onChange={(e) => setPaymentQuery(e.target.value)}
@@ -427,7 +427,7 @@ export default function Allowances() {
           </p>
           <div className="mb-4 flex flex-wrap gap-3">
             <select
-              className="input max-w-xs"
+              className="form-select max-w-xs"
               aria-label="Filter by event"
               value={earnedEventId}
               onChange={(e) => setEarnedEventId(e.target.value)}
@@ -441,7 +441,7 @@ export default function Allowances() {
               ))}
             </select>
             <select
-              className="input max-w-xs"
+              className="form-select max-w-xs"
               aria-label="Filter by status"
               value={earnedStatus}
               onChange={(e) => setEarnedStatus(e.target.value)}
@@ -454,7 +454,7 @@ export default function Allowances() {
               <option value="paid">Paid</option>
             </select>
             <select
-              className="input max-w-xs"
+              className="form-select max-w-xs"
               aria-label="Filter by HR verification"
               value={earnedVerification}
               onChange={(e) => setEarnedVerification(e.target.value)}
