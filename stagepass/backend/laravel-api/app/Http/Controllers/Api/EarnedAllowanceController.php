@@ -402,9 +402,18 @@ class EarnedAllowanceController extends Controller
         $status = $validated['status'];
         $comment = isset($validated['comment']) ? trim((string) $validated['comment']) : '';
 
-        if ($isPanel && ! $request->user()->hasSuperAdminAccess()
-            && $status !== EventAllowance::STATUS_PENDING
-            && ! $eventAllowance->hr_verified_at) {
+        $user = $request->user();
+        $allowanceEvent = $eventAllowance->event;
+        $isEventTeamLeader = $allowanceEvent
+            && EventTeamLeaderGate::userCanManageEvent($allowanceEvent, $user);
+        $teamLeaderDecisionBeforeHr = $isEventTeamLeader
+            && $eventAllowance->source === EventAllowance::SOURCE_MANUAL
+            && in_array($status, [EventAllowance::STATUS_APPROVED, EventAllowance::STATUS_REJECTED], true);
+
+        if (! $user->hasSuperAdminAccess()
+            && in_array($status, [EventAllowance::STATUS_APPROVED, EventAllowance::STATUS_PAID], true)
+            && ! $eventAllowance->hr_verified_at
+            && ! $teamLeaderDecisionBeforeHr) {
             return response()->json(['message' => 'HR must verify this allowance before Accounts can approve or pay it.'], 422);
         }
 
@@ -470,8 +479,12 @@ class EarnedAllowanceController extends Controller
             'verified' => 'required|boolean',
             'note' => 'nullable|string|max:2000',
         ]);
-        if ($eventAllowance->status !== EventAllowance::STATUS_PENDING) {
-            return response()->json(['message' => 'Only pending allowances can be HR verified.'], 422);
+        $canVerifyAfterTeamLeaderApproval = $eventAllowance->source === EventAllowance::SOURCE_MANUAL
+            && $eventAllowance->status === EventAllowance::STATUS_APPROVED;
+        $canVerifyAutomaticAllowance = $eventAllowance->source === EventAllowance::SOURCE_AUTOMATIC
+            && $eventAllowance->status === EventAllowance::STATUS_PENDING;
+        if (! $canVerifyAfterTeamLeaderApproval && ! $canVerifyAutomaticAllowance) {
+            return response()->json(['message' => 'Only team-leader-approved requests or pending automatic allowances can be HR verified.'], 422);
         }
 
         $before = [
