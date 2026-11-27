@@ -404,6 +404,7 @@ class MealAllowanceService
                     'status' => EventAllowance::STATUS_APPROVED,
                     'approved_by' => null,
                     'approved_at' => now(),
+                    'hr_verified_at' => now(),
                     'source' => EventAllowance::SOURCE_AUTOMATIC,
                     'meal_slot' => $mealSlot,
                     'meal_grant_date' => $mealGrantDate,
