@@ -1,261 +1,79 @@
-# Stagepass Web Admin – Complete Procedures Guide
+# Stagepass Web Admin Guide
 
-This guide covers end-to-end procedures for admins, directors, and team leads using the Stagepass web admin.
+This guide describes the current web admin at **https://admin.stagepass.co.ke**. The modules and actions available to each person depend on their assigned roles and permissions. If a page or action is missing, ask an administrator to review your access.
 
-Use this as the operating SOP for daily work.
+## Sign in
 
----
+1. Open the admin URL and sign in with your work email and password.
+2. If you cannot sign in, use **Forgot password** or contact your organisation’s administrator.
+3. The browser may offer to install the admin as an app for quicker access.
 
-## 1) Access and login
+## Navigation and access
 
-1. Open the admin URL (example: `https://app.stagepass.co.ke` or your local URL).
-2. Sign in with admin credentials (email + password).
-3. Confirm you can see the left sidebar modules.
-4. If login fails:
-   - verify email/password,
-   - use **Forgot Password**,
-   - confirm backend API and mail settings are active.
+Use the sidebar to open Dashboard, Events, Event Operations, Task manager, Crew Management, Equipment, Transport & Logistics, Payments, Allowances, Holidays, Clients, Reports, Daily office check-ins, Time off, Communication, Approvals, Users & Permissions, Roles & Permissions, System Settings, Audit Logs, and Help & Documentation. Links are shown according to your access. The **Approvals** route requires `approvals.manage`; most other modules have their own view or manage permission. Users with system-administrator access can review role permissions in **Roles & Permissions**.
 
----
+## Dashboard
 
-## 2) Daily startup checklist (recommended)
+Dashboard content is tailored to your role and permissions. Use the **From** and **To** date fields to change the reporting period. Available summaries can include people operations and attendance, team operations, or finance and payouts. Select a metric or an item in **Action centre** to open the related module. Some organisation-wide metrics are visible only to users with the relevant permissions.
 
-1. Open **Dashboard** and review:
-   - today’s active/ongoing events,
-   - team count and pending items.
-2. Open **Events** and verify today’s event assignments.
-3. Open **Approvals** and clear pending items (time off + payments).
-4. Open **Payments → Earned Allowances** and confirm new allocations.
-5. Open **Communication** to send any daily crew notices.
+## Events and event details
 
----
+### Create or update an event
 
-## 3) Users and role management
+1. Open **Events** and choose **Create event** or open an existing event.
+2. Enter or update the event name, dates, times, location, geofence, team leader, client, and daily allowance where applicable.
+3. Save the event. Changing event dates can recalculate attendance and allowance dates; review the confirmation before continuing.
 
-Go to **Users & Crew**:
+### Manage an event
 
-1. Create user with required fields (name, email, username, phone if needed).
-2. Assign correct role:
-   - `super_admin`, `director`, `admin` for management access,
-   - `team_leader` for field operations,
-   - `crew` for normal staff.
-3. Set/reset PIN if mobile PIN login is used.
-4. Send/resend welcome email where needed.
-5. Deactivate/delete users only when no longer active.
+Open an event to view its details. Depending on your permissions, you can update event information, assign or remove crew, transfer crew, record a manual arrival when a crew member cannot check in on their device, review attendance, manage equipment and notes, and allocate or review payment records. The **Reports** section offers event PDF and CSV exports. The **End event** action records a closing comment; use it when the event is finished.
 
----
+## Event Operations
 
-## 4) Event lifecycle procedure
+**Event Operations** provides event-wide actions without opening each event first. The page supports transferring a crew member between events, manually recording a crew member’s arrival, adding crew to an event, and pausing or resuming a crew member’s event work where your access permits. Open the event details page for its full management tools.
 
-### A. Create event
+## Crew and tasks
 
-1. Go to **Events → Create event**.
-2. Fill event data:
-   - name, date (and end date for multi-day),
-   - start time and expected end time,
-   - location + geofence,
-   - team leader,
-   - optional client and daily allowance.
-3. Save event.
+- **Crew Management** is the crew-focused view of user records. Search for people and use the available create, edit, role, and account actions allowed by your permissions.
+- **Task manager** lists tasks and supports creating, editing, assigning, and updating task records where permitted. Tasks can include a title, description, priority, due date, notes, and assigned crew. Crew members see their assigned tasks in the mobile app.
 
-### B. Staff and setup
+## Equipment, transport, clients, and holidays
 
-1. Open event details.
-2. Assign crew members.
-3. Assign equipment and checklist items.
-4. Add notes/instructions for team.
+- **Equipment** manages the inventory. Event-specific equipment is attached from event details.
+- **Transport & Logistics** manages vehicles and event vehicle assignments, including optional driver and notes.
+- **Clients** manages client contact records and event-client associations.
+- **Holidays** maintains the organisation’s holiday dates, which are used by relevant attendance and overtime calculations.
 
-### C. During event
+## Payments and allowances
 
-1. Monitor attendance/check-ins.
-2. Team lead/admin can:
-   - manual check-in for crew,
-   - pause/resume crew where required,
-   - record transport details.
-3. Use communication tools to message event crew.
+- **Payments** lists payment requests. Use the status and event filters to find records. Depending on permissions, you can create a payment request, approve or reject a pending request, and work with payout actions shown on the page.
+- **Earned allowances** are separate from payment requests. The Allowances area supports reviewing allowance records and verifying attendance evidence for roles with `allowances.verify`. Allowance approval and payout actions require their own permissions. Event daily allowance rates are edited on the event.
+- **Approvals** combines pending time-off requests and pending payment requests. Filter the queue, approve individual items, select visible items for bulk approval, or reject an item and provide a reason when prompted. Allowance verification and payout processing are handled in their respective areas, not in this queue.
 
-### D. Close event
+## Attendance and time off
 
-1. Team lead checks out.
-2. Use **Done for the Day** with required closing comment.
-3. Verify closure timestamp and closure comment are saved.
+- **Daily office check-ins** shows office and event attendance records for the selected date range and provides CSV reporting. It is different from manual crew arrival on an event.
+- **Time off** lists employee requests and records. Use the available filters and actions to review, edit, approve, or reject requests according to your permissions. The Approvals page also provides a combined pending queue.
 
----
+## Communication
 
-## 5) Time off management (with notification flow)
+Open **Communication** and choose **Send message**. Enter a subject and message, choose **All staff**, **Crew only**, or **Event crew**, and select an event when required. Choose one or both delivery channels: **In-app** and **Email**. Sent communications appear in the history, where you can view or delete the record. Deleting the record does not recall a message or email already delivered.
 
-### Crew side
+## Reports
 
-- Crew submits time-off request from mobile.
+Open **Reports**, choose the report view and filters, and export the available PDF or CSV. Reports include event, attendance, payment, task, end-of-day, and allowance information. What you can view depends on report permissions; the page is not limited to only super administrators or directors.
 
-### Admin side
+## Users, roles, settings, and audit logs
 
-1. Open **Approvals** or **Time Off** list.
-2. Review request dates, reason, notes, and attachments.
-3. Approve or reject.
-4. Ensure request status updates correctly.
+- **Users & Permissions** manages user accounts and assignments where your access permits.
+- **Roles & Permissions** lets authorised administrators review and configure role permissions.
+- **System Settings** contains organisation and account settings available to your role. The profile area is also used for personal account details.
+- **Audit Logs** helps authorised users review recorded API activity, including its source and request details.
 
-### Notification behavior
+## If a page or action is unavailable
 
-- On submission, admins receive email notification.
-- Keep admin emails valid to avoid missed requests.
+Check that you are signed in with the intended account. If the module or control is still unavailable, ask your administrator to check the permission associated with it. For data that looks outdated, use that page’s **Refresh** action or reload the page. Include the page name and the action you were trying when reporting a problem.
 
----
+## Keeping this guide current
 
-## 6) Payments procedure
-
-1. Go to **Payments**.
-2. Create payment request for a crew member if required.
-3. Include:
-   - event,
-   - user,
-   - purpose,
-   - hours/per diem/allowances.
-4. Move through statuses:
-   - `pending` → `approved` or `rejected`.
-5. Track rejection reason when rejecting.
-
----
-
-## 7) Earned allowances procedure (allocation + visibility)
-
-Go to **Payments → Earned Allowances**.
-
-### A. Configure allowance types
-
-1. Create allowance types (e.g., Transport, Meal, Overtime Allowance).
-2. Activate/deactivate types as needed.
-
-### B. Allocate to user
-
-1. Use **Allocate allowance to crew** form.
-2. Select event.
-3. Select crew member from event crew.
-4. Select allowance type.
-5. Enter amount and optional description.
-6. Click **Allocate**.
-
-### C. Post-allocation checks
-
-1. Confirm allocation appears in earned allowances table.
-2. Confirm crew member sees allocation in mobile **Allowances** page.
-3. Update status to `approved` / `paid` as processing continues.
-
----
-
-## 8) Holidays and overtime procedures
-
-### Holidays
-
-1. Go to **Holidays**.
-2. Add/edit/delete holidays in `YYYY-MM-DD`.
-3. Keep holiday list current before payroll cycles.
-
-### Overtime/extra hours
-
-- System auto-calculates extra hours:
-  - normal day: beyond 8 hours,
-  - Sunday/holiday: all worked time counts as extra hours.
-- Verify totals in reports and attendance detail screens.
-
----
-
-## 9) Team lead operational controls
-
-From event operations screens, authorized users can:
-
-1. Pause/resume crew sessions.
-2. Record transport type and amount.
-3. Close event for the day with comment.
-4. Check crew attendance states in real time.
-
-Access is restricted to team lead/admin roles.
-
----
-
-## 10) Reports and reconciliation
-
-Use **Reports** to review:
-
-- events,
-- crew attendance,
-- crew payments,
-- financial summaries,
-- tasks and operational details.
-
-Monthly close recommendations:
-
-1. Verify attendance totals and extra hours.
-2. Verify allowances and payment statuses.
-3. Verify transport and closure comments.
-4. Export report snapshots for audit records.
-
----
-
-## 11) Communication procedures
-
-1. Open **Communication**.
-2. Draft message subject/body.
-3. Select target:
-   - all staff,
-   - crew,
-   - event crew.
-4. Select channels:
-   - in-app,
-   - email.
-5. Send and verify sent record.
-
-Use this for shift updates, alerts, and urgent notices.
-
----
-
-## 12) Audit, safety, and data controls
-
-### Audit logs
-
-- Use **Audit Logs** to trace actions (who, when, endpoint, status).
-
-### Backup
-
-- Use backup tools before major bulk operations.
-
-### Role safety
-
-- Only grant high-privilege roles when required.
-- Review stale admin accounts regularly.
-
----
-
-## 13) Troubleshooting quick guide
-
-### A. Crew cannot see assigned event in mobile
-
-1. Confirm user is assigned to event.
-2. Confirm event date range includes today.
-3. Refresh mobile events list.
-4. Check API response and assignment records.
-
-### B. Push/email not received
-
-1. Verify device token/email exists.
-2. Check notification channel and mail configuration.
-3. Check queue/worker and logs.
-
-### C. Allowance not visible in mobile
-
-1. Confirm allowance allocated under **Earned Allowances**.
-2. Confirm allocation uses correct crew user.
-3. Refresh mobile allowances page.
-
----
-
-## 14) Help maintenance procedure
-
-When features change:
-
-1. Update this markdown file in `resources/docs/guides/web-admin-guide.md`.
-2. Ensure section names match sidebar/module names.
-3. Add or adjust step-by-step SOPs (not just summaries).
-4. Verify `/help` renders updated content correctly.
-
-This keeps Help aligned with real operations.
+The Help page loads this guide from the API. Update the canonical file at `docs/guides/web-admin-guide.md` when the web admin workflow changes, and keep the backend fallback copy in `backend/laravel-api/resources/docs/guides/` in sync.

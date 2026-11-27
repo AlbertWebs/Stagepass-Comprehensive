@@ -1,24 +1,14 @@
 # Stagepass User Guides
 
-This folder contains the **canonical documentation** for:
+These are the canonical guides shown in the web admin’s **Help & Documentation** page:
 
-- **Mobile app** – crew and team leader usage
-- **Web admin** – admin and director usage
+| File | Audience |
+| --- | --- |
+| `mobile-user-guide.md` | Crew and team leaders using the mobile app |
+| `web-admin-guide.md` | Administrators and other authorised web admin users |
 
-These guides are shown in the **Help & Documentation** page in the web admin. When you change a feature in the app, update the relevant guide here so the in-app help stays accurate.
+## How Help loads the guides
 
-## Files
+The web admin calls `GET /api/docs/guides` to list guides and `GET /api/docs/guides/{guide-id}` to load each Markdown file. The API first serves files from this directory. Its fallback copies are in `backend/laravel-api/resources/docs/guides/` for deployments where the canonical docs directory is not present.
 
-| File | Audience | When to update |
-|------|----------|----------------|
-| `mobile-user-guide.md` | Mobile app users (crew, team leaders) | New/updated mobile screens, check-in flow, payments, time off, notifications |
-| `web-admin-guide.md` | Web admin users (admins, directors) | New/updated sidebar, pages, Events, Clients, Crew, Equipment, Payments, Reports, Settings, Audit Logs |
-
-## Update process
-
-1. **Change a feature** in mobile app or web admin (or API).
-2. **Edit the right guide** in this folder so the steps and screens match.
-3. **If you add a new section** (e.g. a new module), add a corresponding section to the guide and, if needed, to the Help page (which loads these files).
-4. **Commit** the guide changes with your feature change so docs and product stay in sync.
-
-Guides are served to the web admin Help page from the backend; the web app loads them from `GET /api/docs/guides?name=<guide-name>`.
+When a product workflow changes, update the corresponding guide here and copy the same Markdown into the backend fallback directory. Keep steps and permission notes aligned with the current app; do not promise actions that are hidden or unavailable to some roles.

@@ -1,173 +1,79 @@
-# Stagepass Web Admin – User Guide
+# Stagepass Web Admin Guide
 
-Guide for admins and directors using the Stagepass web admin at **app.stagepass.co.ke** (or your deployment URL).
+This guide describes the current web admin at **https://admin.stagepass.co.ke**. The modules and actions available to each person depend on their assigned roles and permissions. If a page or action is missing, ask an administrator to review your access.
 
----
+## Sign in
 
-## 1. Logging in
+1. Open the admin URL and sign in with your work email and password.
+2. If you cannot sign in, use **Forgot password** or contact your organisation’s administrator.
+3. The browser may offer to install the admin as an app for quicker access.
 
-- Open the web admin URL (e.g. `https://app.stagepass.co.ke`).
-- Enter your **email** and **password**.
-- You can optionally **install the app** as a PWA when prompted for quicker access.
+## Navigation and access
 
----
+Use the sidebar to open Dashboard, Events, Event Operations, Task manager, Crew Management, Equipment, Transport & Logistics, Payments, Allowances, Holidays, Clients, Reports, Daily office check-ins, Time off, Communication, Approvals, Users & Permissions, Roles & Permissions, System Settings, Audit Logs, and Help & Documentation. Links are shown according to your access. The **Approvals** route requires `approvals.manage`; most other modules have their own view or manage permission. Users with system-administrator access can review role permissions in **Roles & Permissions**.
 
-## 2. Dashboard
+## Dashboard
 
-- **Dashboard** gives a quick snapshot: today’s date, greeting, and at-a-glance stats:
-  - Total events, ongoing now, upcoming, team members, equipment count.
-- **Crew on active events** shows how many people are on live events.
-- **Ongoing** and **Upcoming** event tables with links to event details.
-- **Recent events** and **Quick actions** (Create event, Add team member, Equipment, Payments, Time off).
+Dashboard content is tailored to your role and permissions. Use the **From** and **To** date fields to change the reporting period. Available summaries can include people operations and attendance, team operations, or finance and payouts. Select a metric or an item in **Action centre** to open the related module. Some organisation-wide metrics are visible only to users with the relevant permissions.
 
-Use the sidebar to move to any section.
+## Events and event details
 
----
+### Create or update an event
 
-## 3. Event Management
+1. Open **Events** and choose **Create event** or open an existing event.
+2. Enter or update the event name, dates, times, location, geofence, team leader, client, and daily allowance where applicable.
+3. Save the event. Changing event dates can recalculate attendance and allowance dates; review the confirmation before continuing.
 
-### Events list
+### Manage an event
 
-- **Events** in the sidebar opens the events list.
-- Filter by **status** (All, Created, Active, Completed, Closed).
-- Create a new event with **Create event**; edit or delete from the table.
+Open an event to view its details. Depending on your permissions, you can update event information, assign or remove crew, transfer crew, record a manual arrival when a crew member cannot check in on their device, review attendance, manage equipment and notes, and allocate or review payment records. The **Reports** section offers event PDF and CSV exports. The **End event** action records a closing comment; use it when the event is finished.
 
-### Creating an event
+## Event Operations
 
-- Click **Create event**.
-- Fill: **Name**, **Date**, **Start time**, **Expected end time**, **Location**, **Geofence radius** (for mobile check-in), **Team leader**, and optionally **Client** (select from existing clients).
-- Save. The event appears in the list with status **Created**.
+**Event Operations** provides event-wide actions without opening each event first. The page supports transferring a crew member between events, manually recording a crew member’s arrival, adding crew to an event, and pausing or resuming a crew member’s event work where your access permits. Open the event details page for its full management tools.
 
-### Event detail (single event)
+## Crew and tasks
 
-- Click **View** on an event to open **Event detail**.
-- Here you can:
-  - **Assign or change client** (Client dropdown in Details); assign **team leader**.
-  - **Assign crew** (Add crew, remove, transfer to another event).
-  - **Mark crew as arrived** (manual check-in) if they can’t use the app.
-  - **Attach equipment** and confirm.
-  - **Add notes**, manage **checklist**, **allocate payments** for crew.
-  - **End event** (team leader or admin) with an end comment.
+- **Crew Management** is the crew-focused view of user records. Search for people and use the available create, edit, role, and account actions allowed by your permissions.
+- **Task manager** lists tasks and supports creating, editing, assigning, and updating task records where permitted. Tasks can include a title, description, priority, due date, notes, and assigned crew. Crew members see their assigned tasks in the mobile app.
 
----
+## Equipment, transport, clients, and holidays
 
-## 4. Crew Management
+- **Equipment** manages the inventory. Event-specific equipment is attached from event details.
+- **Transport & Logistics** manages vehicles and event vehicle assignments, including optional driver and notes.
+- **Clients** manages client contact records and event-client associations.
+- **Holidays** maintains the organisation’s holiday dates, which are used by relevant attendance and overtime calculations.
 
-- **Crew** in the sidebar lists all crew/staff (same as Users with a “Crew” lens).
-- **Add crew**, search, and edit or delete.
-- Assign **roles** (e.g. team_leader, crew). Crew are then available to assign to events under Event detail.
+## Payments and allowances
 
----
+- **Payments** lists payment requests. Use the status and event filters to find records. Depending on permissions, you can create a payment request, approve or reject a pending request, and work with payout actions shown on the page.
+- **Earned allowances** are separate from payment requests. The Allowances area supports reviewing allowance records and verifying attendance evidence for roles with `allowances.verify`. Allowance approval and payout actions require their own permissions. Event daily allowance rates are edited on the event.
+- **Approvals** combines pending time-off requests and pending payment requests. Filter the queue, approve individual items, select visible items for bulk approval, or reject an item and provide a reason when prompted. Allowance verification and payout processing are handled in their respective areas, not in this queue.
 
-## 5. Event Operations
+## Attendance and time off
 
-- **Event Operations** (sidebar) is a hub for event management actions without opening each event.
-- **Transfer crew between events**: choose *From event*, *Crew member*, and *To event*; click **Transfer**. The crew member is removed from the source event and added to the target (both must be created or active).
-- **Manual check-in (mark as arrived)**: choose an event and a crew member who has not yet checked in; click **Mark as arrived**. Use this when someone cannot check in via the app.
-- **Add crew to event**: choose an event and a user (and optional role); click **Add to event**. The user receives a notification.
-- **Events – full management**: table of events with **View & manage** linking to Event detail for crew, equipment, checklist, notes, payments, and ending the event.
+- **Daily office check-ins** shows office and event attendance records for the selected date range and provides CSV reporting. It is different from manual crew arrival on an event.
+- **Time off** lists employee requests and records. Use the available filters and actions to review, edit, approve, or reject requests according to your permissions. The Approvals page also provides a combined pending queue.
 
----
+## Communication
 
-## 6. Equipment
+Open **Communication** and choose **Send message**. Enter a subject and message, choose **All staff**, **Crew only**, or **Event crew**, and select an event when required. Choose one or both delivery channels: **In-app** and **Email**. Sent communications appear in the history, where you can view or delete the record. Deleting the record does not recall a message or email already delivered.
 
-- **Equipment** lists all equipment (inventory).
-- **Create** new items (name, serial number, condition).
-- **Assign equipment** to an event from the **Event detail** page (attach and confirm).
+## Reports
 
----
+Open **Reports**, choose the report view and filters, and export the available PDF or CSV. Reports include event, attendance, payment, task, end-of-day, and allowance information. What you can view depends on report permissions; the page is not limited to only super administrators or directors.
 
-## 7. Transport & Logistics
+## Users, roles, settings, and audit logs
 
-- **Transport & Logistics** (sidebar → **Transport**) lets you manage vehicles and assign them to events.
-- **Vehicles:** View all vehicles in a table. Use the search box to filter by name or registration, and the status filter (All / Available / In use / Maintenance). Click **Add vehicle** to create one: enter **Name** (required), optional **Registration**, **Capacity** (seats), **Status**, and **Notes**. Use **Edit** or **Delete** on each row as needed.
-- **Event assignments:** The table lists which vehicles are assigned to which events, with optional driver and notes. Filter by **event** using the dropdown. Click **Assign vehicle to event** to add an assignment: choose an **Event**, a **Vehicle**, optionally a **Driver** (from existing users), and **Notes**. Each event–vehicle pair can only be assigned once. Use **Remove** on a row to unassign a vehicle from an event.
-- All transport management is done from this single page; events do not need to be opened to assign or remove vehicles.
+- **Users & Permissions** manages user accounts and assignments where your access permits.
+- **Roles & Permissions** lets authorised administrators review and configure role permissions.
+- **System Settings** contains organisation and account settings available to your role. The profile area is also used for personal account details.
+- **Audit Logs** helps authorised users review recorded API activity, including its source and request details.
 
----
+## If a page or action is unavailable
 
-## 8. Payments
+Check that you are signed in with the intended account. If the module or control is still unavailable, ask your administrator to check the permission associated with it. For data that looks outdated, use that page’s **Refresh** action or reload the page. Include the page name and the action you were trying when reporting a problem.
 
-- **Payments** lists all payment records. Filter by status or event.
-- **Create payment** (initiate) from Event detail for a crew member (hours, per diem, allowances).
-- **Approve** or **Reject** payments from the Payments list or from **Approvals**.
+## Keeping this guide current
 
----
-
-## 9. Clients
-
-- **Clients** in the sidebar lists all clients (companies or organisations you run events for).
-- **Create client**: name (required), contact name, email, phone, address, notes.
-- **Search** by name, contact, email or phone.
-- **View** to see full details; **Edit** to update; **Delete** to remove (events linked to that client will have their client assignment cleared).
-- **Assign client to an event**: when creating or editing an event (Events list), choose a **Client** in the form; or open **Event detail** and use the **Client** dropdown in the Details section to assign or change the client.
-
----
-
-## 10. Reports & Analytics
-
-- **Reports** (sidebar) opens the reports page.
-- Choose **From** and **To** dates and click **Apply**.
-- You get:
-  - **Financial report** – payments, amounts, by status and by day.
-  - **Attendance report** – check-ins, total hours, by day.
-  - **Events report** – event counts by status and day.
-  - **Arrival report** – arrivals by day and by event.
-
-Only **super_admin** and **director** roles can access Reports.
-
----
-
-## 11. Communication
-
-- **Communication** lets you send internal messages and/or emails to staff.
-- Click **Send message** to compose: **Subject**, **Message**, **Send to** (All staff, Crew only, or Event crew – if Event crew, pick an event).
-- Under **Delivery channels**, select at least one:
-  - **In-app message** – recipients see it in their app notifications.
-  - **Email** – recipients receive an email.
-- Click **Send**. The communication is stored and listed under **Sent communications**.
-- **View** to see full details; **Delete** to remove the record (already-delivered messages/emails are not recalled).
-
----
-
-## 12. Approvals
-
-- **Approvals** shows **Pending time off** and **Pending payments** in one place.
-- **Approve** or **Reject** time off requests and payments from the same page.
-- Reject actions open a confirmation modal.
-
----
-
-## 13. Users & Permissions
-
-- **Users & Permissions** lists all users. Create, edit, delete, and assign **roles** (e.g. super_admin, director, team_leader, crew).
-- Restrict sensitive actions (e.g. Reports, Audit Logs, Settings) by role.
-
----
-
-## 14. System Settings
-
-- **System Settings** (or **Settings** in the sidebar) includes:
-  - **Profile** – your name, email, password.
-  - **Application settings** – timezone, date/time format, geofence default, notifications, payment currency, etc. (for admins/directors).
-  - **Backup** – export of users, events, equipment (admin/director).
-
----
-
-## 15. Audit Logs
-
-- **Audit Logs** (Support & System) shows all API requests: who made them, from **Web** or **Mobile**, method, path, status, IP, user agent.
-- Use filters: date range, source (Web/Mobile), method, user, path.
-- Only **super_admin** and **director** can access.
-
----
-
-## 16. Help & Documentation
-
-- **Help & Documentation** in the sidebar opens this guide and the mobile guide so you can share or follow the same steps.
-
----
-
-## Updating this guide
-
-When you add or change a feature in the web admin (or API that affects admin flows), update the relevant section in **web-admin-guide.md** and commit it with your change. The Help page loads these guides from the server so users always see the latest version.
+The Help page loads this guide from the API. Update the canonical file at `docs/guides/web-admin-guide.md` when the web admin workflow changes, and keep the backend fallback copy in `backend/laravel-api/resources/docs/guides/` in sync.
