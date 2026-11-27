@@ -57,10 +57,6 @@ export default function Approvals() {
     fetchAll();
   }, [fetchAll]);
 
-  if (pageLoading && !timeOffData && !paymentsData) {
-    return <Preloader message="Loading approvals…" fullScreen />;
-  }
-
   const pendingTimeOff = timeOffData?.data ?? [];
   const pendingPayments = paymentsData?.data ?? [];
 
@@ -105,6 +101,10 @@ export default function Approvals() {
         return at - bt;
       });
   }, [pendingPayments, pendingTimeOff, activeType, query]);
+
+  if (pageLoading && !timeOffData && !paymentsData) {
+    return <Preloader message="Loading approvals…" fullScreen />;
+  }
 
   const selectedRows = queue.filter((row) => selectedKeys.includes(row.key));
   const allVisibleSelected = queue.length > 0 && queue.every((row) => selectedKeys.includes(row.key));
